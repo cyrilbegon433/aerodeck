@@ -354,10 +354,13 @@
     ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--border) 50%, var(--accent) 50%); }
 
     /* === Safe area iOS === */
-    /* +10px de marge supplémentaire au-dessus de la safe-area pour éloigner
-       le contenu de l'encoche / Dynamic Island sur iPhone. */
-    .safe-top { padding-top: calc(env(safe-area-inset-top) + 10px); }
-    .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 6px); }
+    /* Marge sous l'encoche / Dynamic Island. On utilise max() avec un
+       minimum garanti (55px) au cas où env(safe-area-inset-top) renverrait 0
+       (certains modes PWA / Safari le font), puis on ajoute encore 12px de
+       respiration pour que le titre AeroDeck et l'heure Zulu soient bien
+       en dessous de la status bar iOS. */
+    .safe-top    { padding-top: calc(max(env(safe-area-inset-top), 55px) + 12px); }
+    .safe-bottom { padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 8px); }
 
     /* === Animations === */
     @keyframes pop  { from { opacity:0; transform: translateY(8px) scale(0.98);} to {opacity:1; transform:none;} }
