@@ -2319,7 +2319,7 @@
       { id: 4, label: 'Quadrimoteur' },
     ];
 
-    function AircraftForm({ initial, onSave, onCancel }) {
+    function AircraftForm({ initial, flights = [], onSave, onCancel }) {
       const blank = {
         id: null,
         registration: '',
@@ -2327,14 +2327,36 @@
         serial: '',
         engineCount: 1,         // 1 = mono, 2 = bi, etc.
         engineType: 'piston',   // 'piston', 'turbine', 'jet', 'electric'
+        ttsn: 0,                 // TTSN (Total Time Since New) heure totale
+        // Champs legacy conservés pour compatibilité (non affichés)
         airframeStartHours: 0,
         engineStartHours: 0,
         deadlines: [], // { id, label, date?, hours? }
       };
-      const [a, setA] = useState({ ...blank, ...(initial||{}) });
+      // Migration : si l'avion vient d'une ancienne version, on récupère la
+      // valeur de airframeStartHours comme TTSN initial.
+      const merged = { ...blank, ...(initial||{}) };
+      if (merged.ttsn === 0 && (merged.airframeStartHours || 0) > 0) {
+        merged.ttsn = merged.airframeStartHours;
+      }
+      const [a, setA] = useState(merged);
       const [newDeadline, setNewDeadline] = useState({ label:'', date:'', hours:'' });
 
       function set(k,v){ setA(p=>({...p,[k]:v})); }
+
+      // === TTSN actuel calculé depuis le dernier vol ===
+      // On cherche le ttsnAfter le plus récent (par date du vol) parmi les vols
+      // qui ont effectivement renseigné cette valeur. Si aucun, on reste sur le
+      // TTSN initial saisi à la création de l'avion.
+      const lastFlightTtsn = useMemo(() => {
+        if (!a.id) return null;
+        const candidates = flights
+          .filter(f => f.aircraftId === a.id && f.ttsnAfter && !isNaN(parseFloat(f.ttsnAfter)))
+          .sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+        if (candidates.length === 0) return null;
+        const last = candidates[0];
+        return { value: parseFloat(last.ttsnAfter), date: last.date, from: last.from, to: last.to };
+      }, [flights, a.id]);
       function addDeadline() {
         if (!newDeadline.label) return;
         const d = { ...newDeadline, id: 'dl_'+Date.now() };
@@ -2366,13 +2388,13 @@
             <div className="label">Caractéristiques moteur</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="label">Nombre de moteurs</div>
+                <div className="label whitespace-nowrap">Nombre de moteurs</div>
                 <select className="select" value={a.engineCount} onChange={e=>set('engineCount', parseInt(e.target.value,10))}>
                   {ENGINE_COUNTS.map(ec => <option key={ec.id} value={ec.id}>{ec.label}</option>)}
                 </select>
               </div>
               <div>
-                <div className="label">Type</div>
+                <div className="label whitespace-nowrap">Type moteur</div>
                 <select className="select" value={a.engineType} onChange={e=>set('engineType', e.target.value)}>
                   {ENGINE_TYPES.map(et => <option key={et.id} value={et.id}>{et.label}</option>)}
                 </select>
@@ -2385,14 +2407,34 @@
               </Hint>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="label">Heures cellule (initiales)</div>
-              <input type="number" step="0.1" className="input" value={a.airframeStartHours} onChange={e=>set('airframeStartHours', parseFloat(e.target.value||'0'))} />
-            </div>
-            <div>
-              <div className="label">Heures moteur (initiales)</div>
-              <input type="number" step="0.1" className="input" value={a.engineStartHours} onChange={e=>set('engineStartHours', parseFloat(e.target.value||'0'))} />
+          {/* TTSN — heure totale de l'avion. Sert de référence pour le calcul
+              des heures cellule sur les vols. Doit concorder avec le ttsnAfter
+              du dernier vol enregistré. */}
+          <div className="card p-3 bg-[var(--bg-elev)]">
+            <div className="label whitespace-nowrap">TTSN <span className="normal-case tracking-normal opacity-70">(heure total)</span></div>
+            <input type="number" step="0.1" className="input font-mono" placeholder="2542.0"
+                   value={a.ttsn} onChange={e=>set('ttsn', parseFloat(e.target.value||'0'))} />
+            {lastFlightTtsn && (
+              <div className={`text-xs mt-2 px-2 py-1.5 rounded-md ${Math.abs(lastFlightTtsn.value - (parseFloat(a.ttsn)||0)) > 0.05 ? 'bg-[var(--warn)]/15 text-[var(--warn)]' : 'bg-[var(--accent)]/10 text-[var(--accent)]'}`}>
+                <div>📋 TTSN du dernier vol : <span className="font-mono font-semibold">{lastFlightTtsn.value.toFixed(1)} h</span></div>
+                <div className="text-[var(--text-dim)] mt-0.5">
+                  Vol du {lastFlightTtsn.date} {lastFlightTtsn.from}→{lastFlightTtsn.to}
+                </div>
+                {Math.abs(lastFlightTtsn.value - (parseFloat(a.ttsn)||0)) > 0.05 && (
+                  <button type="button"
+                    className="mt-1 text-[10px] uppercase tracking-wider font-semibold underline"
+                    onClick={()=>set('ttsn', lastFlightTtsn.value)}>
+                    → Synchroniser avec le dernier vol
+                  </button>
+                )}
+              </div>
+            )}
+            <div className="mt-2">
+              <Hint title="À propos du TTSN">
+                TTSN = Total Time Since New, l'heure totale cumulée de l'avion depuis sa sortie d'usine.
+                À la création, saisis la valeur actuelle. Ensuite, le TTSN doit correspondre au TTSN après
+                du dernier vol enregistré pour cet avion (un bouton de synchro apparaît si écart).
+              </Hint>
             </div>
           </div>
 
@@ -2445,6 +2487,17 @@
         const sum = flights.filter(f => f.aircraftId === acId).reduce((s,f) => s + (f.flightTime||0), 0);
         return sum / 60;
       }
+      // TTSN actuel = ttsnAfter du dernier vol enregistré pour cet avion.
+      // Fallback : valeur initiale saisie à la création de l'avion.
+      function currentTTSN(ac) {
+        const candidates = flights
+          .filter(f => f.aircraftId === ac.id && f.ttsnAfter && !isNaN(parseFloat(f.ttsnAfter)))
+          .sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+        if (candidates.length > 0) return parseFloat(candidates[0].ttsnAfter);
+        // Migration : si pas de vol, essaie ttsn (nouveau) puis airframeStartHours (legacy)
+        if (ac.ttsn != null && ac.ttsn !== 0) return parseFloat(ac.ttsn) || 0;
+        return parseFloat(ac.airframeStartHours) || 0;
+      }
 
       return (
         <div className="space-y-3">
@@ -2461,16 +2514,14 @@
 
           <div className="space-y-2">
             {aircraft.map(a => {
-              const flown = totalHoursFor(a.id);
-              const cellule = (a.airframeStartHours||0) + flown;
-              const moteur  = (a.engineStartHours||0) + flown;
+              const ttsn = currentTTSN(a);
               const upcoming = (a.deadlines||[]).filter(d => {
                 if (d.date) {
                   const days = Math.ceil((new Date(d.date) - new Date()) / 86400000);
                   return days <= 60;
                 }
                 if (d.hours) {
-                  const remaining = parseFloat(d.hours) - cellule;
+                  const remaining = parseFloat(d.hours) - ttsn;
                   return remaining <= 25;
                 }
                 return false;
@@ -2498,8 +2549,8 @@
                       </div>
                     </div>
                     <div className="text-right text-sm flex-shrink-0">
-                      <div className="font-mono tabular-nums">Cellule : {cellule.toFixed(1)} h</div>
-                      <div className="font-mono tabular-nums text-[var(--text-dim)]">Moteur : {moteur.toFixed(1)} h</div>
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">TTSN</div>
+                      <div className="font-mono tabular-nums text-[var(--accent)] text-base">{ttsn.toFixed(1)} h</div>
                     </div>
                   </div>
                   {upcoming.length > 0 && (
@@ -2524,7 +2575,7 @@
               }}>Supprimer</button>
             )}
           >
-            <AircraftForm initial={editing} onCancel={()=>setShowForm(false)} onSave={(a)=>{ onAddOrUpdate(a); setShowForm(false); }} />
+            <AircraftForm initial={editing} flights={flights} onCancel={()=>setShowForm(false)} onSave={(a)=>{ onAddOrUpdate(a); setShowForm(false); }} />
           </Modal>
         </div>
       );
@@ -4629,13 +4680,13 @@
             <div className="label">Médical</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="label">Classe</div>
+                <div className="label whitespace-nowrap">Classe</div>
                 <select className="select" value={p.medicalClass} onChange={e=>set('medicalClass', e.target.value)}>
                   {MEDICAL_CLASSES.map(m => <option key={m}>{m}</option>)}
                 </select>
               </div>
               <div>
-                <div className="label">Date de l'examen</div>
+                <div className="label whitespace-nowrap">Date d'examen</div>
                 <input type="date" className="input" value={p.medicalDate} onChange={e=>set('medicalDate', e.target.value)} />
               </div>
             </div>
@@ -5526,8 +5577,10 @@
             <LimitBar label="30 jours glissants" value={cumuls.d30}  limit={CARS_702_LIMITS.window30Flight} />
             <LimitBar label="90 jours glissants" value={cumuls.d90}  limit={CARS_702_LIMITS.window90Flight} />
             <LimitBar label="365 jours glissants" value={cumuls.d365} limit={CARS_702_LIMITS.window365Flight} />
-            <div className="text-xs text-[var(--text-dim)] mt-2">
-              Vert = &lt;70%, Jaune = 70-90%, Rouge = ≥90%. Calcul basé sur le Flight Time des vols où ce pilote est PIC ou SIC.
+            <div className="mt-2">
+              <Hint title="Légende des couleurs">
+                Vert = &lt;70%, Jaune = 70-90%, Rouge = ≥90%. Calcul basé sur le Flight Time des vols où ce pilote est PIC ou SIC.
+              </Hint>
             </div>
           </div>
 
@@ -5535,8 +5588,10 @@
           <div className="card p-3">
             <div className="label">Duty time aujourd'hui ({today})</div>
             <LimitBar label="Total duty" value={todayDutyMin} limit={CARS_702_LIMITS.dailyDuty} />
-            <div className="text-xs text-[var(--text-dim)] mt-2">
-              Limite quotidienne : 14h de duty consécutive. Repos minimum après duty : 8h.
+            <div className="mt-2">
+              <Hint title="Limite quotidienne CARs 702">
+                Limite quotidienne : 14h de duty consécutive. Repos minimum après duty : 8h.
+              </Hint>
             </div>
           </div>
 
@@ -5597,11 +5652,12 @@
                 </div>
               )}
             </div>
-            <div className="text-xs text-[var(--text-dim)] mt-3 border-t border-[var(--border-soft)] pt-2">
-              <strong className="text-[var(--text)]">Règle auto :</strong> chaque jour avec un ou plusieurs vols
-              génère une duty = (1<sup>er</sup> Block Out − 1h) → (dernier Block In + 1h). Cliquer sur
-              une duty <em>auto</em> permet de la modifier manuellement — elle devient alors une duty <em>manuelle</em>
-              qui prend le pas sur l'auto.
+            <div className="mt-3 border-t border-[var(--border-soft)] pt-2">
+              <Hint title="Règle de calcul auto">
+                Chaque jour avec un ou plusieurs vols génère une duty = (1<sup>er</sup> Block Out − 1h) → (dernier Block In + 1h).
+                Cliquer sur une duty <em>auto</em> permet de la modifier manuellement — elle devient alors une duty
+                <em> manuelle</em> qui prend le pas sur l'auto.
+              </Hint>
             </div>
           </div>
 
