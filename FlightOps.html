@@ -408,9 +408,6 @@
     const LANGUAGES = [
       { code: 'fr', label: 'Français' },
       { code: 'en', label: 'English'  },
-      { code: 'es', label: 'Español'  },
-      { code: 'it', label: 'Italiano' },
-      { code: 'de', label: 'Deutsch'  },
     ];
 
     const TRANSLATIONS = {
@@ -492,105 +489,6 @@
         'flight.docs':'Flight attachments',
         'flight.fuel':'⛽ Aircraft Fuel','flight.fuel.add':'+ Add fuel uplift',
         'flight.oil':'🛢️ Engine oil','flight.oil.add':'+ Add','flight.oil.left':'Left engine','flight.oil.right':'Right engine',
-      },
-      es: {
-        'tab.logbook':'Vuelo','tab.staff':'Staff','tab.calendar':'Calendario','tab.aircraft':'Aeronaves','tab.pilots':'Pilotos',
-        'tab.maintenance':'Mantenimiento','tab.expenses':'Gastos','tab.company':'Compañía','tab.stats':'Estadísticas','tab.settings':'Ajustes','tab.duty':'Servicio',
-        'app.subtitle':'Bitácora y operaciones','app.zulu':'UTC / Zulu',
-        'btn.new':'Nuevo','btn.add':'Añadir','btn.save':'Guardar','btn.cancel':'Cancelar','btn.delete':'Eliminar',
-        'btn.close':'Cerrar','btn.open':'Abrir','btn.remove':'Quitar','btn.replace':'Reemplazar',
-        'logbook.title':'Bitácora de vuelo','logbook.newFlight':'+ Nuevo vuelo','logbook.editFlight':'Editar vuelo',
-        'logbook.allFlights':'Todos','logbook.empty':'Aún no hay vuelos.',
-        'flight.date':'Fecha (Zulu)','flight.aircraft':'Aeronave','flight.from':'OACI salida','flight.to':'OACI llegada',
-        'flight.zuluTimes':'Horas Zulu (formato HHMM)','flight.blockOut':'Block Out','flight.takeOff':'Take Off',
-        'flight.landing':'Landing','flight.blockIn':'Block In','flight.airTime':'Air Time','flight.flightTime':'Flight Time',
-        'flight.pilot':'Piloto (PIC)','flight.copilot':'Copiloto (SIC) — opcional','flight.functionType':'Función (PIC / SIC / Dual / Solo)',
-        'flight.rules':'Régimen de vuelo','flight.takeoffs':'Despegues','flight.landings':'Aterrizajes',
-        'flight.approaches':'Aproximaciones','flight.night':'El vuelo incluye parte nocturna','flight.notes':'Notas',
-        'aircraft.title':'Aeronaves','aircraft.new':'+ Nueva aeronave','aircraft.edit':'Editar aeronave',
-        'aircraft.registration':'Matrícula','aircraft.type':'Tipo','aircraft.serial':'Núm. de serie',
-        'aircraft.engine':'Características motor','aircraft.engineCount':'Número de motores','aircraft.engineType':'Tipo',
-        'aircraft.airframeHours':'Horas célula (iniciales)','aircraft.engineHours':'Horas motor (iniciales)',
-        'aircraft.deadlines':'Vencimientos (seguro, ARC, inspecciones…)','aircraft.empty':'Añade primero una aeronave.',
-        'pilot.title':'Pilotos','pilot.new':'+ Nuevo piloto','pilot.edit':'Editar piloto','pilot.empty':'Aún no hay pilotos.',
-        'cal.title':'Calendario','cal.exportIcs':'📤 Exportar .ics','cal.importIcs':'📥 Importar .ics (Ops)',
-        'cal.upcoming':'Próximos vuelos (10)','cal.noUpcoming':'Sin vuelos próximos.',
-        'mx.title':'Mantenimiento','mx.new':'+ Nuevo defecto','mx.empty':'Sin defectos registrados.',
-        'exp.title':'Documentos / Facturas','exp.new':'+ Nueva factura','exp.empty':'Aún no hay facturas.',
-        'exp.totalsByCat':'Totales por categoría',
-        'co.title':'Documentos de compañía','co.new':'+ Nuevo documento','co.empty':'Aún no hay documentos de compañía.',
-        'stats.title':'Estadísticas y copias','stats.year':'Año','stats.month':'Mes','stats.allYear':'Todo el año',
-        'stats.exports':'Exportaciones','stats.backupRestore':'Copia / Restauración','stats.settings':'Ajustes',
-        'stats.language':'Idioma de la interfaz','stats.confirmDelete':'Confirmar cada borrado (recomendado)',
-        'flight.docs':'Documentos del vuelo',
-        'flight.fuel':'⛽ Combustible avión','flight.fuel.add':'+ Añadir repostaje',
-        'flight.oil':'🛢️ Aceite de motor','flight.oil.add':'+ Añadir','flight.oil.left':'Motor izquierdo','flight.oil.right':'Motor derecho',
-      },
-      it: {
-        'tab.logbook':'Volo','tab.staff':'Staff','tab.calendar':'Calendario','tab.aircraft':'Aeromobili','tab.pilots':'Piloti',
-        'tab.maintenance':'Manutenzione','tab.expenses':'Spese','tab.company':'Compagnia','tab.stats':'Statistiche','tab.settings':'Impostazioni','tab.duty':'Servizio',
-        'app.subtitle':'Diario e operazioni','app.zulu':'UTC / Zulu',
-        'btn.new':'Nuovo','btn.add':'Aggiungi','btn.save':'Salva','btn.cancel':'Annulla','btn.delete':'Elimina',
-        'btn.close':'Chiudi','btn.open':'Apri','btn.remove':'Rimuovi','btn.replace':'Sostituisci',
-        'logbook.title':'Diario di volo','logbook.newFlight':'+ Nuovo volo','logbook.editFlight':'Modifica volo',
-        'logbook.allFlights':'Tutti','logbook.empty':'Nessun volo per ora.',
-        'flight.date':'Data (Zulu)','flight.aircraft':'Aeromobile','flight.from':'OACI partenza','flight.to':'OACI arrivo',
-        'flight.zuluTimes':'Orari Zulu (formato HHMM)','flight.blockOut':'Block Out','flight.takeOff':'Take Off',
-        'flight.landing':'Landing','flight.blockIn':'Block In','flight.airTime':'Air Time','flight.flightTime':'Flight Time',
-        'flight.pilot':'Pilota (PIC)','flight.copilot':'Copilota (SIC) — opzionale','flight.functionType':'Funzione (PIC / SIC / Dual / Solo)',
-        'flight.rules':'Regime di volo','flight.takeoffs':'Decolli','flight.landings':'Atterraggi',
-        'flight.approaches':'Avvicinamenti','flight.night':'Volo con porzione notturna','flight.notes':'Note',
-        'aircraft.title':'Aeromobili','aircraft.new':'+ Nuovo aeromobile','aircraft.edit':"Modifica aeromobile",
-        'aircraft.registration':'Marche','aircraft.type':'Tipo','aircraft.serial':'N° di serie',
-        'aircraft.engine':'Caratteristiche motore','aircraft.engineCount':'Numero motori','aircraft.engineType':'Tipo',
-        'aircraft.airframeHours':'Ore cellula (iniziali)','aircraft.engineHours':'Ore motore (iniziali)',
-        'aircraft.deadlines':'Scadenze (assicurazione, ARC, ispezioni…)','aircraft.empty':'Aggiungi prima un aeromobile.',
-        'pilot.title':'Piloti','pilot.new':'+ Nuovo pilota','pilot.edit':'Modifica pilota','pilot.empty':'Nessun pilota.',
-        'cal.title':'Calendario','cal.exportIcs':'📤 Esporta .ics','cal.importIcs':'📥 Importa .ics (Ops)',
-        'cal.upcoming':'Prossimi voli (10)','cal.noUpcoming':'Nessun volo in arrivo.',
-        'mx.title':'Manutenzione','mx.new':'+ Nuovo difetto','mx.empty':'Nessun difetto registrato.',
-        'exp.title':'Documenti / Fatture','exp.new':'+ Nuova fattura','exp.empty':'Nessuna fattura per ora.',
-        'exp.totalsByCat':'Totali per categoria',
-        'co.title':'Documenti compagnia','co.new':'+ Nuovo documento','co.empty':'Nessun documento di compagnia.',
-        'stats.title':'Statistiche e backup','stats.year':'Anno','stats.month':'Mese','stats.allYear':"Tutto l'anno",
-        'stats.exports':'Esportazioni','stats.backupRestore':'Backup / Ripristino','stats.settings':'Impostazioni',
-        'stats.language':"Lingua dell'interfaccia",'stats.confirmDelete':'Conferma ogni eliminazione (consigliato)',
-        'flight.docs':'Documenti del volo',
-        'flight.fuel':'⛽ Carburante velivolo','flight.fuel.add':'+ Aggiungi rifornimento',
-        'flight.oil':'🛢️ Olio motore','flight.oil.add':'+ Aggiungi','flight.oil.left':'Motore sinistro','flight.oil.right':'Motore destro',
-      },
-      de: {
-        'tab.logbook':'Flug','tab.staff':'Staff','tab.calendar':'Kalender','tab.aircraft':'Flugzeuge','tab.pilots':'Piloten',
-        'tab.maintenance':'Wartung','tab.expenses':'Ausgaben','tab.company':'Firma','tab.stats':'Statistik','tab.settings':'Einstellungen','tab.duty':'Dienst',
-        'app.subtitle':'Flugbuch & Ops','app.zulu':'UTC / Zulu',
-        'btn.new':'Neu','btn.add':'Hinzufügen','btn.save':'Speichern','btn.cancel':'Abbrechen','btn.delete':'Löschen',
-        'btn.close':'Schließen','btn.open':'Öffnen','btn.remove':'Entfernen','btn.replace':'Ersetzen',
-        'logbook.title':'Flugbuch','logbook.newFlight':'+ Neuer Flug','logbook.editFlight':'Flug bearbeiten',
-        'logbook.allFlights':'Alle','logbook.empty':'Noch keine Flüge.',
-        'flight.date':'Datum (Zulu)','flight.aircraft':'Flugzeug','flight.from':'ICAO Abflug','flight.to':'ICAO Ankunft',
-        'flight.zuluTimes':'Zulu-Zeiten (Format HHMM)','flight.blockOut':'Block Out','flight.takeOff':'Take Off',
-        'flight.landing':'Landing','flight.blockIn':'Block In','flight.airTime':'Air Time','flight.flightTime':'Flight Time',
-        'flight.pilot':'Pilot (PIC)','flight.copilot':'Co-Pilot (SIC) — optional','flight.functionType':'Funktion (PIC / SIC / Dual / Solo)',
-        'flight.rules':'Flugregeln','flight.takeoffs':'Starts','flight.landings':'Landungen',
-        'flight.approaches':'Anflüge','flight.night':'Flug enthält Nachtanteil','flight.notes':'Notizen',
-        'aircraft.title':'Flugzeuge','aircraft.new':'+ Neues Flugzeug','aircraft.edit':'Flugzeug bearbeiten',
-        'aircraft.registration':'Kennung','aircraft.type':'Typ','aircraft.serial':'Seriennummer',
-        'aircraft.engine':'Motorangaben','aircraft.engineCount':'Anzahl Motoren','aircraft.engineType':'Typ',
-        'aircraft.airframeHours':'Zellenstunden (initial)','aircraft.engineHours':'Motorstunden (initial)',
-        'aircraft.deadlines':'Fälligkeiten (Versicherung, ARC, Inspektionen…)','aircraft.empty':'Füge zuerst ein Flugzeug hinzu.',
-        'pilot.title':'Piloten','pilot.new':'+ Neuer Pilot','pilot.edit':'Pilot bearbeiten','pilot.empty':'Noch keine Piloten.',
-        'cal.title':'Kalender','cal.exportIcs':'📤 .ics exportieren','cal.importIcs':'📥 .ics importieren (Ops)',
-        'cal.upcoming':'Kommende Flüge (10)','cal.noUpcoming':'Keine kommenden Flüge.',
-        'mx.title':'Wartung','mx.new':'+ Neuer Defekt','mx.empty':'Keine Defekte erfasst.',
-        'exp.title':'Dokumente / Rechnungen','exp.new':'+ Neue Rechnung','exp.empty':'Noch keine Rechnungen.',
-        'exp.totalsByCat':'Summen pro Kategorie',
-        'co.title':'Firmendokumente','co.new':'+ Neues Dokument','co.empty':'Noch keine Firmendokumente.',
-        'stats.title':'Statistik & Backups','stats.year':'Jahr','stats.month':'Monat','stats.allYear':'Ganzes Jahr',
-        'stats.exports':'Exporte','stats.backupRestore':'Backup / Wiederherstellung','stats.settings':'Einstellungen',
-        'stats.language':'Sprache der Oberfläche','stats.confirmDelete':'Vor jedem Löschen bestätigen (empfohlen)',
-        'flight.docs':'Anhänge zum Flug',
-        'flight.fuel':'⛽ Flugzeug-Kraftstoff','flight.fuel.add':'+ Tankvorgang hinzufügen',
-        'flight.oil':'🛢️ Motoröl','flight.oil.add':'+ Hinzufügen','flight.oil.left':'Linker Motor','flight.oil.right':'Rechter Motor',
       },
     };
 
@@ -3070,7 +2968,7 @@
       );
     }
 
-    function DocumentsScreen({ documents, aircraft, categories, pilots = [], onAddOrUpdate, onDelete }) {
+    function DocumentsScreen({ documents, aircraft, categories, pilots = [], flights = [], onAddOrUpdate, onDelete }) {
       const t = useT();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
@@ -3147,6 +3045,37 @@
         return m;
       }, [documents]);
 
+      // Carburant avion supplémentaire saisi dans les fiches vol mais sans
+      // facture rattachée (les pleins avec invoiceDocId sont déjà comptés dans
+      // documents). Évite le double comptage.
+      const extraFlightFuel = useMemo(() => {
+        let total = 0;
+        for (const f of flights) {
+          for (const e of (f.fuelEntries||[])) {
+            if (!e.invoiceDocId) {
+              total += parseFloat(e.amount)||0;
+            }
+          }
+        }
+        return total;
+      }, [flights]);
+
+      // Totaux par catégorie INCLUANT le carburant non scanné des vols
+      const totalsByCatComplete = useMemo(() => {
+        const m = { ...totalsByCat };
+        if (extraFlightFuel > 0) {
+          m['fuel_aircraft'] = (m['fuel_aircraft']||0) + extraFlightFuel;
+        }
+        return m;
+      }, [totalsByCat, extraFlightFuel]);
+
+      // Total global complet (documents + carburant vols sans facture)
+      const grandTotal = useMemo(() => {
+        return Object.values(totalsByCatComplete).reduce((s,v) => s+v, 0);
+      }, [totalsByCatComplete]);
+
+      const [showBreakdown, setShowBreakdown] = useState(true);
+
       function catObj(id) { return categories.find(c => c.id === id) || categories[categories.length-1]; }
 
       // Compte des factures par catégorie
@@ -3219,8 +3148,11 @@
             )}
           </div>
 
-          {/* === TUILES CATÉGORIES (cliquables pour filtrer) === */}
-          {visibleCats.length > 0 && (
+          {/* === TUILES CATÉGORIES (cliquables pour filtrer) ===
+              Visibles uniquement quand aucune catégorie n'est sélectionnée :
+              vue d'ensemble. Quand une catégorie est cliquée, les tuiles
+              disparaissent au profit du panneau de détails (ci-dessous). */}
+          {filterCat === 'all' && visibleCats.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
                 <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">📊 Catégories</div>
@@ -3387,6 +3319,59 @@
               );
             })}
           </div>
+
+          {/* === RÉCAP RÉPARTITION (en bas, pliable) ===
+              Inclut le carburant avion saisi dans les vols même sans facture
+              scannée (extraFlightFuel). Donne une vraie vue d'ensemble du coût
+              total d'exploitation. */}
+          {grandTotal > 0 && (
+            <div className="card p-3">
+              <button type="button"
+                onClick={()=>setShowBreakdown(s=>!s)}
+                className="flex items-center justify-between w-full gap-2 text-left">
+                <div className="flex items-center gap-2">
+                  <span className="text-base transition-transform" style={{ transform: showBreakdown ? 'rotate(90deg)' : 'rotate(0deg)' }}>▸</span>
+                  <span className="text-sm font-semibold">📊 Répartition par catégorie</span>
+                  <span className="text-xs text-[var(--text-dim)] font-mono">{grandTotal.toFixed(2)} {mainCurrency}</span>
+                </div>
+                <span className="text-[10px] text-[var(--text-dim)]">
+                  {extraFlightFuel > 0 ? `inclut ${extraFlightFuel.toFixed(2)} ${mainCurrency} de carburant non scanné` : ''}
+                </span>
+              </button>
+              {showBreakdown && (
+                <div className="mt-3 space-y-2 anim-pop">
+                  {/* Tri décroissant par montant */}
+                  {[...categories]
+                    .map(c => ({ ...c, total: totalsByCatComplete[c.id]||0 }))
+                    .filter(c => c.total > 0)
+                    .sort((a,b) => b.total - a.total)
+                    .map(c => {
+                      const pct = grandTotal > 0 ? (c.total / grandTotal) * 100 : 0;
+                      return (
+                        <div key={c.id} className="space-y-0.5">
+                          <div className="flex items-center justify-between text-xs">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span>{c.icon}</span>
+                              <span className="truncate">{c.name}</span>
+                              {c.id === 'fuel_aircraft' && extraFlightFuel > 0 && (
+                                <span className="text-[9px] text-[var(--text-dim)] italic flex-shrink-0">(+vols)</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <span className="font-mono tabular-nums" style={{ color: c.color }}>{c.total.toFixed(2)}</span>
+                              <span className="font-mono text-[10px] text-[var(--text-dim)] w-10 text-right">{pct.toFixed(1)}%</span>
+                            </div>
+                          </div>
+                          <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-elev)' }}>
+                            <div style={{ width: pct + '%', height: '100%', background: c.color, transition: 'width .35s ease' }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
 
           <Modal
             open={showForm}
@@ -6128,26 +6113,29 @@
             </div>
           )}
 
+          {/* === DESKTOP : tableau compact qui tient à l'écran (≥ sm = 640px) ===
+              On a fusionné Immat + Nom avion en 1 colonne (immat en haut, type en
+              petit dessous). Les colonnes IFR / Nav / Duo / Nuit utilisent des
+              icônes en en-tête pour gagner de la place. Le padding est réduit. */}
           {visible.length > 0 && (
-            <div className="card p-0 overflow-x-auto">
-              <table className="w-full text-xs">
+            <div className="hidden sm:block card p-0 overflow-x-auto">
+              <table className="w-full text-[11px]">
                 <thead className="text-[var(--text-dim)] sticky top-0 bg-[var(--bg-card)] z-10">
-                  <tr className="text-left">
-                    <th className="px-2 py-2">Date</th>
-                    <th className="px-2 py-2">Trajet</th>
-                    <th className="px-2 py-2">Immat</th>
-                    <th className="px-2 py-2">Nom avion</th>
-                    <th className="px-2 py-2 text-center">Classe</th>
-                    <th className="px-2 py-2 text-center">FT</th>
-                    <th className="px-2 py-2 text-center">IFR</th>
-                    <th className="px-2 py-2 text-center">Nav</th>
-                    <th className="px-2 py-2 text-center">Duo</th>
-                    <th className="px-2 py-2 text-center">Nuit</th>
-                    <th className="px-2 py-2">PIC</th>
-                    <th className="px-2 py-2">SIC</th>
-                    <th className="px-2 py-2 text-center">TO/LDG</th>
-                    <th className="px-2 py-2">Type vol</th>
-                    <th className="px-2 py-2 text-center">Action</th>
+                  <tr className="text-left uppercase tracking-wide">
+                    <th className="px-1.5 py-2">Date</th>
+                    <th className="px-1.5 py-2">Trajet</th>
+                    <th className="px-1.5 py-2">Avion</th>
+                    <th className="px-1.5 py-2 text-center" title="Classe">Cl.</th>
+                    <th className="px-1.5 py-2 text-center">FT</th>
+                    <th className="px-1.5 py-2 text-center" title="IFR">📡</th>
+                    <th className="px-1.5 py-2 text-center" title="Navigation">🧭</th>
+                    <th className="px-1.5 py-2 text-center" title="Duo">🤝</th>
+                    <th className="px-1.5 py-2 text-center" title="Nuit">🌙</th>
+                    <th className="px-1.5 py-2">PIC</th>
+                    <th className="px-1.5 py-2">SIC</th>
+                    <th className="px-1.5 py-2 text-center" title="Décollages / Atterrissages">TO/LD</th>
+                    <th className="px-1.5 py-2">Type</th>
+                    <th className="px-1.5 py-2 text-center"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -6162,25 +6150,27 @@
                     return (
                       <tr key={f.id} className="border-t border-[var(--border)] hover:bg-[var(--bg-elev)] cursor-pointer"
                           onClick={()=>{ setEditing(f); setShowForm(true); }}>
-                        <td className="px-2 py-2 font-mono whitespace-nowrap">{f.date}</td>
-                        <td className="px-2 py-2 font-mono whitespace-nowrap">{f.from}→{f.to}</td>
-                        <td className="px-2 py-2 whitespace-nowrap">{ac?.registration||'?'}</td>
-                        <td className="px-2 py-2 whitespace-nowrap">{ac?.type || '—'}</td>
-                        <td className="px-2 py-2 text-center whitespace-nowrap">{aircraftClass(ac)}</td>
-                        <td className="px-2 py-2 text-center font-mono">{fmtDuration(f.flightTime)}</td>
-                        <td className="px-2 py-2 text-center font-mono">{ifrTime > 0 ? fmtDuration(ifrTime) : '—'}</td>
-                        <td className="px-2 py-2 text-center font-mono">{navTime > 0 ? fmtDuration(navTime) : '—'}</td>
-                        <td className="px-2 py-2 text-center font-mono">{duoTime > 0 ? fmtDuration(duoTime) : '—'}</td>
-                        <td className="px-2 py-2 text-center font-mono">{(f.nightTime||0)>0 ? fmtDuration(f.nightTime) : '—'}</td>
-                        <td className="px-2 py-2 truncate max-w-[140px]">{pic ? pilotDisplayName(pic) : '—'}</td>
-                        <td className="px-2 py-2 truncate max-w-[140px]">{sic ? pilotDisplayName(sic) : '—'}</td>
-                        <td className="px-2 py-2 text-center font-mono whitespace-nowrap">
+                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.date}</td>
+                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.from}→{f.to}</td>
+                        <td className="px-1.5 py-1.5 leading-tight">
+                          <div className="font-mono whitespace-nowrap">{ac?.registration||'?'}</div>
+                          <div className="text-[10px] text-[var(--text-dim)] truncate max-w-[100px]">{ac?.type || '—'}</div>
+                        </td>
+                        <td className="px-1.5 py-1.5 text-center whitespace-nowrap">{aircraftClass(ac)}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{fmtDuration(f.flightTime)}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{ifrTime > 0 ? fmtDuration(ifrTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{navTime > 0 ? fmtDuration(navTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{duoTime > 0 ? fmtDuration(duoTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{(f.nightTime||0)>0 ? fmtDuration(f.nightTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 truncate max-w-[110px]">{pic ? pilotDisplayName(pic) : '—'}</td>
+                        <td className="px-1.5 py-1.5 truncate max-w-[110px]">{sic ? pilotDisplayName(sic) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono whitespace-nowrap">
                           {((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0)}/{((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0)}
                         </td>
-                        <td className="px-2 py-2 whitespace-nowrap">{flightTypeLabel(f.flightType)}</td>
-                        <td className="px-2 py-2 text-center">
+                        <td className="px-1.5 py-1.5 whitespace-nowrap text-[10px]">{flightTypeLabel(f.flightType)}</td>
+                        <td className="px-1.5 py-1.5 text-center">
                           <button type="button"
-                            className="text-[var(--err)] hover:opacity-80 text-base"
+                            className="text-[var(--err)] hover:opacity-80"
                             title="Supprimer ce vol"
                             onClick={(e)=>{
                               e.stopPropagation();
@@ -6194,6 +6184,64 @@
                   })}
                 </tbody>
               </table>
+            </div>
+          )}
+
+          {/* === MOBILE : cards verticales (1 vol = 1 card), aucun scroll horizontal === */}
+          {visible.length > 0 && (
+            <div className="sm:hidden space-y-2">
+              {visible.map(f => {
+                const ac = aircraft.find(a => a.id === f.aircraftId);
+                const pic = pilots.find(p => p.id === f.pilotId);
+                const sic = pilots.find(p => p.id === f.copilotId);
+                const ft = f.flightTime || 0;
+                const ifrTime = f.rules === 'IFR' ? ft : 0;
+                const navTime = f.isNavigation ? ft : 0;
+                const duoTime = isDuoFlight(f) ? ft : 0;
+                const totalTO = ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
+                const totalLDG = ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
+                return (
+                  <div key={f.id} className="card p-3 cursor-pointer"
+                       onClick={()=>{ setEditing(f); setShowForm(true); }}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-[var(--text-dim)] font-mono">{f.date}</div>
+                        <div className="font-semibold tracking-wide font-mono">{f.from}→{f.to}</div>
+                        <div className="text-xs text-[var(--text-dim)] truncate">
+                          <span className="font-mono">{ac?.registration||'?'}</span> · {ac?.type||'—'} · {aircraftClass(ac)}
+                        </div>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        <div className="text-[10px] uppercase text-[var(--text-dim)] font-semibold">FT</div>
+                        <div className="font-mono tabular-nums text-base text-[var(--accent)]">{fmtDuration(f.flightTime)}</div>
+                      </div>
+                    </div>
+                    <div className="text-xs mt-1 space-y-0.5">
+                      {pic && <div><span className="text-[var(--accent)] font-semibold">PIC :</span> {pilotDisplayName(pic)}</div>}
+                      {sic && <div><span className="text-[var(--accent)] font-semibold">SIC :</span> {pilotDisplayName(sic)}</div>}
+                    </div>
+                    <div className="flex flex-wrap gap-1 mt-2 text-[10px]">
+                      {ifrTime > 0 && <span className="badge">📡 IFR {fmtDuration(ifrTime)}</span>}
+                      {navTime > 0 && <span className="badge">🧭 Nav {fmtDuration(navTime)}</span>}
+                      {duoTime > 0 && <span className="badge">🤝 Duo {fmtDuration(duoTime)}</span>}
+                      {(f.nightTime||0) > 0 && <span className="badge">🌙 {fmtDuration(f.nightTime)}</span>}
+                      {(totalTO + totalLDG) > 0 && <span className="badge">🛬 {totalTO}/{totalLDG}</span>}
+                      <span className="badge">{flightTypeLabel(f.flightType)}</span>
+                    </div>
+                    <div className="flex justify-end mt-2">
+                      <button type="button"
+                        className="text-[var(--err)] hover:opacity-80 text-sm"
+                        title="Supprimer ce vol"
+                        onClick={(e)=>{
+                          e.stopPropagation();
+                          if (confirm(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`)) {
+                            onDeleteFlight && onDeleteFlight(f.id);
+                          }
+                        }}>🗑️ Retirer</button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
           {sorted.length > limit && (
@@ -7492,6 +7540,32 @@
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
+              {/* Bouton cloud sync : visible sur toutes les pages.
+                  Couleur selon syncStatus (gris/jaune/vert/rouge).
+                  Click → push manuel rapide (raccourci de Réglages → Sync).
+                  Long press / clic-droit → ouvre Réglages. */}
+              {(settings.gh?.enabled && settings.gh?.token) && (
+                <button
+                  type="button"
+                  onClick={() => syncPush()}
+                  onContextMenu={(e) => { e.preventDefault(); setTab('settings'); }}
+                  title={
+                    syncStatus.status === 'syncing' ? 'Sync en cours…'
+                    : syncStatus.status === 'error' ? 'Erreur sync — clique pour réessayer'
+                    : syncStatus.status === 'synced' ? `Sync OK — clique pour pousser`
+                    : 'Cloud sync — clique pour pousser maintenant'
+                  }
+                  className="text-xl leading-none p-1 rounded-md transition-all hover:scale-110"
+                  style={{
+                    color: syncStatus.status === 'syncing' ? 'var(--warn)'
+                         : syncStatus.status === 'error'   ? 'var(--err)'
+                         : syncStatus.status === 'synced'  ? 'var(--ok)'
+                         : 'var(--text-dim)',
+                    filter: syncStatus.status === 'syncing' ? 'none' : 'drop-shadow(0 0 4px currentColor)',
+                  }}>
+                  {syncStatus.status === 'syncing' ? '⏳' : syncStatus.status === 'error' ? '⚠️' : '☁'}
+                </button>
+              )}
               {/* Sélecteur de langue rapide — accessible depuis tous les onglets */}
               <div className="flex items-center gap-1">
                 <select
@@ -7551,6 +7625,7 @@
               onAddOrUpdate={upsert(setMaintenance)} onDelete={remove(setMaintenance)} />}
             {tab==='documents' && <DocumentsScreen
               documents={documents} aircraft={aircraft} categories={categories} pilots={pilots}
+              flights={flights}
               onAddOrUpdate={upsert(setDocuments)} onDelete={remove(setDocuments)} />}
             {tab==='company' && <CompanyDocsScreen
               companyDocs={companyDocs} aircraft={aircraft}
