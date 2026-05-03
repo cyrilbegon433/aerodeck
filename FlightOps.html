@@ -2621,11 +2621,11 @@
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="label">Date</div>
+              <div className="label whitespace-nowrap">Date</div>
               <input type="date" className="input" value={d.date} onChange={e=>set('date', e.target.value)} />
             </div>
             <div>
-              <div className="label">Fournisseur (provenance)</div>
+              <div className="label whitespace-nowrap">Fournisseur</div>
               <input className="input" placeholder="ex: Total Energies" value={d.supplier} onChange={e=>set('supplier', e.target.value)} />
             </div>
           </div>
@@ -2643,13 +2643,13 @@
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="label">Catégorie</div>
+              <div className="label whitespace-nowrap">Catégorie</div>
               <select className="select" value={d.categoryId} onChange={e=>set('categoryId', e.target.value)}>
                 {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
               </select>
             </div>
             <div>
-              <div className="label">Avion concerné (optionnel)</div>
+              <div className="label whitespace-nowrap">Avion <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
               <select className="select" value={d.aircraftId} onChange={e=>set('aircraftId', e.target.value)}>
                 <option value="">— aucun —</option>
                 {aircraft.map(a => <option key={a.id} value={a.id}>{a.registration}</option>)}
@@ -4100,7 +4100,7 @@
           </div>
 
           <div>
-            <div className="label">Vol concerné (optionnel)</div>
+            <div className="label whitespace-nowrap">Vol concerné <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
             <select className="select" value={m.flightId} onChange={e=>set('flightId', e.target.value)}>
               <option value="">— aucun —</option>
               {flights.filter(f=>!m.aircraftId || f.aircraftId===m.aircraftId).slice(0,200).map(f => (
@@ -4119,7 +4119,7 @@
           </div>
 
           <div className="card p-3">
-            <div className="label">Photo (optionnelle)</div>
+            <div className="label whitespace-nowrap">Photo <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
             {m.photo ? (
               <div className="space-y-2">
                 <img src={m.photo} alt="" className="rounded-lg max-h-48 mx-auto" />
@@ -4313,13 +4313,13 @@
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="label">Type</div>
+              <div className="label whitespace-nowrap">Type</div>
               <select className="select" value={d.type} onChange={e=>set('type', e.target.value)}>
                 {COMPANY_DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
               </select>
             </div>
             <div>
-              <div className="label">Avion lié (optionnel)</div>
+              <div className="label whitespace-nowrap">Avion lié <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
               <select className="select" value={d.aircraftId} onChange={e=>set('aircraftId', e.target.value)}>
                 <option value="">— global flotte —</option>
                 {aircraft.map(a => <option key={a.id} value={a.id}>{a.registration}</option>)}
@@ -4596,15 +4596,15 @@
               <input className="input uppercase" maxLength={4} placeholder="LFPB" value={p.baseAirport} onChange={e=>set('baseAirport', e.target.value.toUpperCase())} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+          {/* Date naissance seule : prend toute la largeur sur mobile, 1 colonne en desktop */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <div className="label">Date de naissance</div>
+              <div className="label whitespace-nowrap">Date de naissance</div>
               <input type="date" className="input" value={p.dateOfBirth} onChange={e=>set('dateOfBirth', e.target.value)} />
               {currentAge != null && (
                 <div className="text-xs text-[var(--text-dim)] mt-1">Âge actuel : {currentAge} ans</div>
               )}
             </div>
-            <div></div>
           </div>
 
           <div className="card p-3">
@@ -4620,8 +4620,8 @@
               <input type="date" className="input" value={p.licenseExpiry} onChange={e=>set('licenseExpiry', e.target.value)} />
             </div>
             <div className="mt-2">
-              <div className="label">Qualifications (libre, séparées par virgule)</div>
-              <input className="input" placeholder="ME, IR, B737, C172" value={p.ratings} onChange={e=>set('ratings', e.target.value)} />
+              <div className="label whitespace-nowrap">Qualifications</div>
+              <input className="input" placeholder="ME, IR, B737, C172 (séparées par virgule)" value={p.ratings} onChange={e=>set('ratings', e.target.value)} />
             </div>
           </div>
 
@@ -4639,16 +4639,20 @@
                 <input type="date" className="input" value={p.medicalDate} onChange={e=>set('medicalDate', e.target.value)} />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3 mt-2">
+            {/* Mobile : Date renouvellement seule en pleine largeur (les warnings
+                tombent en dessous, pas à côté). Desktop : grid 2 colonnes. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
               <div>
-                <div className="label">Date de renouvellement</div>
+                <div className="label whitespace-nowrap">Date de renouvellement</div>
                 <input type="date" className="input" value={p.medicalExpiry} onChange={e=>set('medicalExpiry', e.target.value)} />
-                <div className="text-xs text-[var(--text-dim)] mt-1">
-                  Calculée automatiquement depuis la date de naissance + date d'examen.
-                  Modifiable manuellement si besoin.
+                <div className="mt-1">
+                  <Hint title="Calcul automatique">
+                    Calculée automatiquement depuis la date de naissance + date d'examen.
+                    Modifiable manuellement si besoin.
+                  </Hint>
                 </div>
               </div>
-              <div className="text-xs flex flex-col justify-end">
+              <div className="text-xs flex flex-col justify-end gap-1">
                 {!p.dateOfBirth && (
                   <div className="text-[var(--warn)]">⚠ Renseigne d'abord la date de naissance pour le calcul auto.</div>
                 )}
@@ -4679,18 +4683,20 @@
             <div className="label">Identifiants administratifs</div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <div className="label">N° de permis de conduire</div>
+                <div className="label whitespace-nowrap">N° permis</div>
                 <input className="input" value={p.driversLicense} onChange={e=>set('driversLicense', e.target.value)} placeholder="ex: A1234-567890" />
               </div>
               <div>
-                <div className="label">N° NAS</div>
+                <div className="label whitespace-nowrap">N° NAS</div>
                 <input className="input" value={p.nas} onChange={e=>set('nas', e.target.value)} placeholder="ex: 123 456 789" />
               </div>
             </div>
-            <div className="text-xs text-[var(--text-dim)] mt-2">
-              ⚠️ Données sensibles — stockées <strong>uniquement</strong> dans le navigateur de cet
-              appareil (localStorage). Présentes dans les exports JSON : protège ces fichiers
-              (chiffrement, dossier privé). Aucune transmission réseau n'est effectuée par l'app.
+            <div className="mt-2">
+              <Hint title="Données sensibles — sécurité">
+                Stockées <strong>uniquement</strong> dans le navigateur de cet
+                appareil (localStorage). Présentes dans les exports JSON : protège ces fichiers
+                (chiffrement, dossier privé). Aucune transmission réseau n'est effectuée par l'app.
+              </Hint>
             </div>
           </div>
 
@@ -6062,6 +6068,59 @@
     }
 
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+    // === Service Worker — mise à jour automatique du PWA iOS ===
+    // Enregistre sw.js qui sert le HTML en network-first.
+    // Quand une nouvelle version est détectée, on prévient l'utilisateur
+    // via une petite bannière en bas de l'écran avec un bouton "Recharger".
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then((reg) => {
+          // Détecte une mise à jour disponible (nouveau SW en attente)
+          reg.addEventListener('updatefound', () => {
+            const newSW = reg.installing;
+            if (!newSW) return;
+            newSW.addEventListener('statechange', () => {
+              if (newSW.state === 'installed' && navigator.serviceWorker.controller) {
+                showUpdateBanner();
+              }
+            });
+          });
+          // Force un check de mise à jour à chaque ouverture
+          reg.update();
+        }).catch(()=>{ /* SW indispo (Safari privé, etc.) — pas grave, l'app marche quand même */ });
+
+        // Recharge la page quand le nouveau SW prend le contrôle
+        let refreshing = false;
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          if (refreshing) return;
+          refreshing = true;
+          window.location.reload();
+        });
+      });
+
+      function showUpdateBanner() {
+        // Évite les doublons
+        if (document.getElementById('aerodeck-update-banner')) return;
+        const b = document.createElement('div');
+        b.id = 'aerodeck-update-banner';
+        b.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+          'background:linear-gradient(180deg,#0ea5e9,#0284c7);color:#fff;padding:10px 18px;' +
+          'border-radius:14px;font:600 13px -apple-system,system-ui,sans-serif;' +
+          'box-shadow:0 8px 24px -8px rgba(14,165,233,.6),0 0 0 1px rgba(255,255,255,.15) inset;' +
+          'z-index:9999;display:flex;gap:12px;align-items:center;cursor:pointer;animation:slideUp .35s ease;';
+        b.innerHTML = '<span>✨ Nouvelle version disponible</span>' +
+          '<span style="background:#fff;color:#0284c7;padding:4px 10px;border-radius:8px;font-size:11px;">Recharger</span>';
+        b.onclick = () => {
+          // Demande au SW en attente de prendre le contrôle → déclenche le reload
+          navigator.serviceWorker.getRegistration().then(reg => {
+            if (reg && reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            else window.location.reload();
+          });
+        };
+        document.body.appendChild(b);
+      }
+    }
   </script>
 </body>
 </html>
