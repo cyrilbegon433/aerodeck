@@ -5845,6 +5845,8 @@
       const themeApplied = effectiveTheme(settings.theme || 'dark');
 
       const gh = settings.gh || { enabled: false, token: '', gistId: '', lastWrittenAt: 0 };
+      // État local : montrer/masquer le token (par défaut masqué pour la sécurité)
+      const [showToken, setShowToken] = useState(false);
       function updateGh(patch) {
         onUpdateSettings({ ...settings, gh: { ...gh, ...patch } });
       }
@@ -5885,14 +5887,31 @@
             </div>
             <div>
               <div className="label whitespace-nowrap">Personal Access Token (gist scope)</div>
-              <input
-                type="password"
-                className="input font-mono text-xs"
-                placeholder="github_pat_..."
-                value={gh.token || ''}
-                onChange={e=>updateGh({ token: e.target.value.trim() })}
-                autoComplete="off"
-              />
+              <div className="flex gap-2">
+                <input
+                  type={showToken ? 'text' : 'password'}
+                  className="input font-mono text-xs"
+                  placeholder="github_pat_..."
+                  value={gh.token || ''}
+                  onChange={e=>updateGh({ token: e.target.value.trim() })}
+                  autoComplete="off"
+                  spellCheck="false"
+                />
+                <button type="button"
+                  className="btn btn-secondary !py-1.5 !px-3 text-sm"
+                  onClick={()=>setShowToken(s => !s)}
+                  title={showToken ? 'Masquer' : 'Afficher'}>
+                  {showToken ? '🙈' : '👁'}
+                </button>
+              </div>
+              {gh.token && (
+                <div className="text-[10px] text-[var(--text-dim)] mt-1 font-mono">
+                  Longueur : {gh.token.length} caractères
+                  {!gh.token.startsWith('github_pat_') && gh.token.length > 0 && (
+                    <span className="text-[var(--warn)]"> · ⚠ devrait commencer par "github_pat_"</span>
+                  )}
+                </div>
+              )}
             </div>
             <div>
               <div className="label whitespace-nowrap">Gist ID</div>
