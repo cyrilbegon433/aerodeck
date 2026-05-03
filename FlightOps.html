@@ -6253,10 +6253,10 @@
             <div className="flex">
               {tabs.map(t => (
                 <button key={t.id} onClick={()=>setTab(t.id)}
-                  className={`tabbtn relative flex flex-col items-center py-2 px-4 min-w-[72px] flex-shrink-0 ${tab===t.id?'active':''}`}>
-                  <span className={`text-xl leading-none transition-transform ${tab===t.id?'scale-110':''}`}>{t.icon}</span>
-                  <span className="text-[10px] mt-1 whitespace-nowrap font-semibold">{t.label}</span>
-                  {tab===t.id && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-8 h-[2px] rounded-b bg-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]" />}
+                  className={`tabbtn relative flex flex-col items-center py-3 px-5 min-w-[88px] flex-shrink-0 ${tab===t.id?'active':''}`}>
+                  <span className={`text-2xl leading-none transition-transform ${tab===t.id?'scale-110':''}`}>{t.icon}</span>
+                  <span className="text-[11px] mt-1.5 whitespace-nowrap font-semibold">{t.label}</span>
+                  {tab===t.id && <span className="absolute top-0 left-1/2 -translate-x-1/2 w-10 h-[3px] rounded-b bg-[var(--accent)] shadow-[0_0_8px_var(--accent-glow)]" />}
                 </button>
               ))}
             </div>
