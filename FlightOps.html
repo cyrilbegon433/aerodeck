@@ -2486,27 +2486,34 @@
                       <div className="text-xs text-[var(--text-dim)] truncate">
                         {ac ? `${ac.registration} · ${ac.type}` : '—'}
                       </div>
-                      <div className="text-xs mt-0.5 truncate">
+                      {/* PIC et SIC chacun sur sa ligne pour meilleure lisibilité */}
+                      <div className="text-xs mt-0.5 space-y-0.5">
                         {pi ? (
-                          <>
+                          <div className="truncate">
                             <span className="text-[var(--accent)] font-semibold">PIC :</span>{' '}
                             <span>{pilotDisplayName(pi)}</span>
-                            {co && (
-                              <>
-                                {' · '}
-                                <span className="text-[var(--accent)] font-semibold">SIC :</span>{' '}
-                                <span>{pilotDisplayName(co)}</span>
-                              </>
-                            )}
-                          </>
+                          </div>
                         ) : (
-                          <span className="text-[var(--text-dim)] italic">Pilote non renseigné</span>
+                          <div className="text-[var(--text-dim)] italic">Pilote non renseigné</div>
+                        )}
+                        {co && (
+                          <div className="truncate">
+                            <span className="text-[var(--accent)] font-semibold">SIC :</span>{' '}
+                            <span>{pilotDisplayName(co)}</span>
+                          </div>
                         )}
                       </div>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-xs text-[var(--text-dim)]">FT / AT</div>
-                      <div className="font-mono tabular-nums">{fmtDuration(f.flightTime)} / {fmtDuration(f.airTime)}</div>
+                    {/* Bloc FT / AT : 2 colonnes, label centré au-dessus de la valeur */}
+                    <div className="flex gap-3 flex-shrink-0">
+                      <div className="text-center min-w-[50px]">
+                        <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">FT</div>
+                        <div className="font-mono tabular-nums text-sm">{fmtDuration(f.flightTime)}</div>
+                      </div>
+                      <div className="text-center min-w-[50px]">
+                        <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">AT</div>
+                        <div className="font-mono tabular-nums text-sm">{fmtDuration(f.airTime)}</div>
+                      </div>
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
