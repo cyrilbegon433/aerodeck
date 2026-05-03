@@ -1416,7 +1416,9 @@
               <button className="btn btn-secondary !py-1 !px-2 text-sm" onClick={onClose}>Fermer</button>
             </div>
             <div className="p-4">{children}</div>
-            {footer && <div className="sticky bottom-0 glass px-4 py-3 flex justify-end gap-2">{footer}</div>}
+            {/* Footer non-sticky : il reste en bas du contenu (scroll naturel)
+                au lieu de flotter en permanence et masquer le formulaire. */}
+            {footer && <div className="px-4 py-3 flex justify-end gap-2 border-t border-[var(--border-soft)]">{footer}</div>}
           </div>
         </div>
       );
