@@ -751,32 +751,59 @@
 
     // Règles métier pour valider un vol en statut "Complet" (vert).
     // Renvoie un tableau de chaînes décrivant ce qui manque ; si vide → vol validable.
-    function getCompleteValidationErrors(f) {
+    // L'argument `aircraftList` est optionnel : s'il est fourni, on détecte les
+    // simulateurs (kind === 'simulator') et on simplifie les règles (pas de
+    // W&B/FPL/OFPL/TTSN/Block Out/Block In demandés en simu).
+    function getCompleteValidationErrors(f, aircraftList = []) {
       const errors = [];
       if (!f) return ['Vol vide'];
+      const ac = (aircraftList || []).find(a => a.id === f.aircraftId);
+      const isSim = ac?.kind === 'simulator';
       // SIC requis pour Multiéquipage et Duo/Training (les deux nécessitent 2 pilotes à bord)
       if ((f.flightType === 'equipage' || f.flightType === 'duo_training') && !f.copilotId) {
         const label = f.flightType === 'equipage' ? 'Multiéquipage' : 'Duo/Training';
         errors.push(`SIC (co-pilote) manquant — requis pour ${label}`);
       }
-      // Heures Zulu complètes (les 4 horaires)
+      // Heures Zulu — en simu seulement TO + LDG ; en réel les 4 horaires.
       const missingTimes = [];
-      if (!f.blockOut) missingTimes.push('Block Out');
-      if (!f.takeOff)  missingTimes.push('Take Off');
-      if (!f.landing)  missingTimes.push('Landing');
-      if (!f.blockIn)  missingTimes.push('Block In');
+      if (isSim) {
+        if (!f.takeOff) missingTimes.push('Take Off');
+        if (!f.landing) missingTimes.push('Landing');
+      } else {
+        if (!f.blockOut) missingTimes.push('Block Out');
+        if (!f.takeOff)  missingTimes.push('Take Off');
+        if (!f.landing)  missingTimes.push('Landing');
+        if (!f.blockIn)  missingTimes.push('Block In');
+      }
       if (missingTimes.length) errors.push('Heure(s) manquante(s) : ' + missingTimes.join(', '));
-      // TTSN avant ET après
-      const ttsnB = String(f.ttsnBefore||'').trim();
-      const ttsnA = String(f.ttsnAfter||'').trim();
-      if (!ttsnB) errors.push('TTSN avant manquant');
-      if (!ttsnA) errors.push('TTSN après manquant');
-      // Documents requis : Weight & Balance, FPL, OFPL
-      const docs = f.documents || [];
-      if (!docs.some(d => d.type === 'wb'))   errors.push('Weight & Balance non joint');
-      if (!docs.some(d => d.type === 'fpl'))  errors.push('FPL non joint');
-      if (!docs.some(d => d.type === 'ofpl')) errors.push('OFPL non joint');
+      // TTSN et documents : exigés UNIQUEMENT pour vol réel (pas pour simu)
+      if (!isSim) {
+        const ttsnB = String(f.ttsnBefore||'').trim();
+        const ttsnA = String(f.ttsnAfter||'').trim();
+        if (!ttsnB) errors.push('TTSN avant manquant');
+        if (!ttsnA) errors.push('TTSN après manquant');
+        const docs = f.documents || [];
+        if (!docs.some(d => d.type === 'wb'))   errors.push('Weight & Balance non joint');
+        if (!docs.some(d => d.type === 'fpl'))  errors.push('FPL non joint');
+        if (!docs.some(d => d.type === 'ofpl')) errors.push('OFPL non joint');
+      }
       return errors;
+    }
+
+    // === Statut de vérification auto-calculé ===
+    // Logique pour un vol non-validé manuellement :
+    //   - Pas de Landing → 🔴 'pending' (vol planifié ou en cours)
+    //   - Landing rempli mais erreurs → 🟠 'incomplete'
+    //   - Tout est OK + l'utilisateur a cliqué "Complet" → 🟢 'complete'
+    // Le passage en 🟢 vert est TOUJOURS manuel (clic explicite du pilote / dispatch).
+    function computeAutoVerificationStatus(f, aircraftList = []) {
+      if (!f) return 'pending';
+      if (!f.landing) return 'pending';
+      const errs = getCompleteValidationErrors(f, aircraftList);
+      if (errs.length === 0) {
+        return f.verificationStatus === 'complete' ? 'complete' : 'incomplete';
+      }
+      return 'incomplete';
     }
 
     // Conservé pour rétrocompatibilité avec les anciens vols (champ functionType
@@ -1785,21 +1812,44 @@
       }, [isSim, f.takeOff, f.landing, f.takeOffDateOffset, f.landingDateOffset]);
 
       function handleSave() {
+        // === Validation MINIMALE pour enregistrer ===
+        // On veut pouvoir créer un vol PLANIFIÉ à l'avance avec juste les
+        // essentiels (date, avion, départ, arrivée, pilote). Les heures et le
+        // reste seront remplis pendant ou après le vol. Le statut Ops (vert)
+        // n'est exigé qu'au moment où on bascule explicitement sur "Complet".
+        if (!f.date) return alert('Date requise.');
         if (!f.aircraftId) return alert('Sélectionne un avion (onglet Avions pour en créer un).');
         if (!f.from || !f.to) return alert('Codes OACI départ/arrivée requis.');
-        if (flightTime == null) return alert('Block out / Block in invalides (format HHMM Zulu).');
-        if (timeValidation.errors.length > 0) {
-          return alert('Heures incohérentes :\n\n• ' + timeValidation.errors.join('\n• '));
+        if (!f.pilotId) return alert('Pilote (PIC) requis.');
+
+        // Si l'utilisateur a commencé à saisir des heures, on vérifie quand
+        // même la cohérence pour éviter des données absurdes (ex: BI < BO).
+        // Mais si aucune heure n'est saisie, on laisse passer (vol planifié).
+        const anyTime = !!(f.blockOut || f.takeOff || f.landing || f.blockIn);
+        if (anyTime && timeValidation.errors.length > 0) {
+          // Filtre les erreurs "heure manquante" — elles ne bloquent pas un vol planifié,
+          // sauf si l'utilisateur tente de passer en "Complet" (vérifié plus bas).
+          const blockingErrors = timeValidation.errors.filter(e => !e.startsWith('Heure(s) manquante'));
+          if (blockingErrors.length > 0) {
+            return alert('Heures incohérentes :\n\n• ' + blockingErrors.join('\n• '));
+          }
         }
-        // Si statut "Complet" : revérifier toutes les règles métier (sécurité serveur-like)
+        // Si statut "Complet" : on exige toutes les règles métier (heures, docs, etc.)
         if (f.verificationStatus === 'complete') {
           const errs = getCompleteValidationErrors(f);
           if (errs.length > 0) {
-            return alert("Vol marqué « Complet » mais il manque :\n\n• " + errs.join('\n• ')
-              + "\n\nComplète les éléments manquants ou bascule le statut sur « Incomplet » / « À vérifier ».");
+            // Si l'utilisateur avait validé "Complet" puis a retiré une donnée :
+            // on rétrograde silencieusement le statut au lieu de bloquer l'enregistrement.
+            f.verificationStatus = computeAutoVerificationStatus(f);
           }
         }
-        const out = { ...f, id: f.id || ('flt_' + Date.now()), flightTime, airTime };
+        // Statut auto-calculé pour tous les vols non-Complet (rouge si pas de landing,
+        // orange si landing+erreurs). Le pilote/dispatch peut explicitement passer en
+        // vert via le bouton "Marquer Complet".
+        const finalStatus = f.verificationStatus === 'complete'
+          ? 'complete'
+          : computeAutoVerificationStatus(f);
+        const out = { ...f, verificationStatus: finalStatus, id: f.id || ('flt_' + Date.now()), flightTime, airTime };
         onSave(out);
       }
 
@@ -1997,38 +2047,57 @@
             </div>
           </div>
 
-          {/* Décollages / Atterrissages — un compteur par pilote pour suivi des currencies */}
-          <div className="card p-3 bg-[var(--bg-elev)]">
-            <div className="label">Décollages / Atterrissages par pilote</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="text-xs text-[var(--accent)] font-semibold uppercase tracking-wider mb-1">PIC</div>
-                <div className="grid grid-cols-2 gap-2">
+          {/* Décollages / Atterrissages — un compteur par pilote pour suivi des currencies.
+              Indication orange si le vol est terminé (Landing rempli) mais qu'aucun décollage
+              ni atterrissage n'a été comptabilisé pour personne — peut être normal (avion
+              resté au sol pour problème) mais c'est un point d'attention pour le pilote. */}
+          {(() => {
+            const totalTO = (parseInt(f.takeoffsPic,10)||0) + (parseInt(f.takeoffsSic,10)||0);
+            const totalLDG = (parseInt(f.landingsPic,10)||0) + (parseInt(f.landingsSic,10)||0);
+            const allZero = totalTO === 0 && totalLDG === 0;
+            const flightDone = !!f.landing;
+            const showWarning = flightDone && allZero;
+            return (
+              <div className="card p-3 bg-[var(--bg-elev)]">
+                <div className="label">Décollages / Atterrissages par pilote</div>
+                <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <div className="label">Décol.</div>
-                    <input type="number" min="0" className="input" value={f.takeoffsPic||0} onChange={e=>set('takeoffsPic', parseInt(e.target.value||'0',10))} />
+                    <div className="text-xs text-[var(--accent)] font-semibold uppercase tracking-wider mb-1">PIC</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="label">Décol.</div>
+                        <input type="number" min="0" className="input" value={f.takeoffsPic||0} onChange={e=>set('takeoffsPic', parseInt(e.target.value||'0',10))} />
+                      </div>
+                      <div>
+                        <div className="label">Atter.</div>
+                        <input type="number" min="0" className="input" value={f.landingsPic||0} onChange={e=>set('landingsPic', parseInt(e.target.value||'0',10))} />
+                      </div>
+                    </div>
                   </div>
                   <div>
-                    <div className="label">Atter.</div>
-                    <input type="number" min="0" className="input" value={f.landingsPic||0} onChange={e=>set('landingsPic', parseInt(e.target.value||'0',10))} />
+                    <div className="text-xs text-[var(--accent)] font-semibold uppercase tracking-wider mb-1">SIC</div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="label">Décol.</div>
+                        <input type="number" min="0" className="input" value={f.takeoffsSic||0} onChange={e=>set('takeoffsSic', parseInt(e.target.value||'0',10))} />
+                      </div>
+                      <div>
+                        <div className="label">Atter.</div>
+                        <input type="number" min="0" className="input" value={f.landingsSic||0} onChange={e=>set('landingsSic', parseInt(e.target.value||'0',10))} />
+                      </div>
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div>
-                <div className="text-xs text-[var(--accent)] font-semibold uppercase tracking-wider mb-1">SIC</div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <div className="label">Décol.</div>
-                    <input type="number" min="0" className="input" value={f.takeoffsSic||0} onChange={e=>set('takeoffsSic', parseInt(e.target.value||'0',10))} />
+                {showWarning && (
+                  <div className="mt-2 text-xs px-2 py-1.5 rounded-md bg-[var(--warn)]/15 text-[var(--warn)] border border-[var(--warn)]/30">
+                    ⚠ Aucun décollage / atterrissage comptabilisé pour ce vol terminé. Si l'avion est
+                    resté au sol (problème, retour au parking sans vol), c'est OK — sinon pense à
+                    saisir au moins 1/1 pour le PIC (suivi currencies).
                   </div>
-                  <div>
-                    <div className="label">Atter.</div>
-                    <input type="number" min="0" className="input" value={f.landingsSic||0} onChange={e=>set('landingsSic', parseInt(e.target.value||'0',10))} />
-                  </div>
-                </div>
+                )}
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Approches : affichées uniquement en IFR. En VFR ça n'a pas de sens. */}
           {f.rules === 'IFR' && (
@@ -2154,48 +2223,73 @@
             <textarea className="textarea" rows={2} value={f.notes} onChange={e=>set('notes', e.target.value)} placeholder="Remarques, METAR, passagers, etc." />
           </div>
 
-          {/* Statut vérification (Ops) — 3 boutons colorés en bas de la fiche.
-              Le bouton "Complet" est bloqué tant que toutes les règles ne sont pas remplies
-              (SIC pour Multiéquipage/Duo, heures Zulu, TTSN, W&B, FPL, OFPL). */}
+          {/* Statut vérification (Ops) — auto-calculé d'après les données du vol.
+              🔴 Rouge tant que le Landing n'est pas saisi (vol planifié / en cours)
+              🟠 Orange si Landing rempli mais des données manquent
+              🟢 Vert UNIQUEMENT si l'utilisateur clique "Marquer Complet" et que tout est rempli.
+              Le passage en vert est toujours manuel (responsabilité pilote / dispatch). */}
           {(() => {
             const completeErrors = getCompleteValidationErrors(f);
             const canComplete = completeErrors.length === 0;
+            const autoStatus = computeAutoVerificationStatus(f);
+            // Statut effectif affiché : si l'utilisateur a déjà cliqué "Complet" et que tout
+            // tient encore la route, on garde le vert. Sinon on prend l'auto.
+            const effectiveStatus = (f.verificationStatus === 'complete' && canComplete) ? 'complete' : autoStatus;
+            const def = VERIFICATION_STATUSES[effectiveStatus];
             return (
               <div className="card p-3">
                 <div className="label">Statut de vérification (Ops)</div>
-                <div className="grid grid-cols-3 gap-2">
-                  {Object.entries(VERIFICATION_STATUSES).map(([id, def]) => {
-                    const blocked = id === 'complete' && !canComplete;
-                    return (
-                      <button key={id} type="button"
-                        disabled={blocked}
-                        onClick={()=>{
-                          if (blocked) {
-                            alert("Impossible de valider en « Complet ». Il manque :\n\n• " + completeErrors.join('\n• '));
-                            return;
-                          }
-                          set('verificationStatus', id);
-                        }}
-                        className={`btn !text-white font-semibold ${f.verificationStatus===id?'ring-2 ring-white scale-105':''} ${blocked?'opacity-40 cursor-not-allowed':''}`}
-                        style={{ background: def.color }}>
-                        {def.label}
-                      </button>
-                    );
-                  })}
+                {/* Pastille de statut actuel (auto, lecture seule) */}
+                <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: def.color + '22', borderLeft: `5px solid ${def.color}` }}>
+                  <span className="text-2xl" style={{ color: def.color }}>●</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-base" style={{ color: def.color }}>{def.label}</div>
+                    <div className="text-xs text-[var(--text-dim)]">
+                      {effectiveStatus === 'pending' && 'Vol planifié ou en cours — passera automatiquement en orange dès la saisie de Landing.'}
+                      {effectiveStatus === 'incomplete' && (canComplete
+                        ? 'Toutes les données sont là. Clique « Marquer Complet » ci-dessous quand tu valides la fiche.'
+                        : `Il manque ${completeErrors.length} élément(s) avant de pouvoir valider.`)}
+                      {effectiveStatus === 'complete' && '✓ Vol validé Complet par le pilote / dispatch.'}
+                    </div>
+                  </div>
                 </div>
-                {!canComplete && (
-                  <div className="text-xs text-[var(--warn)] mt-2">
+
+                {/* Bouton de validation manuelle — vert seulement si tout est OK */}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {f.verificationStatus !== 'complete' ? (
+                    <button type="button"
+                      disabled={!canComplete}
+                      onClick={()=>set('verificationStatus', 'complete')}
+                      className={`btn !text-white font-semibold ${canComplete ? '' : 'opacity-40 cursor-not-allowed'}`}
+                      style={{ background: VERIFICATION_STATUSES.complete.color }}
+                      title={canComplete ? 'Marquer ce vol comme validé Complet' : 'Compléter d\'abord les données manquantes'}>
+                      ✓ Marquer Complet
+                    </button>
+                  ) : (
+                    <button type="button"
+                      onClick={()=>set('verificationStatus', 'pending')}
+                      className="btn btn-secondary"
+                      title="Annuler la validation Complet (revient au statut auto)">
+                      ↶ Annuler la validation
+                    </button>
+                  )}
+                </div>
+
+                {/* Liste des conditions manquantes pour passer Complet */}
+                {!canComplete && f.landing && (
+                  <div className="text-xs text-[var(--warn)] mt-3">
                     <div className="font-semibold mb-1">⚠ Conditions manquantes pour « Complet » :</div>
                     <ul className="list-disc pl-5 space-y-0.5">
                       {completeErrors.map((err,i) => <li key={i}>{err}</li>)}
                     </ul>
                   </div>
                 )}
+
                 <div className="mt-2">
-                  <Hint title="Statut Ops — visibilité">
-                    Visible aux pilotes via un liserai de couleur à gauche de la carte vol (onglet Vol)
-                    et des bannières du calendrier. Tant que le vol n'est pas Complet, il reste
-                    visible comme « À vérifier » ou « Incomplet » pour l'équipe Ops.
+                  <Hint title="Comment marche le statut auto">
+                    🔴 Rouge = vol planifié ou en cours (pas encore atterri).<br/>
+                    🟠 Orange = atterri mais des données manquent (heures, TTSN, W&amp;B, FPL, OFPL…).<br/>
+                    🟢 Vert = pilote ou dispatch a explicitement validé la fiche en cliquant « Marquer Complet ». Possible uniquement quand toutes les conditions sont remplies.
                   </Hint>
                 </div>
               </div>
