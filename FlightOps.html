@@ -5523,6 +5523,7 @@
       const units = isFuel ? ['L','kg','USG'] : ['qt','L'];
       const labelQty = 'Quantité';
       const [menuOpen, setMenuOpen] = useState(false);
+      const [viewingInvoice, setViewingInvoice] = useState(false);
 
       const { triggerCamera, triggerFiles, busy, inputs } = useScanToExpense({
         categoryId, addExpense, aircraftId, flightDate,
@@ -5562,42 +5563,53 @@
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <div className="label">Fournisseur</div>
-              <input className="input" placeholder={isFuel?'ex: Total Energies Aviation':'ex: AeroShell W100'} value={entry.supplier||''} onChange={e=>set(isFuel?'supplier':'brand', e.target.value)} />
-            </div>
-            <div>
-              <div className="label">Montant</div>
-              <div className="flex gap-1">
-                <input type="number" step="0.01" className="input" placeholder="0" value={entry.amount} onChange={e=>set('amount', e.target.value)} />
-                <select className="select max-w-20" value={entry.currency||'EUR'} onChange={e=>set('currency', e.target.value)}>
-                  <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option>
-                </select>
-              </div>
-            </div>
+          {/* Fournisseur en pleine largeur, Montant en dessous (gros chiffre),
+              Devise sous le Montant — pas de tassement, tout est lisible. */}
+          <div>
+            <div className="label whitespace-nowrap">Fournisseur</div>
+            <input className="input" placeholder={isFuel?'ex: Total Energies Aviation':'ex: AeroShell W100'} value={entry.supplier||''} onChange={e=>set(isFuel?'supplier':'brand', e.target.value)} />
+          </div>
+          <div>
+            <div className="label whitespace-nowrap">Montant</div>
+            <input type="number" step="0.01"
+                   className="input font-mono text-lg"
+                   placeholder="0.00"
+                   value={entry.amount} onChange={e=>set('amount', e.target.value)} />
+          </div>
+          <div>
+            <div className="label whitespace-nowrap">Devise</div>
+            <select className="select" value={entry.currency||'EUR'} onChange={e=>set('currency', e.target.value)}>
+              <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option><option>CAD</option>
+            </select>
           </div>
           <div className="relative flex flex-wrap gap-2">
-            <button type="button" className="btn btn-secondary" disabled={busy}
+            {/* Boutons compacts pour gagner de la place visuelle */}
+            <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" disabled={busy}
               onClick={()=>setMenuOpen(o=>!o)}>
-              {busy ? 'Import…' : (entry.invoiceDocId ? '🔁 Remplacer la facture' : '🧾 Scanner / Importer la facture')}
+              {busy ? 'Import…' : (entry.invoiceDocId ? '🔁 Remplacer' : '🧾 Scanner / Importer la facture')}
             </button>
             {entry.invoiceDocId && !busy && (
-              <button type="button"
-                className="btn btn-danger"
-                onClick={()=>{
-                  if (!confirm('Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l\'onglet Dépenses (non supprimée).')) return;
-                  // Détache la facture du plein sans toucher à la dépense déjà créée.
-                  onChange({
-                    ...entry,
-                    invoiceDocId: '',
-                    invoiceDataUrl: '',
-                    invoiceFileName: '',
-                    invoiceMime: '',
-                  });
-                }}>
-                🗑 Retirer la facture
-              </button>
+              <>
+                <button type="button"
+                  className="btn btn-primary !py-1 !px-2 text-xs"
+                  onClick={()=>setViewingInvoice(true)}>
+                  👁 Voir la facture
+                </button>
+                <button type="button"
+                  className="btn btn-danger !py-1 !px-2 text-xs"
+                  onClick={()=>{
+                    if (!confirm('Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l\'onglet Dépenses (non supprimée).')) return;
+                    onChange({
+                      ...entry,
+                      invoiceDocId: '',
+                      invoiceDataUrl: '',
+                      invoiceFileName: '',
+                      invoiceMime: '',
+                    });
+                  }}>
+                  🗑 Retirer
+                </button>
+              </>
             )}
             {menuOpen && (
               <>
@@ -5617,6 +5629,17 @@
             {inputs}
           </div>
           <InvoicePreview entry={entry} />
+          {/* Visionneuse interne pour la facture (même UX que les W&B/FPL/OFPL) */}
+          {viewingInvoice && entry.invoiceDocId && (
+            <DocViewer
+              doc={{
+                dataUrl: entry.invoiceDataUrl,
+                fileName: entry.invoiceFileName || 'Facture',
+                mime: entry.invoiceMime,
+              }}
+              onClose={()=>setViewingInvoice(false)}
+            />
+          )}
           {entry.notes && <div className="text-xs text-[var(--text-dim)] italic">{entry.notes}</div>}
         </div>
       );
