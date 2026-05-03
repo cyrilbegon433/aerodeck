@@ -6754,14 +6754,24 @@
       // ⚠ IMPORTANT : on EXCLUT settings.gh (token + gistId) du snapshot,
       // sinon GitHub détecte le token dans le contenu du gist et le révoque
       // automatiquement par sécurité. Le token reste local à chaque appareil.
+      // En plus on passe le JSON dans un sanitizer qui retire toute chaîne
+      // ressemblant à un token GitHub (par sécurité, au cas où il se glisserait
+      // quelque part — ex: collé par erreur dans une note de vol).
       function buildSnapshot() {
         const { gh: _ghStripped, ...settingsClean } = settings || {};
-        return {
+        const raw = {
           __sync: { lastWrittenAt: Date.now(), version: 1 },
           flights, aircraft, documents, categories,
           settings: { ...settingsClean, language: lang },
           maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods,
         };
+        // Sanitisation profonde : remplace tous les motifs de tokens GitHub
+        // par "[redacted-pat]" dans tout le JSON sérialisé.
+        const json = JSON.stringify(raw);
+        const safe = json.replace(/github_pat_[A-Za-z0-9_]+/g, '[redacted-pat]')
+                         .replace(/ghp_[A-Za-z0-9]{36,}/g, '[redacted-classic-pat]')
+                         .replace(/ghs_[A-Za-z0-9]{36,}/g, '[redacted-server-token]');
+        return JSON.parse(safe);
       }
       // Applique un snapshot reçu (remplace l'état local)
       function applySnapshot(snap) {
