@@ -1766,6 +1766,21 @@
         set('approaches', f.approaches.includes(t) ? f.approaches.filter(x=>x!==t) : [...f.approaches, t]);
       }
       function fillNow(field) { set(field, nowZuluHHMM()); }
+      // Détecte si l'avion sélectionné est un simulateur — masque alors les blocs
+      // sans intérêt (carburant, huile, W&B, FPL, OFPL).
+      const selectedAircraft = aircraft.find(x => x.id === f.aircraftId);
+      const isSim = selectedAircraft?.kind === 'simulator';
+      // En simu, pas de roulage : on aligne automatiquement Block Out = Take Off
+      // et Block In = Landing pour que le calcul Flight Time existant fonctionne.
+      useEffect(() => {
+        if (!isSim) return;
+        const updates = {};
+        if (f.takeOff && f.blockOut !== f.takeOff) updates.blockOut = f.takeOff;
+        if (f.landing && f.blockIn !== f.landing) updates.blockIn = f.landing;
+        if (f.takeOffDateOffset != null && f.blockOutDateOffset !== f.takeOffDateOffset) updates.blockOutDateOffset = f.takeOffDateOffset;
+        if (f.landingDateOffset != null && f.blockInDateOffset !== f.landingDateOffset) updates.blockInDateOffset = f.landingDateOffset;
+        if (Object.keys(updates).length > 0) setF(prev => ({ ...prev, ...updates }));
+      }, [isSim, f.takeOff, f.landing, f.takeOffDateOffset, f.landingDateOffset]);
 
       function handleSave() {
         if (!f.aircraftId) return alert('Sélectionne un avion (onglet Avions pour en créer un).');
@@ -1836,12 +1851,20 @@
               </Hint>
             </div>
             <div className="grid grid-cols-2 gap-3">
-              {[
-                ['blockOut','Block Out','blockOutDateOffset'],
-                ['takeOff', 'Take Off', 'takeOffDateOffset'],
-                ['landing', 'Landing',  'landingDateOffset'],
-                ['blockIn', 'Block In', 'blockInDateOffset'],
-              ].map(([k,label,offsetKey]) => {
+              {/* En simu, on n'a pas de roulage : on ne montre que Take Off et Landing.
+                  En vol réel, on garde les 4 (Block Out / TO / LDG / Block In). */}
+              {(isSim
+                ? [
+                    ['takeOff', 'Take Off', 'takeOffDateOffset'],
+                    ['landing', 'Landing',  'landingDateOffset'],
+                  ]
+                : [
+                    ['blockOut','Block Out','blockOutDateOffset'],
+                    ['takeOff', 'Take Off', 'takeOffDateOffset'],
+                    ['landing', 'Landing',  'landingDateOffset'],
+                    ['blockIn', 'Block In', 'blockInDateOffset'],
+                  ]
+              ).map(([k,label,offsetKey]) => {
                 const off = f[offsetKey] || 0;
                 const resolvedDate = addDaysISO(f.date, off);
                 return (
@@ -1881,24 +1904,29 @@
                 <div className="text-2xl font-mono tabular-nums">{fmtDuration(flightTime)}</div>
               </div>
             </div>
-            {/* TTSN avion (Total Time Since New) — TTSN après = TTSN avant + Air Time */}
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div>
-                <div className="label">TTSN avant (h)</div>
-                <input type="number" step="0.1" className="input" placeholder="2540.6"
-                  value={f.ttsnBefore} onChange={e=>set('ttsnBefore', e.target.value)} />
-              </div>
-              <div>
-                <div className="label">TTSN après (h)</div>
-                <input type="number" step="0.1" className="input" placeholder="2542.0"
-                  value={f.ttsnAfter} onChange={e=>set('ttsnAfter', e.target.value)} />
-              </div>
-            </div>
-            <div className="mt-1">
-              <Hint title="Calcul TTSN">
-                TTSN après = TTSN avant + Air Time (le roulage ne compte pas). Recalculé automatiquement.
-              </Hint>
-            </div>
+            {/* TTSN avion (Total Time Since New) — TTSN après = TTSN avant + Air Time.
+                Caché en simu : un sim n'a pas d'heures cellule. */}
+            {!isSim && (
+              <>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="label">TTSN avant (h)</div>
+                    <input type="number" step="0.1" className="input" placeholder="2540.6"
+                      value={f.ttsnBefore} onChange={e=>set('ttsnBefore', e.target.value)} />
+                  </div>
+                  <div>
+                    <div className="label">TTSN après (h)</div>
+                    <input type="number" step="0.1" className="input" placeholder="2542.0"
+                      value={f.ttsnAfter} onChange={e=>set('ttsnAfter', e.target.value)} />
+                  </div>
+                </div>
+                <div className="mt-1">
+                  <Hint title="Calcul TTSN">
+                    TTSN après = TTSN avant + Air Time (le roulage ne compte pas). Recalculé automatiquement.
+                  </Hint>
+                </div>
+              </>
+            )}
             {timeValidation.errors.length > 0 && (
               <div className="mt-3 p-2 rounded-lg border border-[var(--err)] bg-[var(--err)]/10 text-sm">
                 <div className="font-semibold text-[var(--err)] mb-1">⚠ Heures incohérentes — l'enregistrement est bloqué</div>
@@ -2054,26 +2082,52 @@
             )}
           </div>
 
-          {/* ---- Carburant Avion (multi-pleins, scan facture auto-syncé Dépenses) ---- */}
-          <FuelEntriesEditor
-            entries={f.fuelEntries||[]}
-            onChange={(arr)=>set('fuelEntries', arr)}
-            addExpense={addExpense}
-            aircraftId={f.aircraftId}
-            flightDate={f.date}
-            defaultUnit={settings.defaultFuelUnit||'L'}
-            defaultCurrency={settings.defaultCurrency||'EUR'}
-          />
+          {/* Pour un vol en simulateur : carburant, huile, W&B, FPL, OFPL n'ont
+              pas de sens. Ces blocs ne s'affichent que pour un avion réel. */}
+          {!isSim && (
+            <>
+              {/* ---- Carburant Avion (multi-pleins, scan facture auto-syncé Dépenses) ---- */}
+              <FuelEntriesEditor
+                entries={f.fuelEntries||[]}
+                onChange={(arr)=>set('fuelEntries', arr)}
+                addExpense={addExpense}
+                aircraftId={f.aircraftId}
+                flightDate={f.date}
+                defaultUnit={settings.defaultFuelUnit||'L'}
+                defaultCurrency={settings.defaultCurrency||'EUR'}
+              />
 
-          {/* ---- Huile moteur (qté + moteur D/G, sans montant ni scan) ---- */}
-          <OilEntriesEditor
-            entries={f.oilEntries||[]}
-            onChange={(arr)=>set('oilEntries', arr)}
-            defaultUnit={settings.defaultOilUnit||'qt'}
-          />
+              {/* ---- Huile moteur (qté + moteur D/G, sans montant ni scan) ---- */}
+              <OilEntriesEditor
+                entries={f.oilEntries||[]}
+                onChange={(arr)=>set('oilEntries', arr)}
+                defaultUnit={settings.defaultOilUnit||'qt'}
+              />
 
-          {/* ---- Documents joints au vol (W&B / FPL / OFPL) ---- */}
-          <FlightDocumentsEditor docs={f.documents||[]} onChange={(d)=>set('documents', d)} />
+              {/* ---- Documents joints au vol (W&B / FPL / OFPL) ---- */}
+              <FlightDocumentsEditor docs={f.documents||[]} onChange={(d)=>set('documents', d)} />
+            </>
+          )}
+
+          {/* Bandeau visuel quand on est en mode simulateur */}
+          {isSim && selectedAircraft && (
+            <div className="card p-3 bg-[var(--accent)]/10 border-[var(--accent)]/40">
+              <div className="text-sm flex items-center gap-2">
+                <span className="text-base">🖥️</span>
+                <span className="font-semibold text-[var(--accent)]">Vol en simulateur</span>
+              </div>
+              <div className="text-xs text-[var(--text-dim)] mt-1">
+                {selectedAircraft.registration} · {selectedAircraft.engineCount === 1 ? 'Monomoteur' : selectedAircraft.engineCount === 2 ? 'Bimoteur' : `${selectedAircraft.engineCount}-moteur`}
+                {selectedAircraft.engineType && ` · ${
+                  selectedAircraft.engineType === 'piston' ? 'Piston'
+                  : selectedAircraft.engineType === 'turbine' ? 'Turbine'
+                  : selectedAircraft.engineType === 'jet' ? 'Jet'
+                  : selectedAircraft.engineType === 'electric' ? 'Élec.' : selectedAircraft.engineType
+                }`}
+                {' '}— les blocs Carburant, Huile, W&amp;B, FPL et OFPL sont masqués (sans intérêt en simu).
+              </div>
+            </div>
+          )}
 
 
           <div>
@@ -2213,7 +2267,14 @@
                      title={`Statut Ops : ${verifLabel(f.verificationStatus||'pending')}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-sm text-[var(--text-dim)]">{f.date}</div>
+                      <div className="text-sm text-[var(--text-dim)] flex items-center gap-2">
+                        <span>{f.date}</span>
+                        {ac?.kind === 'simulator' && (
+                          <span className="badge !bg-[var(--accent)]/15 !text-[var(--accent)] !border-[var(--accent)]/40 !py-0.5 !px-1.5 text-[10px]" title="Vol en simulateur">
+                            🖥️ SIM
+                          </span>
+                        )}
+                      </div>
                       <div className="text-lg font-semibold tracking-wide">
                         {f.from} <span className="text-[var(--text-dim)]">→</span> {f.to}
                       </div>
@@ -2322,12 +2383,13 @@
     function AircraftForm({ initial, flights = [], onSave, onCancel }) {
       const blank = {
         id: null,
+        kind: 'real',           // 'real' = avion physique, 'simulator' = simu (FFS, FTD, AATD…)
         registration: '',
         type: '',
         serial: '',
         engineCount: 1,         // 1 = mono, 2 = bi, etc.
         engineType: 'piston',   // 'piston', 'turbine', 'jet', 'electric'
-        ttsn: 0,                 // TTSN (Total Time Since New) heure totale
+        ttsn: 0,                 // TTSN (Total Time Since New) heure totale — non utilisé pour simu
         // Champs legacy conservés pour compatibilité (non affichés)
         airframeStartHours: 0,
         engineStartHours: 0,
@@ -2368,22 +2430,41 @@
         set('deadlines', a.deadlines.filter(d=>d.id!==id));
       }
 
+      const isSim = a.kind === 'simulator';
       return (
         <div className="space-y-3">
+          {/* Toggle Avion réel / Simulateur — détermine ce qui est affiché en dessous */}
+          <div className="card p-3 bg-[var(--bg-elev)]">
+            <div className="label">Type d'appareil</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                ['real',      '✈ Avion réel'],
+                ['simulator', '🖥️ Simulateur'],
+              ].map(([id, label]) => (
+                <button key={id} type="button"
+                  onClick={()=>set('kind', id)}
+                  className={`btn ${a.kind===id ? 'btn-primary' : 'btn-secondary'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="label">Immatriculation</div>
-              <input className="input uppercase" placeholder="F-HABC" value={a.registration} onChange={e=>set('registration', e.target.value.toUpperCase())} />
+              <div className="label whitespace-nowrap">Immatriculation</div>
+              <input className="input uppercase" placeholder={isSim ? 'SIM-FFS-A320' : 'F-HABC'} value={a.registration} onChange={e=>set('registration', e.target.value.toUpperCase())} />
             </div>
             <div>
-              <div className="label">Type</div>
-              <input className="input" placeholder="Cessna 172, PC-12, Phenom 300…" value={a.type} onChange={e=>set('type', e.target.value)} />
+              <div className="label whitespace-nowrap">Type</div>
+              <input className="input" placeholder={isSim ? 'FFS Level D A320, FTD…' : 'Cessna 172, PC-12, Phenom 300…'} value={a.type} onChange={e=>set('type', e.target.value)} />
             </div>
           </div>
-          <div>
-            <div className="label">N° de série</div>
-            <input className="input" value={a.serial} onChange={e=>set('serial', e.target.value)} />
-          </div>
+          {!isSim && (
+            <div>
+              <div className="label">N° de série</div>
+              <input className="input" value={a.serial} onChange={e=>set('serial', e.target.value)} />
+            </div>
+          )}
           <div className="card p-3 bg-[var(--bg-elev)]">
             <div className="label">Caractéristiques moteur</div>
             <div className="grid grid-cols-2 gap-3">
@@ -2407,9 +2488,8 @@
               </Hint>
             </div>
           </div>
-          {/* TTSN — heure totale de l'avion. Sert de référence pour le calcul
-              des heures cellule sur les vols. Doit concorder avec le ttsnAfter
-              du dernier vol enregistré. */}
+          {/* TTSN — caché pour les simulateurs (un sim n'a pas d'heures cellule). */}
+          {!isSim && (
           <div className="card p-3 bg-[var(--bg-elev)]">
             <div className="label whitespace-nowrap">TTSN <span className="normal-case tracking-normal opacity-70">(heure total)</span></div>
             <input type="number" step="0.1" className="input font-mono" placeholder="2542.0"
@@ -2437,7 +2517,10 @@
               </Hint>
             </div>
           </div>
+          )}
 
+          {/* Échéances — cachées pour les simulateurs (sans assurance/CDN/visites). */}
+          {!isSim && (
           <div className="card p-3">
             <div className="label">Échéances (assurance, CDN, visites…)</div>
             {(a.deadlines||[]).length === 0 && <div className="text-sm text-[var(--text-dim)]">Aucune échéance pour l'instant.</div>}
@@ -2465,6 +2548,7 @@
               <button className="btn btn-secondary" onClick={addDeadline}>+ Ajouter échéance</button>
             </div>
           </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn btn-secondary" onClick={onCancel}>Annuler</button>
@@ -2499,6 +2583,70 @@
         return parseFloat(ac.airframeStartHours) || 0;
       }
 
+      // Séparation avions réels vs simulateurs (par défaut kind='real' si manquant)
+      const realAircraft = aircraft.filter(a => (a.kind || 'real') === 'real');
+      const simulators   = aircraft.filter(a => a.kind === 'simulator');
+
+      // Card visuel pour 1 avion (factorisé pour réutilisation dans 2 sections)
+      function AircraftCard({ a, showTTSN = true }) {
+        const ttsn = currentTTSN(a);
+        const upcoming = (a.deadlines||[]).filter(d => {
+          if (d.date) {
+            const days = Math.ceil((new Date(d.date) - new Date()) / 86400000);
+            return days <= 60;
+          }
+          if (d.hours) {
+            const remaining = parseFloat(d.hours) - ttsn;
+            return remaining <= 25;
+          }
+          return false;
+        });
+        const flownH = totalHoursFor(a.id);
+        return (
+          <div className="card p-3" onClick={()=>{ setEditing(a); setShowForm(true); }}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-lg font-semibold tracking-wide">{a.registration}</div>
+                <div className="text-sm text-[var(--text-dim)] truncate">{a.type} {a.serial && `· s/n ${a.serial}`}</div>
+                <div className="flex flex-wrap gap-1 mt-1">
+                  {a.engineCount && (
+                    <span className="badge">
+                      {a.engineCount === 1 ? 'Mono' : a.engineCount === 2 ? 'Bi' : `${a.engineCount}-mot.`}
+                    </span>
+                  )}
+                  {a.engineType && (
+                    <span className="badge">
+                      {a.engineType === 'piston' ? 'Piston'
+                       : a.engineType === 'turbine' ? 'Turbine'
+                       : a.engineType === 'jet' ? 'Jet'
+                       : a.engineType === 'electric' ? 'Élec.' : a.engineType}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="text-right text-sm flex-shrink-0">
+                {showTTSN ? (
+                  <>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">TTSN</div>
+                    <div className="font-mono tabular-nums text-[var(--accent)] text-base">{ttsn.toFixed(1)} h</div>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">Heures simu</div>
+                    <div className="font-mono tabular-nums text-[var(--accent)] text-base">{flownH.toFixed(1)} h</div>
+                  </>
+                )}
+              </div>
+            </div>
+            {upcoming.length > 0 && (
+              <div className="mt-2 text-xs text-[var(--warn)]">
+                ⚠ {upcoming.length} échéance(s) proche(s) : {upcoming.map(u=>u.label).join(', ')}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       return (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -2512,56 +2660,27 @@
             </div>
           )}
 
-          <div className="space-y-2">
-            {aircraft.map(a => {
-              const ttsn = currentTTSN(a);
-              const upcoming = (a.deadlines||[]).filter(d => {
-                if (d.date) {
-                  const days = Math.ceil((new Date(d.date) - new Date()) / 86400000);
-                  return days <= 60;
-                }
-                if (d.hours) {
-                  const remaining = parseFloat(d.hours) - ttsn;
-                  return remaining <= 25;
-                }
-                return false;
-              });
-              return (
-                <div key={a.id} className="card p-3" onClick={()=>{ setEditing(a); setShowForm(true); }}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-lg font-semibold tracking-wide">{a.registration}</div>
-                      <div className="text-sm text-[var(--text-dim)] truncate">{a.type} {a.serial && `· s/n ${a.serial}`}</div>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {a.engineCount && (
-                          <span className="badge">
-                            {a.engineCount === 1 ? 'Mono' : a.engineCount === 2 ? 'Bi' : `${a.engineCount}-mot.`}
-                          </span>
-                        )}
-                        {a.engineType && (
-                          <span className="badge">
-                            {a.engineType === 'piston' ? 'Piston'
-                             : a.engineType === 'turbine' ? 'Turbine'
-                             : a.engineType === 'jet' ? 'Jet'
-                             : a.engineType === 'electric' ? 'Élec.' : a.engineType}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="text-right text-sm flex-shrink-0">
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">TTSN</div>
-                      <div className="font-mono tabular-nums text-[var(--accent)] text-base">{ttsn.toFixed(1)} h</div>
-                    </div>
-                  </div>
-                  {upcoming.length > 0 && (
-                    <div className="mt-2 text-xs text-[var(--warn)]">
-                      ⚠ {upcoming.length} échéance(s) proche(s) : {upcoming.map(u=>u.label).join(', ')}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+          {/* Section Avions réels */}
+          {realAircraft.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-base">✈</span>
+                <h3 className="text-sm uppercase tracking-wider text-[var(--text-dim)] font-semibold">Avions ({realAircraft.length})</h3>
+              </div>
+              {realAircraft.map(a => <AircraftCard key={a.id} a={a} showTTSN={true} />)}
+            </div>
+          )}
+
+          {/* Section Simulateurs */}
+          {simulators.length > 0 && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 mt-3">
+                <span className="text-base">🖥️</span>
+                <h3 className="text-sm uppercase tracking-wider text-[var(--text-dim)] font-semibold">Simulateurs ({simulators.length})</h3>
+              </div>
+              {simulators.map(a => <AircraftCard key={a.id} a={a} showTTSN={false} />)}
+            </div>
+          )}
 
           <Modal
             open={showForm}
