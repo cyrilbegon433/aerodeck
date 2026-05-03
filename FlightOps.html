@@ -3120,7 +3120,12 @@
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">{t('exp.title')}</h2>
-            <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>{t('exp.new')}</button>
+            {/* Bouton "Nouvelle facture" caché quand une catégorie est sélectionnée :
+                il y a un bouton dédié dans le panneau de détail qui pré-remplit
+                la catégorie automatiquement (workflow plus naturel). */}
+            {filterCat === 'all' && (
+              <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>{t('exp.new')}</button>
+            )}
           </div>
 
           {/* === HERO : Total + nb factures, design type "carte bancaire" === */}
@@ -3228,8 +3233,8 @@
                   ✕ Retirer le filtre
                 </button>
               </div>
-              {/* Total de la sélection */}
-              <div className="flex items-end justify-between gap-3 mb-3">
+              {/* Total de la sélection + bouton Nouvelle facture pré-remplie */}
+              <div className="flex items-end justify-between gap-3 mb-3 flex-wrap">
                 <div>
                   <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">Total filtré</div>
                   <div className="text-2xl font-mono tabular-nums font-bold" style={{ color: selectedCat.color }}>
@@ -3237,6 +3242,16 @@
                   </div>
                   <div className="text-xs text-[var(--text-dim)]">{filtered.length} facture{filtered.length>1?'s':''}</div>
                 </div>
+                <button type="button"
+                  className="btn !text-white font-semibold"
+                  style={{ background: selectedCat.color }}
+                  onClick={()=>{
+                    // Ouvre le form en pré-remplissant la catégorie sélectionnée
+                    setEditing({ categoryId: selectedCat.id });
+                    setShowForm(true);
+                  }}>
+                  + {selectedCat.icon} Nouvelle dépense
+                </button>
               </div>
               {/* Filtres période */}
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
