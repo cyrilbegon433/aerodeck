@@ -439,7 +439,7 @@
         // Pilotes
         'pilot.title':'Pilotes','pilot.new':'+ Nouveau pilote','pilot.edit':'Modifier le pilote','pilot.empty':'Aucun pilote enregistré.',
         // Calendrier
-        'cal.title':'Calendrier','cal.exportIcs':'📤 Exporter .ics','cal.importIcs':'📥 Importer .ics (Ops)',
+        'cal.title':'Calendrier','cal.exportIcs':'Exporter .ics','cal.importIcs':'Importer .ics (Ops)',
         'cal.upcoming':'Prochains vols (10)','cal.noUpcoming':'Aucun vol à venir.',
         // Maintenance
         'mx.title':'Maintenance','mx.new':'+ Nouvelle défaillance','mx.empty':'Aucune défaillance enregistrée.',
@@ -477,7 +477,7 @@
         'aircraft.airframeHours':'Airframe hours (initial)','aircraft.engineHours':'Engine hours (initial)',
         'aircraft.deadlines':'Deadlines (insurance, ARC, inspections…)','aircraft.empty':'Add an aircraft first.',
         'pilot.title':'Pilots','pilot.new':'+ New pilot','pilot.edit':'Edit pilot','pilot.empty':'No pilots yet.',
-        'cal.title':'Calendar','cal.exportIcs':'📤 Export .ics','cal.importIcs':'📥 Import .ics (Ops)',
+        'cal.title':'Calendar','cal.exportIcs':'Export .ics','cal.importIcs':'Import .ics (Ops)',
         'cal.upcoming':'Upcoming flights (10)','cal.noUpcoming':'No upcoming flights.',
         'mx.title':'Maintenance','mx.new':'+ New defect','mx.empty':'No defects recorded.',
         'exp.title':'Documents / Invoices','exp.new':'+ New invoice','exp.empty':'No invoices yet.',
@@ -1339,6 +1339,13 @@
       signpost:   'M12 13v8 M12 3v3 M18 6a2 2 0 0 1 1.4.6l1.6 1.4-1.6 1.4a2 2 0 0 1-1.4.6H4V6z M20 17l-2 2 2 2 M4 17h14a2 2 0 0 1 1.4.6l1.6 1.4-1.6 1.4a2 2 0 0 1-1.4.6H4z',
       parkingSquare: 'M5 3a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2z M9 17V7h4a3 3 0 0 1 0 6H9',
       package:    'M16.5 9.4 7.55 4.24 M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z M3.27 6.96 12 12.01l8.73-5.05 M12 22.08V12',
+      // Calendrier
+      chevronLeft:  'm15 18-6-6 6-6',
+      chevronRight: 'm9 18 6-6-6-6',
+      upload:       'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M17 8l-5-5-5 5 M12 3v12',
+      download:     'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4 M7 10l5 5 5-5 M12 15V3',
+      compass:      'm16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z',
+      moon:         'M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z',
     };
     function LucideIcon({ name, size = 20, strokeWidth = 2 }) {
       const path = LUCIDE_ICONS[name];
@@ -4561,12 +4568,12 @@
             <h2 className="text-xl font-semibold">{t('cal.title')}</h2>
             {/* Sur mobile : boutons compacts (icône seule). Sur desktop : icône + texte. */}
             <div className="flex gap-2">
-              <button className="btn btn-secondary !py-1.5 !px-2 sm:!py-2.5 sm:!px-3.5 text-xs sm:text-sm" onClick={downloadICS} title={t('cal.exportIcs')}>
-                <span className="sm:hidden">📤</span>
+              <button className="btn btn-secondary !py-1.5 !px-2 sm:!py-2.5 sm:!px-3.5 text-xs sm:text-sm inline-flex items-center gap-1.5" onClick={downloadICS} title={t('cal.exportIcs')}>
+                <LucideIcon name="upload" size={16} strokeWidth={2.25} />
                 <span className="hidden sm:inline">{t('cal.exportIcs')}</span>
               </button>
-              <label className="btn btn-primary cursor-pointer !py-1.5 !px-2 sm:!py-2.5 sm:!px-3.5 text-xs sm:text-sm" title={t('cal.importIcs')}>
-                <span className="sm:hidden">📥</span>
+              <label className="btn btn-primary cursor-pointer !py-1.5 !px-2 sm:!py-2.5 sm:!px-3.5 text-xs sm:text-sm inline-flex items-center gap-1.5" title={t('cal.importIcs')}>
+                <LucideIcon name="download" size={16} strokeWidth={2.25} />
                 <span className="hidden sm:inline">{t('cal.importIcs')}</span>
                 <input type="file" accept=".ics,text/calendar" className="hidden"
                   onChange={(e)=>{ const f = e.target.files?.[0]; if (f) importICS(f); e.target.value=''; }} />
@@ -4641,15 +4648,15 @@
 
           <div className="card p-3" ref={calendarRootRef}>
             <div className="flex items-center justify-between mb-2">
-              <button className="btn btn-secondary !py-1 !px-2" onClick={()=>{
+              <button className="btn btn-secondary !py-1.5 !px-2.5 inline-flex items-center" title="Mois précédent" onClick={()=>{
                 const d = new Date(Date.UTC(year, month-1, 1));
                 setYear(d.getUTCFullYear()); setMonth(d.getUTCMonth());
-              }}>‹</button>
+              }}><LucideIcon name="chevronLeft" size={18} strokeWidth={2.5} /></button>
               <div className="font-semibold">{monthLabel} {year}</div>
-              <button className="btn btn-secondary !py-1 !px-2" onClick={()=>{
+              <button className="btn btn-secondary !py-1.5 !px-2.5 inline-flex items-center" title="Mois suivant" onClick={()=>{
                 const d = new Date(Date.UTC(year, month+1, 1));
                 setYear(d.getUTCFullYear()); setMonth(d.getUTCMonth());
-              }}>›</button>
+              }}><LucideIcon name="chevronRight" size={18} strokeWidth={2.5} /></button>
             </div>
             {/* Calendrier mois — toutes les cases visibles d'un coup, pas de scroll.
                 Sur mobile (<640px) on affiche : numéro + pastille statut + ✈ par vol
@@ -4890,8 +4897,16 @@
                         </div>
                         <div className="flex flex-wrap gap-1 mt-2">
                           <span className="badge">{f.rules}</span>
-                          {f.isNavigation && <span className="badge">🧭 Nav</span>}
-                          {(f.nightTime||0) > 0 && <span className="badge">🌙 {fmtDuration(f.nightTime)}</span>}
+                          {f.isNavigation && (
+                            <span className="badge inline-flex items-center gap-1">
+                              <LucideIcon name="compass" size={11} strokeWidth={2.5} /> Nav
+                            </span>
+                          )}
+                          {(f.nightTime||0) > 0 && (
+                            <span className="badge inline-flex items-center gap-1">
+                              <LucideIcon name="moon" size={11} strokeWidth={2.5} /> {fmtDuration(f.nightTime)}
+                            </span>
+                          )}
                         </div>
                       </button>
                     );
@@ -7649,10 +7664,39 @@
               </div>
               <div className="min-w-0">
                 <div className="brand-title leading-tight text-[17px]">{APP_NAME}</div>
+                {/* MOBILE : bouton cloud sync sous le titre AeroDeck */}
+                {(settings.gh?.enabled && settings.gh?.token) && (
+                  <button
+                    type="button"
+                    onClick={() => syncPush()}
+                    onContextMenu={(e) => { e.preventDefault(); setTab('settings'); }}
+                    title={
+                      syncStatus.status === 'syncing' ? 'Sync en cours…'
+                      : syncStatus.status === 'error' ? 'Erreur sync — clique pour réessayer'
+                      : syncStatus.status === 'synced' ? `Sync OK — clique pour pousser`
+                      : 'Cloud sync — clique pour pousser maintenant'
+                    }
+                    className="sm:hidden inline-flex items-center gap-1 mt-0.5 text-[11px] leading-none px-1.5 py-0.5 rounded-md transition-all hover:scale-105"
+                    style={{
+                      color: syncStatus.status === 'syncing' ? 'var(--warn)'
+                           : syncStatus.status === 'error'   ? 'var(--err)'
+                           : syncStatus.status === 'synced'  ? 'var(--ok)'
+                           : 'var(--text-dim)',
+                      filter: syncStatus.status === 'syncing' ? 'none' : 'drop-shadow(0 0 3px currentColor)',
+                    }}>
+                    <span className="text-sm">{syncStatus.status === 'syncing' ? '⏳' : syncStatus.status === 'error' ? '⚠️' : '☁'}</span>
+                    <span className="uppercase tracking-wider opacity-80">
+                      {syncStatus.status === 'syncing' ? 'Sync…'
+                        : syncStatus.status === 'error' ? 'Erreur'
+                        : syncStatus.status === 'synced' ? 'Sync OK'
+                        : 'Sync'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              {/* Bouton cloud sync : visible sur toutes les pages.
+              {/* DESKTOP : bouton cloud sync à droite (sur mobile, version sous le titre).
                   Couleur selon syncStatus (gris/jaune/vert/rouge).
                   Click → push manuel rapide (raccourci de Réglages → Sync).
                   Long press / clic-droit → ouvre Réglages. */}
@@ -7667,7 +7711,7 @@
                     : syncStatus.status === 'synced' ? `Sync OK — clique pour pousser`
                     : 'Cloud sync — clique pour pousser maintenant'
                   }
-                  className="text-xl leading-none p-1 rounded-md transition-all hover:scale-110"
+                  className="hidden sm:inline-block text-xl leading-none p-1 rounded-md transition-all hover:scale-110"
                   style={{
                     color: syncStatus.status === 'syncing' ? 'var(--warn)'
                          : syncStatus.status === 'error'   ? 'var(--err)'
