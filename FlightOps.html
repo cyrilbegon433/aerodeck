@@ -6281,12 +6281,16 @@
       // Marqueur du dernier `updated_at` distant qu'on a vu (pour polling)
       const lastSeenUpdatedAtRef = useRef('');
 
-      // Construit le snapshot complet à synchroniser
+      // Construit le snapshot complet à synchroniser.
+      // ⚠ IMPORTANT : on EXCLUT settings.gh (token + gistId) du snapshot,
+      // sinon GitHub détecte le token dans le contenu du gist et le révoque
+      // automatiquement par sécurité. Le token reste local à chaque appareil.
       function buildSnapshot() {
+        const { gh: _ghStripped, ...settingsClean } = settings || {};
         return {
           __sync: { lastWrittenAt: Date.now(), version: 1 },
           flights, aircraft, documents, categories,
-          settings: { ...settings, language: lang },
+          settings: { ...settingsClean, language: lang },
           maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods,
         };
       }
