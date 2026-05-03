@@ -2918,7 +2918,7 @@
     // 11) ÉCRAN — DOCUMENTS / FACTURES
     // ------------------------------------------------------------------
 
-    function DocumentForm({ initial, aircraft, categories, onSave, onCancel }) {
+    function DocumentForm({ initial, aircraft, categories, pilots = [], onSave, onCancel }) {
       const blank = {
         id: null,
         date: todayZuluDate(),
@@ -2927,6 +2927,7 @@
         currency: 'EUR',
         categoryId: 'other',
         aircraftId: '',
+        pilotId: '',           // pilote rattaché à la dépense (optionnel)
         thumbnail: '',         // dataURL JPEG
         ocrText: '',
         fileName: '',
@@ -3036,9 +3037,16 @@
               <div className="label whitespace-nowrap">Avion <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
               <select className="select" value={d.aircraftId} onChange={e=>set('aircraftId', e.target.value)}>
                 <option value="">— aucun —</option>
-                {aircraft.map(a => <option key={a.id} value={a.id}>{a.registration}</option>)}
+                {aircraft.map(a => <option key={a.id} value={a.id}>{a.kind==='simulator'?'🖥️ ':''}{a.registration}</option>)}
               </select>
             </div>
+          </div>
+          <div>
+            <div className="label whitespace-nowrap">Pilote <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
+            <select className="select" value={d.pilotId||''} onChange={e=>set('pilotId', e.target.value)}>
+              <option value="">— aucun —</option>
+              {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
+            </select>
           </div>
           <div>
             <div className="label">Notes</div>
@@ -3062,13 +3070,24 @@
       );
     }
 
-    function DocumentsScreen({ documents, aircraft, categories, onAddOrUpdate, onDelete }) {
+    function DocumentsScreen({ documents, aircraft, categories, pilots = [], onAddOrUpdate, onDelete }) {
       const t = useT();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
       const [filterCat, setFilterCat] = useState('all');
       const [filterSupplier, setFilterSupplier] = useState('');
       const [sort, setSort] = useState('date_desc'); // date_desc | date_asc | amount_desc | supplier
+      // Filtres avancés (apparaissent quand une catégorie est sélectionnée)
+      const now = new Date();
+      const [filterYear, setFilterYear] = useState(0);   // 0 = toutes années
+      const [filterMonth, setFilterMonth] = useState(0); // 0 = tous mois
+      const [filterDate, setFilterDate] = useState('');  // date précise (ISO YYYY-MM-DD)
+      const [filterAircraft, setFilterAircraft] = useState('all');
+      const [filterPilot, setFilterPilot] = useState('all');
+
+      // La catégorie sélectionnée détermine si le filtre avion a du sens
+      const selectedCat = filterCat !== 'all' ? categories.find(c => c.id === filterCat) : null;
+      const isAircraftCategory = selectedCat?.group === 'Aéronef';
 
       const filtered = useMemo(() => {
         let arr = [...documents];
@@ -3076,6 +3095,27 @@
         if (filterSupplier.trim()) {
           const q = filterSupplier.toLowerCase();
           arr = arr.filter(d => (d.supplier||'').toLowerCase().includes(q));
+        }
+        // Date précise (a la priorité sur année/mois)
+        if (filterDate) {
+          arr = arr.filter(d => d.date === filterDate);
+        } else {
+          if (filterYear > 0) {
+            arr = arr.filter(d => (d.date||'').startsWith(String(filterYear)));
+          }
+          if (filterMonth > 0) {
+            const mm = String(filterMonth).padStart(2,'0');
+            arr = arr.filter(d => {
+              const m = (d.date||'').split('-')[1];
+              return m === mm;
+            });
+          }
+        }
+        if (filterAircraft !== 'all') {
+          arr = arr.filter(d => (d.aircraftId||'') === (filterAircraft === 'none' ? '' : filterAircraft));
+        }
+        if (filterPilot !== 'all') {
+          arr = arr.filter(d => (d.pilotId||'') === (filterPilot === 'none' ? '' : filterPilot));
         }
         arr.sort((a,b) => {
           if (sort === 'date_desc') return (b.date||'').localeCompare(a.date||'');
@@ -3085,7 +3125,18 @@
           return 0;
         });
         return arr;
-      }, [documents, filterCat, filterSupplier, sort]);
+      }, [documents, filterCat, filterSupplier, sort, filterYear, filterMonth, filterDate, filterAircraft, filterPilot]);
+
+      // Total filtré (pour le panneau récap)
+      const filteredTotal = useMemo(() => filtered.reduce((s,d) => s + (parseFloat(d.amount)||0), 0), [filtered]);
+      const filteredCurrency = useMemo(() => {
+        const m = {};
+        for (const d of filtered) {
+          const c = d.currency || 'EUR';
+          m[c] = (m[c]||0) + 1;
+        }
+        return Object.entries(m).sort((a,b) => b[1]-a[1])[0]?.[0] || 'EUR';
+      }, [filtered]);
 
       const totalsByCat = useMemo(() => {
         const m = {};
@@ -3098,6 +3149,39 @@
 
       function catObj(id) { return categories.find(c => c.id === id) || categories[categories.length-1]; }
 
+      // Compte des factures par catégorie
+      const countsByCat = useMemo(() => {
+        const m = {};
+        for (const d of documents) {
+          const k = d.categoryId || 'other';
+          m[k] = (m[k]||0) + 1;
+        }
+        return m;
+      }, [documents]);
+
+      // Total global et nb factures
+      const totalAmount = useMemo(() => documents.reduce((s,d) => s + (parseFloat(d.amount)||0), 0), [documents]);
+      const totalCount = documents.length;
+      // Devise principale (la plus utilisée) pour l'affichage du total
+      const mainCurrency = useMemo(() => {
+        const m = {};
+        for (const d of documents) {
+          const c = d.currency || 'EUR';
+          m[c] = (m[c]||0) + 1;
+        }
+        return Object.entries(m).sort((a,b) => b[1]-a[1])[0]?.[0] || 'EUR';
+      }, [documents]);
+
+      // Catégories triées : celles avec dépenses d'abord, par montant décroissant
+      const sortedCats = useMemo(() => {
+        return [...categories]
+          .map(c => ({ ...c, total: totalsByCat[c.id]||0, count: countsByCat[c.id]||0 }))
+          .sort((a,b) => b.total - a.total);
+      }, [categories, totalsByCat, countsByCat]);
+      const usedCats = sortedCats.filter(c => c.total > 0 || c.count > 0);
+      const [showAllCats, setShowAllCats] = useState(false);
+      const visibleCats = showAllCats ? sortedCats : usedCats;
+
       return (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -3105,29 +3189,171 @@
             <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>{t('exp.new')}</button>
           </div>
 
-          <div className="card p-3">
-            <div className="label">Totaux par catégorie</div>
-            <div className="flex flex-wrap gap-2">
-              {categories.map(c => (
-                <div key={c.id} className="badge" style={{ borderColor: c.color }}>
-                  <span>{c.icon} {c.name}</span>
-                  <span className="font-mono">{(totalsByCat[c.id]||0).toFixed(2)}</span>
+          {/* === HERO : Total + nb factures, design type "carte bancaire" === */}
+          <div className="card p-4 relative overflow-hidden"
+               style={{
+                 background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-2) 60%, rgba(56,189,248,0.08) 100%)',
+                 borderColor: 'rgba(56,189,248,0.25)',
+               }}>
+            <div className="flex items-end justify-between gap-3 flex-wrap">
+              <div>
+                <div className="text-[10px] uppercase tracking-[0.15em] text-[var(--text-dim)] font-semibold">💰 Total dépenses</div>
+                <div className="text-3xl sm:text-4xl font-mono tabular-nums font-bold text-[var(--accent)] leading-tight mt-1">
+                  {totalAmount.toFixed(2)} <span className="text-lg text-[var(--text-dim)]">{mainCurrency}</span>
                 </div>
-              ))}
+                <div className="text-xs text-[var(--text-dim)] mt-1">
+                  {totalCount} facture{totalCount>1?'s':''} · {usedCats.length} catégorie{usedCats.length>1?'s':''} active{usedCats.length>1?'s':''}
+                </div>
+              </div>
+              <div className="text-5xl opacity-20 select-none" style={{ filter: 'drop-shadow(0 4px 12px rgba(56,189,248,.3))' }}>✈</div>
             </div>
+            {/* Mini barre stacked des catégories proportionnelles */}
+            {totalAmount > 0 && (
+              <div className="mt-3 h-2 rounded-full overflow-hidden flex" style={{ background: 'var(--bg-elev)' }}>
+                {usedCats.slice(0, 8).map(c => (
+                  <div key={c.id}
+                       title={`${c.name} : ${c.total.toFixed(2)} ${mainCurrency} (${((c.total/totalAmount)*100).toFixed(0)}%)`}
+                       style={{ width: `${(c.total/totalAmount)*100}%`, background: c.color, transition: 'width .35s ease' }} />
+                ))}
+              </div>
+            )}
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <select className="select" value={filterCat} onChange={e=>setFilterCat(e.target.value)}>
-              <option value="all">Toutes catégories</option>
-              {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-            </select>
-            <input className="input" placeholder="Filtrer fournisseur…" value={filterSupplier} onChange={e=>setFilterSupplier(e.target.value)} />
+          {/* === TUILES CATÉGORIES (cliquables pour filtrer) === */}
+          {visibleCats.length > 0 && (
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">📊 Catégories</div>
+                <button type="button"
+                  className="text-xs text-[var(--accent)] hover:underline"
+                  onClick={()=>setShowAllCats(s=>!s)}>
+                  {showAllCats ? 'Masquer les vides' : `+ Voir toutes (${categories.length})`}
+                </button>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                {/* Tuile "Toutes" */}
+                <button type="button"
+                  onClick={()=>setFilterCat('all')}
+                  className={`card p-3 text-left transition-all hover:scale-[1.02] ${filterCat==='all' ? 'ring-2 ring-[var(--accent)] scale-[1.02]' : ''}`}
+                  style={filterCat==='all' ? { background: 'rgba(56,189,248,0.15)', borderColor: 'var(--accent)' } : {}}>
+                  <div className="text-2xl mb-1">🌐</div>
+                  <div className="text-xs font-semibold">Toutes</div>
+                  <div className="text-base font-mono tabular-nums font-bold text-[var(--accent)] mt-0.5">{totalAmount.toFixed(0)} <span className="text-[10px]">{mainCurrency}</span></div>
+                  <div className="text-[10px] text-[var(--text-dim)]">{totalCount} facture{totalCount>1?'s':''}</div>
+                </button>
+                {visibleCats.map(c => {
+                  const isActive = filterCat === c.id;
+                  const pct = totalAmount > 0 ? (c.total/totalAmount)*100 : 0;
+                  return (
+                    <button key={c.id} type="button"
+                      onClick={()=>setFilterCat(isActive ? 'all' : c.id)}
+                      className={`card p-3 text-left transition-all hover:scale-[1.02] ${isActive ? 'ring-2 scale-[1.02]' : ''}`}
+                      style={{
+                        background: isActive ? c.color + '22' : c.color + '10',
+                        borderColor: isActive ? c.color : c.color + '55',
+                        ...(isActive ? { '--tw-ring-color': c.color } : {}),
+                      }}>
+                      <div className="flex items-start justify-between mb-1">
+                        <div className="text-2xl">{c.icon}</div>
+                        {pct > 0 && pct < 100 && (
+                          <div className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded" style={{ background: c.color + '33', color: c.color }}>
+                            {pct.toFixed(0)}%
+                          </div>
+                        )}
+                      </div>
+                      <div className="text-xs font-semibold truncate" title={c.name}>{c.name}</div>
+                      <div className="text-base font-mono tabular-nums font-bold mt-0.5" style={{ color: c.color }}>
+                        {c.total.toFixed(0)} <span className="text-[10px] opacity-70">{mainCurrency}</span>
+                      </div>
+                      <div className="text-[10px] text-[var(--text-dim)]">{c.count} facture{c.count>1?'s':''}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* === PANNEAU FILTRES AVANCÉS — n'apparaît que si une catégorie est sélectionnée === */}
+          {filterCat !== 'all' && selectedCat && (
+            <div className="card p-3" style={{ borderColor: selectedCat.color + '55', background: selectedCat.color + '08' }}>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xl">{selectedCat.icon}</span>
+                  <span className="font-semibold">{selectedCat.name}</span>
+                </div>
+                <button type="button"
+                  className="text-xs text-[var(--text-dim)] hover:text-[var(--accent)]"
+                  onClick={()=>{
+                    setFilterCat('all');
+                    setFilterYear(0); setFilterMonth(0); setFilterDate('');
+                    setFilterAircraft('all'); setFilterPilot('all');
+                  }}>
+                  ✕ Retirer le filtre
+                </button>
+              </div>
+              {/* Total de la sélection */}
+              <div className="flex items-end justify-between gap-3 mb-3">
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">Total filtré</div>
+                  <div className="text-2xl font-mono tabular-nums font-bold" style={{ color: selectedCat.color }}>
+                    {filteredTotal.toFixed(2)} <span className="text-sm text-[var(--text-dim)]">{filteredCurrency}</span>
+                  </div>
+                  <div className="text-xs text-[var(--text-dim)]">{filtered.length} facture{filtered.length>1?'s':''}</div>
+                </div>
+              </div>
+              {/* Filtres période */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mb-2">
+                <div>
+                  <div className="label whitespace-nowrap">Année</div>
+                  <select className="select" value={filterYear} onChange={e=>{ setFilterYear(parseInt(e.target.value,10)); setFilterDate(''); }}>
+                    <option value={0}>Toutes</option>
+                    {Array.from({length:10}, (_,i) => now.getUTCFullYear()-i).map(y => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <div className="label whitespace-nowrap">Mois</div>
+                  <select className="select" value={filterMonth} onChange={e=>{ setFilterMonth(parseInt(e.target.value,10)); setFilterDate(''); }}>
+                    <option value={0}>Tous</option>
+                    {['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'].map((m,i)=> <option key={i} value={i+1}>{m}</option>)}
+                  </select>
+                </div>
+                <div className="col-span-2 sm:col-span-1">
+                  <div className="label whitespace-nowrap">Date précise</div>
+                  <input type="date" className="input" value={filterDate} onChange={e=>setFilterDate(e.target.value)} />
+                </div>
+              </div>
+              {/* Filtres avion (si catégorie aéronef) + pilote */}
+              <div className={`grid gap-2 ${isAircraftCategory ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'}`}>
+                {isAircraftCategory && (
+                  <div>
+                    <div className="label whitespace-nowrap">Avion</div>
+                    <select className="select" value={filterAircraft} onChange={e=>setFilterAircraft(e.target.value)}>
+                      <option value="all">Tous</option>
+                      <option value="none">— sans avion —</option>
+                      {aircraft.map(a => <option key={a.id} value={a.id}>{a.kind==='simulator'?'🖥️ ':''}{a.registration}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div>
+                  <div className="label whitespace-nowrap">Pilote</div>
+                  <select className="select" value={filterPilot} onChange={e=>setFilterPilot(e.target.value)}>
+                    <option value="all">Tous</option>
+                    <option value="none">— sans pilote —</option>
+                    {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* === FILTRE FOURNISSEUR + TRI === */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <input className="input" placeholder="🔍 Filtrer par fournisseur…" value={filterSupplier} onChange={e=>setFilterSupplier(e.target.value)} />
             <select className="select" value={sort} onChange={e=>setSort(e.target.value)}>
-              <option value="date_desc">Date (récent → ancien)</option>
-              <option value="date_asc">Date (ancien → récent)</option>
-              <option value="amount_desc">Montant (haut → bas)</option>
-              <option value="supplier">Fournisseur (A→Z)</option>
+              <option value="date_desc">📅 Date (récent → ancien)</option>
+              <option value="date_asc">📅 Date (ancien → récent)</option>
+              <option value="amount_desc">💰 Montant (haut → bas)</option>
+              <option value="supplier">🔤 Fournisseur (A→Z)</option>
             </select>
           </div>
 
@@ -3178,6 +3404,7 @@
               initial={editing}
               aircraft={aircraft}
               categories={categories}
+              pilots={pilots}
               onCancel={()=>setShowForm(false)}
               onSave={(d)=>{ onAddOrUpdate(d); setShowForm(false); }}
             />
@@ -6779,22 +7006,47 @@
         }
       }, [flights, aircraft, documents, categories, settings, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
 
-      // Force l'affichage de la popup pour tester (utilisé par bouton dans Réglages)
+      // Force l'affichage de la popup pour tester (utilisé par bouton dans Réglages).
+      // En mode test on n'exclut AUCUN vol, comme ça l'utilisateur voit
+      // l'archivage complet fonctionner.
       function triggerStorageFullPopupForTest() {
-        setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
+        setStorageFullModal({ lastEditedId: null, isTest: true });
       }
 
-      // Handler du bouton "Archiver et continuer" depuis la popup
+      // Handler du bouton "Archiver et continuer" depuis la popup.
+      // Comportement :
+      //   - Le ZIP contient TOUS les documents (y compris ceux du vol courant)
+      //     pour avoir une sauvegarde complète sur disque.
+      //   - L'app supprime localement les docs des AUTRES vols (libère l'espace)
+      //     mais GARDE les docs du vol courant intacts pour pouvoir continuer
+      //     à les voir et les éditer.
       async function handleArchiveAndContinue() {
-        const exclude = storageFullModal?.lastEditedId || null;
-        const ok = await archiveAndFreeDocuments({ excludeFlightId: exclude, autoConfirm: true });
-        setStorageFullModal(null);
-        if (ok) {
-          // Après archivage, force une nouvelle sauvegarde locale
-          setTimeout(() => {
-            const retry = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods });
-            if (!retry) alert('⚠ Toujours pas assez d\'espace. Le vol en cours a peut-être trop de documents. Retire des documents ou archive le manuellement aussi.');
-          }, 100);
+        const keep = storageFullModal?.lastEditedId || null;
+        // Compte total dans le ZIP (tous les vols + docs compagnie + factures Dépenses)
+        let docCount = 0;
+        for (const f of flights) {
+          docCount += (f.documents||[]).filter(d=>d.dataUrl).length;
+          docCount += (f.fuelEntries||[]).filter(e=>e.invoiceDataUrl).length;
+        }
+        docCount += (companyDocs||[]).filter(d=>d.dataUrl).length;
+        docCount += (documents||[]).filter(d=>d.thumbnail).length;
+        if (docCount === 0) {
+          setStorageFullModal(null);
+          alert('Aucun document à archiver.');
+          return;
+        }
+        try {
+          const ok = await archiveAndFreeDocuments({ keepInAppFlightId: keep, autoConfirm: true });
+          setStorageFullModal(null);
+          if (ok) {
+            const keepMsg = keep ? '\n\nLes documents de ton vol courant sont conservés dans l\'app (ils sont aussi dans le ZIP en sauvegarde).' : '';
+            alert(`✓ ${docCount} document(s) archivé(s) dans le ZIP.${keepMsg}`);
+          } else {
+            alert('L\'archivage n\'a pas pu être complété. Vérifie la console du navigateur pour plus d\'infos.');
+          }
+        } catch (e) {
+          setStorageFullModal(null);
+          alert('Erreur pendant l\'archivage : ' + (e.message || e));
         }
       }
 
@@ -6972,33 +7224,38 @@
       // libère l'espace local en retirant les dataUrl (les références restent
       // pour montrer "archivé le X" mais le contenu binaire est purgé).
       // Options :
-      //   - excludeFlightId : ne pas archiver les docs de ce vol (utile quand
-      //     on remplit un vol et qu'on veut juste libérer de la place sur les
-      //     autres sans toucher au vol courant)
+      //   - keepInAppFlightId : le ZIP inclut TOUS les vols (sauvegarde
+      //     complète) MAIS on ne purge PAS les docs de ce vol-là dans l'app
+      //     (utile quand on remplit un vol et qu'on veut continuer à travailler
+      //     dessus avec ses docs visibles).
       //   - autoConfirm : skip les popups (utile pour l'archivage auto suite
       //     à un quota error)
       async function archiveAndFreeDocuments(opts = {}) {
-        const { excludeFlightId = null, autoConfirm = false } = opts;
+        // Compatibilité ascendante : ancien nom excludeFlightId → keepInAppFlightId
+        const keepInAppFlightId = opts.keepInAppFlightId || opts.excludeFlightId || null;
+        const autoConfirm = !!opts.autoConfirm;
         if (typeof JSZip === 'undefined') {
           if (!autoConfirm) alert('La librairie de compression ZIP n\'est pas chargée. Recharge la page et réessaye.');
           return false;
         }
-        // Filtre les vols cibles (exclut éventuellement le vol courant)
-        const targetFlights = flights.filter(f => f.id !== excludeFlightId);
-        // Compte ce qui sera archivé
+        // Le ZIP couvre TOUS les vols (sauvegarde complète, même si un vol reste actif dans l'app)
+        const targetFlights = flights;
+        // Compte ce qui sera dans le ZIP
         let docCount = 0;
         for (const f of targetFlights) {
           docCount += (f.documents||[]).filter(d=>d.dataUrl).length;
           docCount += (f.fuelEntries||[]).filter(e=>e.invoiceDataUrl).length;
         }
         docCount += (companyDocs||[]).filter(d=>d.dataUrl).length;
+        // Factures / scans de l'onglet Dépenses (documents top-level)
+        docCount += (documents||[]).filter(d=>d.thumbnail).length;
         if (docCount === 0) {
           if (!autoConfirm) alert('Aucun document à archiver.');
           return false;
         }
         if (!autoConfirm) {
-          const msg = excludeFlightId
-            ? `Archiver ${docCount} document(s) des AUTRES vols en ZIP puis libérer l'espace local ?\n\nLe vol que tu modifies actuellement n'est PAS touché.\n\nÉtapes :\n1. Le fichier ZIP va se télécharger\n2. Déplace-le dans iCloud Drive\n3. L'app retire les fichiers archivés de son stockage`
+          const msg = keepInAppFlightId
+            ? `Archiver ${docCount} document(s) en ZIP (sauvegarde complète) puis libérer l'espace des AUTRES vols ?\n\nLes documents du vol que tu modifies restent visibles dans l'app.\n\nÉtapes :\n1. Le ZIP va se télécharger\n2. Déplace-le dans iCloud Drive\n3. L'app retire les fichiers des autres vols de son stockage`
             : `Archiver ${docCount} document(s) en ZIP puis libérer l'espace local ?\n\nÉtapes :\n1. Le fichier ZIP va se télécharger\n2. Déplace-le dans iCloud Drive (ou autre)\n3. L'app retire les fichiers de son stockage (les références restent visibles avec mention « archivé »)\n\nTu pourras toujours rouvrir les documents depuis le ZIP.`;
           if (!confirm(msg)) return false;
         }
@@ -7058,6 +7315,31 @@
           }
         }
 
+        // === DÉPENSES (factures de l'onglet Dépenses) ===
+        // Structure pensée pour la comptabilité : Dépenses / <Catégorie> / <YYYY-MM> / <date>_<fournisseur>_<montant><devise>.<ext>
+        // Exemple : Dépenses/Carburant-Avion/2026-04/15_Total-Energies_120.50EUR.jpg
+        if ((documents||[]).some(d=>d.thumbnail)) {
+          const expFolder = zip.folder('Dépenses');
+          for (const d of (documents||[])) {
+            if (!d.thumbnail) continue;
+            const cat = categories.find(c => c.id === d.categoryId) || categories[categories.length-1];
+            const catFolder = expFolder.folder(safe(cat.name));
+            // Sous-dossier YYYY-MM (regroupement comptable mensuel)
+            const dateStr = d.date || 'sans-date';
+            const ym = dateStr.length >= 7 ? dateStr.slice(0,7) : 'sans-date';
+            const monthFolder = catFolder.folder(ym);
+            // Nom de fichier : JJ_Fournisseur_Montant.ext (utile au tri)
+            const day = dateStr.length >= 10 ? dateStr.slice(8,10) : '00';
+            const supplier = safe(d.supplier || 'inconnu').replace(/\s+/g, '-');
+            const amount = d.amount ? `${parseFloat(d.amount).toFixed(2)}${d.currency||'EUR'}` : '';
+            const baseName = [day, supplier, amount].filter(Boolean).join('_');
+            // Le thumbnail est en JPEG (on le sait, c'est généré par fileToResizedDataURL)
+            const ext = extFor(null, 'jpg');
+            const fileName = `${baseName || 'facture'}.${ext}`;
+            monthFolder.file(safe(fileName), dataUrlToBytes(d.thumbnail));
+          }
+        }
+
         // Génère et télécharge le ZIP
         const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 }});
         const url = URL.createObjectURL(blob);
@@ -7074,10 +7356,11 @@
           }
         }
         // Purge des dataUrl mais on garde les métadonnées (filename, type, date d'archive)
-        // EXCLUT le vol courant (excludeFlightId) pour ne pas casser ce que l'utilisateur est en train de remplir.
+        // EXCLUT le vol courant (keepInAppFlightId) pour que ses docs restent visibles
+        // et utilisables pendant qu'on remplit le vol — ils sont ZIPPÉS quand même.
         const stamp = new Date().toISOString();
         setFlights(prev => prev.map(f => {
-          if (excludeFlightId && f.id === excludeFlightId) return f; // ne touche pas au vol courant
+          if (keepInAppFlightId && f.id === keepInAppFlightId) return f; // garde ses docs intacts dans l'app
           return {
             ...f,
             documents: (f.documents||[]).map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d),
@@ -7085,7 +7368,10 @@
           };
         }));
         setCompanyDocs(prev => prev.map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d));
-        if (!autoConfirm) alert('✓ Documents archivés et espace local libéré.');
+        // Purge des thumbnails de l'onglet Dépenses (factures scannées)
+        // Garde les métadonnées (montant, fournisseur, date, catégorie)
+        setDocuments(prev => prev.map(d => d.thumbnail ? { ...d, thumbnail:'', archived: true, archivedAt: stamp } : d));
+        if (!autoConfirm) alert('✓ Documents archivés en ZIP et espace local libéré.');
         return true;
       }
       function importJSON(obj) {
@@ -7264,7 +7550,7 @@
               maintenance={maintenance} aircraft={aircraft} flights={flights}
               onAddOrUpdate={upsert(setMaintenance)} onDelete={remove(setMaintenance)} />}
             {tab==='documents' && <DocumentsScreen
-              documents={documents} aircraft={aircraft} categories={categories}
+              documents={documents} aircraft={aircraft} categories={categories} pilots={pilots}
               onAddOrUpdate={upsert(setDocuments)} onDelete={remove(setDocuments)} />}
             {tab==='company' && <CompanyDocsScreen
               companyDocs={companyDocs} aircraft={aircraft}
