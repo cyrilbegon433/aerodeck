@@ -3197,6 +3197,33 @@
         return Object.entries(map).sort((a,b) => a[0].localeCompare(b[0]));
       }, [pilotScopedFlights]);
 
+      // === Comparatif Air Time vs Flight Time ===
+      // On ne compte que les vols où AT et FT sont tous deux renseignés (vol effectivement
+      // terminé). Le taxi = FT - AT (= temps au sol moteur tournant).
+      const atFtStats = useMemo(() => {
+        const completed = pilotScopedFlights.filter(f => (f.airTime||0) > 0 && (f.flightTime||0) > 0);
+        const totalAT = completed.reduce((s,f) => s + (f.airTime||0), 0);
+        const totalFT = completed.reduce((s,f) => s + (f.flightTime||0), 0);
+        const totalTaxi = totalFT - totalAT;
+        const avgAT   = completed.length > 0 ? totalAT   / completed.length : 0;
+        const avgFT   = completed.length > 0 ? totalFT   / completed.length : 0;
+        const avgTaxi = completed.length > 0 ? totalTaxi / completed.length : 0;
+        const ratioAT = totalFT > 0 ? (totalAT / totalFT) * 100 : 0;
+        // Série hebdo : AT et FT cumulés par semaine
+        const weeklyMap = {};
+        for (const f of completed) {
+          const k = isoWeekKey(f.date);
+          if (!k) continue;
+          if (!weeklyMap[k]) weeklyMap[k] = { at: 0, ft: 0 };
+          weeklyMap[k].at += f.airTime || 0;
+          weeklyMap[k].ft += f.flightTime || 0;
+        }
+        const weekly = Object.entries(weeklyMap)
+          .sort((a,b) => a[0].localeCompare(b[0]))
+          .slice(-12);
+        return { count: completed.length, totalAT, totalFT, totalTaxi, avgAT, avgFT, avgTaxi, ratioAT, weekly };
+      }, [pilotScopedFlights]);
+
       // Classification heures par caractéristiques moteur de l'avion
       const engineStats = useMemo(() => {
         const out = {
@@ -3472,6 +3499,123 @@
             <div className="mt-2 -mx-1">
               <BarChart entries={seriesMonthly} color="var(--accent-2)" max={12} />
             </div>
+          </div>
+
+          {/* === Comparatif Air Time vs Flight Time === */}
+          <div className="card p-3">
+            <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+              <div className="label !mb-0">⚙️ Air Time vs Flight Time{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}</div>
+              <div className="text-xs text-[var(--text-dim)]">{atFtStats.count} vol(s) terminé(s)</div>
+            </div>
+
+            {atFtStats.count === 0 ? (
+              <div className="text-sm text-[var(--text-dim)] italic py-4 text-center">Aucun vol avec AT et FT renseignés.</div>
+            ) : (
+              <>
+                {/* 3 cartes résumé : moyenne AT, moyenne FT, moyenne Taxi */}
+                <div className="grid grid-cols-3 gap-2 mb-3">
+                  <div className="card p-2 text-center bg-[var(--bg-elev)]">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">Moy. Air Time</div>
+                    <div className="text-lg font-mono tabular-nums" style={{ color: '#22d3ee' }}>{fmtDuration(atFtStats.avgAT)}</div>
+                  </div>
+                  <div className="card p-2 text-center bg-[var(--bg-elev)]">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">Moy. Flight Time</div>
+                    <div className="text-lg font-mono tabular-nums" style={{ color: 'var(--accent)' }}>{fmtDuration(atFtStats.avgFT)}</div>
+                  </div>
+                  <div className="card p-2 text-center bg-[var(--bg-elev)]">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">Moy. Taxi</div>
+                    <div className="text-lg font-mono tabular-nums" style={{ color: '#fbbf24' }}>{fmtDuration(atFtStats.avgTaxi)}</div>
+                  </div>
+                </div>
+
+                {/* Barre proportionnelle AT vs Taxi */}
+                <div>
+                  <div className="flex justify-between text-xs text-[var(--text-dim)] mb-1">
+                    <span>Répartition globale ({atFtStats.count} vols)</span>
+                    <span className="font-mono">AT {atFtStats.ratioAT.toFixed(0)}% · Taxi {(100-atFtStats.ratioAT).toFixed(0)}%</span>
+                  </div>
+                  <div className="h-3 rounded-full overflow-hidden flex" style={{ background: 'var(--bg-elev)' }}>
+                    <div style={{ width: atFtStats.ratioAT + '%', background: '#22d3ee', transition: 'width .35s ease' }} title={`Air Time : ${fmtDuration(atFtStats.totalAT)}`} />
+                    <div style={{ width: (100-atFtStats.ratioAT) + '%', background: '#fbbf24', transition: 'width .35s ease' }} title={`Taxi : ${fmtDuration(atFtStats.totalTaxi)}`} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-[var(--text-dim)] mt-1 font-mono">
+                    <span>AT total {fmtDuration(atFtStats.totalAT)}</span>
+                    <span>FT total {fmtDuration(atFtStats.totalFT)}</span>
+                  </div>
+                </div>
+
+                {/* Mini-graphe : barres AT (cyan) et FT (bleu) côte à côte par semaine */}
+                {atFtStats.weekly.length > 0 && (
+                  <div className="mt-3">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold mb-1">
+                      Comparaison hebdo (12 dernières semaines)
+                    </div>
+                    <svg viewBox="0 0 800 160" width="100%" preserveAspectRatio="xMidYMid meet">
+                      {(() => {
+                        const W = 800, H = 160;
+                        const padTop = 20, padBot = 32, padLeft = 28, padRight = 8;
+                        const plotW = W - padLeft - padRight;
+                        const plotH = H - padTop - padBot;
+                        const data = atFtStats.weekly;
+                        const maxVal = Math.max(1, ...data.map(([,v]) => Math.max(v.at, v.ft)));
+                        const slotW = plotW / data.length;
+                        const barW = (slotW * 0.7) / 2;  // 2 barres côte à côte
+                        const grids = [0, 0.5, 1].map(p => ({
+                          y: padTop + plotH * (1 - p),
+                          label: fmtDuration(maxVal * p),
+                        }));
+                        return (
+                          <>
+                            {grids.map((g, i) => (
+                              <g key={i}>
+                                <line x1={padLeft} x2={W - padRight} y1={g.y} y2={g.y}
+                                      stroke="var(--border-soft)" strokeDasharray="3,4" strokeWidth="1" />
+                                <text x={padLeft - 4} y={g.y + 3} fontSize="9"
+                                      textAnchor="end" fill="var(--text-dim)" fontFamily="ui-monospace, monospace">
+                                  {g.label}
+                                </text>
+                              </g>
+                            ))}
+                            {data.map(([label, v], i) => {
+                              const x0 = padLeft + i * slotW + (slotW - barW * 2 - 2) / 2;
+                              const hAT = (v.at / maxVal) * plotH;
+                              const hFT = (v.ft / maxVal) * plotH;
+                              const yAT = padTop + (plotH - hAT);
+                              const yFT = padTop + (plotH - hFT);
+                              return (
+                                <g key={label}>
+                                  <rect x={x0}             y={yAT} width={barW} height={hAT} fill="#22d3ee" rx="1.5" />
+                                  <rect x={x0 + barW + 2}  y={yFT} width={barW} height={hFT} fill="var(--accent)" rx="1.5" />
+                                  <text x={x0 + barW + 1} y={H - padBot + 12} fontSize="8.5"
+                                        textAnchor="middle" fill="var(--text-dim)" fontFamily="ui-monospace, monospace">
+                                    {label.replace(/^\d{4}-/, '')}
+                                  </text>
+                                </g>
+                              );
+                            })}
+                            {/* Légende */}
+                            <g transform={`translate(${padLeft}, ${H - 6})`}>
+                              <rect x="0" y="-8" width="10" height="8" fill="#22d3ee" rx="1" />
+                              <text x="14" y="-1" fontSize="9" fill="var(--text-dim)">Air Time</text>
+                              <rect x="80" y="-8" width="10" height="8" fill="var(--accent)" rx="1" />
+                              <text x="94" y="-1" fontSize="9" fill="var(--text-dim)">Flight Time</text>
+                            </g>
+                          </>
+                        );
+                      })()}
+                    </svg>
+                  </div>
+                )}
+
+                <div className="mt-2">
+                  <Hint title="À quoi sert ce comparatif">
+                    <strong>Air Time</strong> = temps en vol effectif (TO → LDG). <strong>Flight Time</strong> = temps total moteur tournant (BO → BI).
+                    La différence (<strong>Taxi</strong>) représente le temps de roulage au sol. Une moyenne de taxi élevée indique des aéroports
+                    encombrés ou des temps d'attente importants — utile pour le coût en carburant et la planification.
+                  </Hint>
+                </div>
+              </>
+            )}
           </div>
 
           <div className="card p-3">
