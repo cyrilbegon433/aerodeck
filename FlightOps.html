@@ -1443,23 +1443,68 @@
     function DocViewer({ doc, onClose }) {
       if (!doc) return null;
       const isPdf = doc.mime === 'application/pdf';
+      // Ferme avec la touche Escape (utile sur Mac/desktop)
+      useEffect(() => {
+        function onKey(e) { if (e.key === 'Escape') onClose(); }
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+      }, [onClose]);
+      // === Geste tactile : swipe vertical sur le header ferme la visionneuse ===
+      // Marche pour swipe vers le haut OU vers le bas (selon préférence utilisateur).
+      // Limité au header pour ne pas casser le scroll natif du PDF / image.
+      const touchRef = useRef({ y0: null, x0: null });
+      function onTouchStart(e) {
+        const t = e.touches[0];
+        touchRef.current = { y0: t.clientY, x0: t.clientX };
+      }
+      function onTouchEnd(e) {
+        const start = touchRef.current;
+        if (start.y0 == null) return;
+        const t = e.changedTouches[0];
+        const dy = t.clientY - start.y0;
+        const dx = t.clientX - start.x0;
+        // Seuil de 60 px verticalement, et le mouvement doit être surtout vertical
+        if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) {
+          onClose();
+        }
+        touchRef.current = { y0: null, x0: null };
+      }
       return (
         <div className="fixed inset-0 z-[60] flex flex-col bg-[var(--bg)] anim-pop" data-docviewer>
-          <div className="flex items-center justify-between gap-2 px-3 py-2 glass safe-top border-b border-[var(--border-soft)]">
+          {/* Header avec marge généreuse au-dessus pour éviter l'encoche / status bar.
+              On utilise paddingTop inline pour garantir un minimum de 70 px sur tous
+              les appareils, plus l'inset système le cas échéant.
+              Swipe vertical (haut ou bas) sur cette barre = fermer la visionneuse. */}
+          <div
+            className="flex items-center justify-between gap-3 px-3 glass border-b border-[var(--border-soft)] cursor-grab active:cursor-grabbing select-none"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            style={{
+              paddingTop: 'calc(max(env(safe-area-inset-top), 12px) + 14px)',
+              paddingBottom: '14px',
+              minHeight: '64px',
+              touchAction: 'pan-y',
+            }}>
             <button
               type="button"
               onClick={onClose}
-              className="btn btn-secondary !py-1 !px-3 text-sm"
-              title="Retour à l'application">
+              className="btn btn-primary !py-2 !px-4 text-sm font-semibold flex-shrink-0"
+              title="Retour (Esc, ou balaye la barre)">
               ← Retour
             </button>
             <div className="text-sm font-semibold truncate flex-1 text-center">
-              {doc.fileName || 'Document'}
+              <div>{doc.fileName || 'Document'}</div>
+              <div className="text-[9px] text-[var(--text-dim)] font-normal -mt-0.5 hidden sm:block">
+                Esc ou balaye cette barre pour fermer
+              </div>
+              <div className="text-[9px] text-[var(--text-dim)] font-normal -mt-0.5 sm:hidden">
+                ↕ Balaye pour fermer
+              </div>
             </div>
             <a
               href={doc.dataUrl}
               download={doc.fileName || 'document'}
-              className="btn btn-secondary !py-1 !px-3 text-sm"
+              className="btn btn-secondary !py-2 !px-3 text-sm flex-shrink-0"
               title="Télécharger le fichier">
               ⬇
             </a>
