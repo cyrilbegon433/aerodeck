@@ -5540,16 +5540,15 @@
             </div>
             <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}>Retirer</button>
           </div>
-          {/* Date du plein (pré-remplie à la date du vol) + N° facture */}
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <div className="label">Date du plein</div>
-              <input type="date" className="input" value={entry.date || flightDate || ''} onChange={e=>set('date', e.target.value)} />
-            </div>
-            <div>
-              <div className="label">N° de facture</div>
-              <input className="input" placeholder="ex: 2026-04-001234" value={entry.invoiceNumber||''} onChange={e=>set('invoiceNumber', e.target.value)} />
-            </div>
+          {/* Date du plein puis N° facture en dessous (évite l'empiètement quand
+              le numéro est long ou sur écran étroit). */}
+          <div>
+            <div className="label whitespace-nowrap">Date du plein</div>
+            <input type="date" className="input" value={entry.date || flightDate || ''} onChange={e=>set('date', e.target.value)} />
+          </div>
+          <div>
+            <div className="label whitespace-nowrap">N° de facture</div>
+            <input className="input" placeholder="ex: 2026-04-001234" value={entry.invoiceNumber||''} onChange={e=>set('invoiceNumber', e.target.value)} />
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
@@ -5578,11 +5577,28 @@
               </div>
             </div>
           </div>
-          <div className="relative">
+          <div className="relative flex flex-wrap gap-2">
             <button type="button" className="btn btn-secondary" disabled={busy}
               onClick={()=>setMenuOpen(o=>!o)}>
               {busy ? 'Import…' : (entry.invoiceDocId ? '🔁 Remplacer la facture' : '🧾 Scanner / Importer la facture')}
             </button>
+            {entry.invoiceDocId && !busy && (
+              <button type="button"
+                className="btn btn-danger"
+                onClick={()=>{
+                  if (!confirm('Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l\'onglet Dépenses (non supprimée).')) return;
+                  // Détache la facture du plein sans toucher à la dépense déjà créée.
+                  onChange({
+                    ...entry,
+                    invoiceDocId: '',
+                    invoiceDataUrl: '',
+                    invoiceFileName: '',
+                    invoiceMime: '',
+                  });
+                }}>
+                🗑 Retirer la facture
+              </button>
+            )}
             {menuOpen && (
               <>
                 <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
