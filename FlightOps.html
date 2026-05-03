@@ -6307,7 +6307,7 @@
     // ------------------------------------------------------------------
     // 12i) ÉCRAN — RÉGLAGES (langue, thème, heure, unités, formats)
     // ------------------------------------------------------------------
-    function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll, syncStatus = {}, onSyncPull, onSyncPush, onArchiveDocs }) {
+    function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll, syncStatus = {}, onSyncPull, onSyncPush, onArchiveDocs, onTestStorageFullPopup }) {
       const { lang, setLang } = React.useContext(I18nContext);
       const t = useT();
       function update(k, v) { onUpdateSettings({ ...settings, [k]: v }); }
@@ -6603,6 +6603,10 @@
                 title="Génère un ZIP avec tous tes documents organisés par vol, puis libère l'espace local">
                 📦 Archiver les documents (ZIP)
               </button>
+              <button className="btn btn-secondary !py-1.5 !px-3 text-sm" onClick={onTestStorageFullPopup}
+                title="Affiche la popup d'archivage automatique (test sans attendre que le stockage soit plein)">
+                🧪 Tester la popup d'archivage
+              </button>
               <button className="btn btn-primary" onClick={onExportJSON}>📥 Exporter sauvegarde JSON</button>
               <label className="btn btn-secondary cursor-pointer">
                 📤 Importer sauvegarde JSON
@@ -6774,6 +6778,11 @@
           setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
         }
       }, [flights, aircraft, documents, categories, settings, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
+
+      // Force l'affichage de la popup pour tester (utilisé par bouton dans Réglages)
+      function triggerStorageFullPopupForTest() {
+        setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
+      }
 
       // Handler du bouton "Archiver et continuer" depuis la popup
       async function handleArchiveAndContinue() {
@@ -7268,7 +7277,8 @@
               settings={settings} onUpdateSettings={setSettings}
               onExportJSON={exportJSON} onImportJSON={importJSON} onClearAll={clearAll}
               syncStatus={syncStatus} onSyncPull={syncPull} onSyncPush={syncPush}
-              onArchiveDocs={archiveAndFreeDocuments} />}
+              onArchiveDocs={archiveAndFreeDocuments}
+              onTestStorageFullPopup={triggerStorageFullPopupForTest} />}
           </main>
 
           {/* Tab bar bas (mobile) — scroll horizontal */}
