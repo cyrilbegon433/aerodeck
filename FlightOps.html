@@ -3108,8 +3108,13 @@
           .sort((a,b) => b.total - a.total);
       }, [categories, totalsByCat, countsByCat]);
       const usedCats = sortedCats.filter(c => c.total > 0 || c.count > 0);
+      // Si aucune dépense saisie, on affiche par défaut les catégories des groupes
+      // Aéronef + Transport sol pour montrer la structure (sinon l'écran serait vide).
+      const initialCatsIfEmpty = sortedCats.filter(c => c.group === 'Aéronef' || c.group === 'Transport sol');
       const [showAllCats, setShowAllCats] = useState(false);
-      const visibleCats = showAllCats ? sortedCats : usedCats;
+      const visibleCats = showAllCats
+        ? sortedCats
+        : (usedCats.length > 0 ? usedCats : initialCatsIfEmpty);
 
       return (
         <div className="space-y-3">
@@ -3323,8 +3328,9 @@
           {/* === RÉCAP RÉPARTITION (en bas, pliable) ===
               Inclut le carburant avion saisi dans les vols même sans facture
               scannée (extraFlightFuel). Donne une vraie vue d'ensemble du coût
-              total d'exploitation. */}
-          {grandTotal > 0 && (
+              total d'exploitation. Toujours visible (même à 0) pour montrer
+              la structure et donner envie de saisir. */}
+          {(documents.length > 0 || extraFlightFuel > 0) && grandTotal > 0 && (
             <div className="card p-3">
               <button type="button"
                 onClick={()=>setShowBreakdown(s=>!s)}
