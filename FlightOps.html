@@ -1436,6 +1436,47 @@
       );
     }
 
+    // ------------------------------------------------------------------
+    // DocViewer : visionneuse interne pour PDF / images. Évite window.open
+    // qui sortait l'utilisateur de l'app PWA (difficile de revenir sur iOS).
+    // ------------------------------------------------------------------
+    function DocViewer({ doc, onClose }) {
+      if (!doc) return null;
+      const isPdf = doc.mime === 'application/pdf';
+      return (
+        <div className="fixed inset-0 z-[60] flex flex-col bg-[var(--bg)] anim-pop" data-docviewer>
+          <div className="flex items-center justify-between gap-2 px-3 py-2 glass safe-top border-b border-[var(--border-soft)]">
+            <button
+              type="button"
+              onClick={onClose}
+              className="btn btn-secondary !py-1 !px-3 text-sm"
+              title="Retour à l'application">
+              ← Retour
+            </button>
+            <div className="text-sm font-semibold truncate flex-1 text-center">
+              {doc.fileName || 'Document'}
+            </div>
+            <a
+              href={doc.dataUrl}
+              download={doc.fileName || 'document'}
+              className="btn btn-secondary !py-1 !px-3 text-sm"
+              title="Télécharger le fichier">
+              ⬇
+            </a>
+          </div>
+          <div className="flex-1 min-h-0 overflow-auto" style={{ background: isPdf ? '#525659' : '#000' }}>
+            {isPdf ? (
+              <embed src={doc.dataUrl} type="application/pdf" style={{ width: '100%', height: '100%', minHeight: '70vh' }} />
+            ) : (
+              <div className="grid place-items-center h-full p-2">
+                <img src={doc.dataUrl} alt={doc.fileName||''} style={{ maxWidth: '100%', maxHeight: '100%' }} />
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    }
+
     function Modal({ open, onClose, title, children, footer }) {
       if (!open) return null;
       return (
@@ -1576,15 +1617,10 @@
         if (!confirm('Retirer ce document ? (Pense à exporter en JSON avant si tu veux le conserver.)')) return;
         onChange((docs||[]).filter(d => d.id !== id));
       }
-      function openDoc(d) {
-        const w = window.open();
-        if (!w) return alert('Ton navigateur a bloqué la fenêtre.');
-        if (d.mime === 'application/pdf') {
-          w.document.write(`<html><body style="margin:0"><embed src="${d.dataUrl}" type="application/pdf" width="100%" height="100%"/></body></html>`);
-        } else {
-          w.document.write(`<html><body style="margin:0;background:#000;display:grid;place-items:center"><img src="${d.dataUrl}" style="max-width:100%;max-height:100vh"/></body></html>`);
-        }
-      }
+      // Visionneuse interne (avec bouton ← Retour) au lieu d'ouvrir un nouvel
+      // onglet : sur iOS PWA, l'onglet externe est très difficile à fermer.
+      const [viewingDoc, setViewingDoc] = useState(null);
+      function openDoc(d) { setViewingDoc(d); }
 
       function DocRow({ d }) {
         const t = typeLabel(d.type);
@@ -1609,6 +1645,9 @@
       return (
         <div className="card p-3">
           <div className="label">Documents joints au vol</div>
+
+          {/* Visionneuse interne — bouton "← Retour" pour revenir à l'app */}
+          <DocViewer doc={viewingDoc} onClose={()=>setViewingDoc(null)} />
 
           <div className="space-y-2">
             {FLIGHT_DOC_TYPES.map(v => {
@@ -4923,19 +4962,18 @@
       }, [companyDocs, filterType, filterAc]);
 
       function typeObj(id){ return COMPANY_DOC_TYPES.find(t=>t.id===id) || COMPANY_DOC_TYPES[COMPANY_DOC_TYPES.length-1]; }
+      // Visionneuse interne (idem FlightDocumentsEditor)
+      const [viewingDoc, setViewingDoc] = useState(null);
       function openDoc(d) {
         if (!d.dataUrl) return alert('Aucun fichier joint.');
-        const w = window.open();
-        if (!w) return alert('Le navigateur a bloqué la fenêtre.');
-        if (d.mime === 'application/pdf') {
-          w.document.write(`<html><body style="margin:0"><embed src="${d.dataUrl}" type="application/pdf" width="100%" height="100%"/></body></html>`);
-        } else {
-          w.document.write(`<html><body style="margin:0;background:#000;display:grid;place-items:center"><img src="${d.dataUrl}" style="max-width:100%;max-height:100vh"/></body></html>`);
-        }
+        setViewingDoc(d);
       }
 
       return (
         <div className="space-y-3">
+          {/* Visionneuse plein écran avec bouton ← Retour */}
+          <DocViewer doc={viewingDoc} onClose={()=>setViewingDoc(null)} />
+
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">{t('co.title')}</h2>
             <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>{t('co.new')}</button>
