@@ -31,6 +31,8 @@
   <!-- jsPDF (export PDF) -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+  <!-- JSZip pour archiver les documents joints en ZIP local (libère l'espace) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <style>
     /* === Palette mode nuit (cockpit) === */
@@ -6305,7 +6307,7 @@
     // ------------------------------------------------------------------
     // 12i) ÉCRAN — RÉGLAGES (langue, thème, heure, unités, formats)
     // ------------------------------------------------------------------
-    function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll, syncStatus = {}, onSyncPull, onSyncPush }) {
+    function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll, syncStatus = {}, onSyncPull, onSyncPush, onArchiveDocs }) {
       const { lang, setLang } = React.useContext(I18nContext);
       const t = useT();
       function update(k, v) { onUpdateSettings({ ...settings, [k]: v }); }
@@ -6593,9 +6595,14 @@
             <div className="text-xs text-[var(--text-dim)]">
               Stockage local utilisé : <span className="font-mono text-[var(--text)]">{usage.toFixed(2)} MB</span>
               {' '}/ ~5 MB (limite navigateur).
-              {usage > 4 && <span className="text-[var(--warn)] ml-2">⚠ Proche de la limite — pense à exporter et nettoyer.</span>}
+              {usage > 4 && <span className="text-[var(--warn)] ml-2">⚠ Proche de la limite — archive tes documents.</span>}
+              {usage > 3 && usage <= 4 && <span className="text-[var(--warn)] ml-2">⚠ Surveille l'usage.</span>}
             </div>
             <div className="flex flex-wrap gap-2">
+              <button className="btn btn-primary" onClick={onArchiveDocs}
+                title="Génère un ZIP avec tous tes documents organisés par vol, puis libère l'espace local">
+                📦 Archiver les documents (ZIP)
+              </button>
               <button className="btn btn-primary" onClick={onExportJSON}>📥 Exporter sauvegarde JSON</button>
               <label className="btn btn-secondary cursor-pointer">
                 📤 Importer sauvegarde JSON
@@ -6736,11 +6743,51 @@
       const [dutyPeriods, setDutyPeriods] = useState(initial?.dutyPeriods || []);
       const [lang,        setLang]        = useState(initial?.settings?.language || 'fr');
 
-      // persistance auto
+      // === Détection quota stockage : popup auto pour archiver ===
+      const [storageFullModal, setStorageFullModal] = useState(null); // { lastEditedId } | null
+      const lastEditedFlightIdRef = useRef(null); // suit le dernier vol modifié
+
+      // Détecte le dernier vol modifié pour pouvoir l'exclure de l'archivage auto.
+      // Quand le contenu de flights change, on prend l'ID du vol avec le createdAt
+      // ou l'updatedAt le plus récent. Heuristique simple mais qui marche pour
+      // l'usage réel (l'utilisateur ouvre puis modifie un vol → c'est le plus récent).
+      useEffect(() => {
+        if (!flights || flights.length === 0) return;
+        // On prend juste le dernier id ajouté (plus récent en bas après tri par date)
+        // ou celui en cours d'édition si dispo via une ref.
+        // Pour l'instant : le vol au plus grand id (timestamp dans 'flt_TIMESTAMP')
+        const sorted = [...flights].sort((a,b) => {
+          const ta = parseInt((a.id||'').replace(/^flt_/, ''), 10) || 0;
+          const tb = parseInt((b.id||'').replace(/^flt_/, ''), 10) || 0;
+          return tb - ta;
+        });
+        if (sorted[0]?.id) lastEditedFlightIdRef.current = sorted[0].id;
+      }, [flights]);
+
+      // persistance auto + détection quota
       useEffect(() => {
         const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods });
-        if (!ok) console.warn('Sauvegarde locale impossible — exporte le JSON manuellement.');
+        if (!ok) {
+          // Quota dépassé : propose à l'utilisateur d'archiver les autres vols
+          // pour libérer de l'espace et continuer à remplir le vol en cours.
+          console.warn('Sauvegarde locale impossible — quota dépassé.');
+          setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
+        }
       }, [flights, aircraft, documents, categories, settings, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
+
+      // Handler du bouton "Archiver et continuer" depuis la popup
+      async function handleArchiveAndContinue() {
+        const exclude = storageFullModal?.lastEditedId || null;
+        const ok = await archiveAndFreeDocuments({ excludeFlightId: exclude, autoConfirm: true });
+        setStorageFullModal(null);
+        if (ok) {
+          // Après archivage, force une nouvelle sauvegarde locale
+          setTimeout(() => {
+            const retry = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods });
+            if (!retry) alert('⚠ Toujours pas assez d\'espace. Le vol en cours a peut-être trop de documents. Retire des documents ou archive le manuellement aussi.');
+          }, 100);
+        }
+      }
 
       // === Synchronisation cloud (GitHub Gist) ============================
       // État local non-persisté (juste UI)
@@ -6908,6 +6955,130 @@
         a.click();
         setTimeout(()=>URL.revokeObjectURL(url), 1000);
       }
+
+      // === Archivage des documents joints en ZIP local ===
+      // Génère un .zip structuré par vol (date + route + immat) qui contient tous
+      // les W&B, FPL, OFPL, Autres, factures carburant + docs compagnie. Une fois
+      // téléchargé, l'utilisateur peut le déplacer dans iCloud Drive et l'app
+      // libère l'espace local en retirant les dataUrl (les références restent
+      // pour montrer "archivé le X" mais le contenu binaire est purgé).
+      // Options :
+      //   - excludeFlightId : ne pas archiver les docs de ce vol (utile quand
+      //     on remplit un vol et qu'on veut juste libérer de la place sur les
+      //     autres sans toucher au vol courant)
+      //   - autoConfirm : skip les popups (utile pour l'archivage auto suite
+      //     à un quota error)
+      async function archiveAndFreeDocuments(opts = {}) {
+        const { excludeFlightId = null, autoConfirm = false } = opts;
+        if (typeof JSZip === 'undefined') {
+          if (!autoConfirm) alert('La librairie de compression ZIP n\'est pas chargée. Recharge la page et réessaye.');
+          return false;
+        }
+        // Filtre les vols cibles (exclut éventuellement le vol courant)
+        const targetFlights = flights.filter(f => f.id !== excludeFlightId);
+        // Compte ce qui sera archivé
+        let docCount = 0;
+        for (const f of targetFlights) {
+          docCount += (f.documents||[]).filter(d=>d.dataUrl).length;
+          docCount += (f.fuelEntries||[]).filter(e=>e.invoiceDataUrl).length;
+        }
+        docCount += (companyDocs||[]).filter(d=>d.dataUrl).length;
+        if (docCount === 0) {
+          if (!autoConfirm) alert('Aucun document à archiver.');
+          return false;
+        }
+        if (!autoConfirm) {
+          const msg = excludeFlightId
+            ? `Archiver ${docCount} document(s) des AUTRES vols en ZIP puis libérer l'espace local ?\n\nLe vol que tu modifies actuellement n'est PAS touché.\n\nÉtapes :\n1. Le fichier ZIP va se télécharger\n2. Déplace-le dans iCloud Drive\n3. L'app retire les fichiers archivés de son stockage`
+            : `Archiver ${docCount} document(s) en ZIP puis libérer l'espace local ?\n\nÉtapes :\n1. Le fichier ZIP va se télécharger\n2. Déplace-le dans iCloud Drive (ou autre)\n3. L'app retire les fichiers de son stockage (les références restent visibles avec mention « archivé »)\n\nTu pourras toujours rouvrir les documents depuis le ZIP.`;
+          if (!confirm(msg)) return false;
+        }
+
+        const zip = new JSZip();
+        // Helper : transforme dataURL → Blob pour JSZip
+        function dataUrlToBytes(dataUrl) {
+          const base64 = dataUrl.split(',')[1] || '';
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          return bytes;
+        }
+        // Sanitise un nom pour le système de fichiers
+        function safe(s) { return String(s||'').replace(/[\/\\?%*:|"<>]/g, '-').slice(0, 60); }
+        // Détermine extension d'après le mime
+        function extFor(mime, fallback) {
+          if (mime === 'application/pdf') return 'pdf';
+          if (mime?.startsWith('image/')) return mime.split('/')[1].replace('jpeg','jpg');
+          return fallback || 'bin';
+        }
+        const TYPE_FOLDERS = { wb: 'WB', fpl: 'FPL', ofpl: 'OFPL', other: 'Autres' };
+
+        // === Vols : un dossier par vol (date_route_immat) ===
+        // On itère sur targetFlights (= tous les vols sauf le vol courant si excludeFlightId est passé)
+        for (const f of targetFlights) {
+          const ac = aircraft.find(a => a.id === f.aircraftId);
+          const reg = ac?.registration || 'NOREG';
+          const folderName = `${f.date || 'sans-date'}_${safe(f.from)}-${safe(f.to)}_${safe(reg)}`;
+          const folder = zip.folder(folderName);
+          // Documents joints (W&B / FPL / OFPL / Autre)
+          for (const d of (f.documents||[])) {
+            if (!d.dataUrl) continue;
+            const sub = folder.folder(TYPE_FOLDERS[d.type] || 'Autres');
+            const ext = extFor(d.mime, 'pdf');
+            const name = d.fileName || `${TYPE_FOLDERS[d.type]||'doc'}.${ext}`;
+            sub.file(safe(name), dataUrlToBytes(d.dataUrl));
+          }
+          // Factures carburant
+          const factSub = folder.folder('Factures');
+          for (const e of (f.fuelEntries||[])) {
+            if (!e.invoiceDataUrl) continue;
+            const ext = extFor(e.invoiceMime, 'pdf');
+            const name = e.invoiceFileName || `facture_${e.invoiceNumber||e.id}.${ext}`;
+            factSub.file(safe(name), dataUrlToBytes(e.invoiceDataUrl));
+          }
+        }
+        // === Documents Compagnie ===
+        if ((companyDocs||[]).some(d=>d.dataUrl)) {
+          const coFolder = zip.folder('Documents-Compagnie');
+          for (const d of (companyDocs||[])) {
+            if (!d.dataUrl) continue;
+            const ext = extFor(d.mime, 'pdf');
+            const prefix = (d.effectiveDate ? d.effectiveDate+'_' : '');
+            const name = prefix + (d.fileName || `${d.title||'doc'}.${ext}`);
+            coFolder.file(safe(name), dataUrlToBytes(d.dataUrl));
+          }
+        }
+
+        // Génère et télécharge le ZIP
+        const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE', compressionOptions: { level: 6 }});
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `AeroDeck-Archive-${todayZuluDate()}.zip`;
+        a.click();
+        setTimeout(()=>URL.revokeObjectURL(url), 2000);
+
+        // Confirmation finale avant suppression locale (skip si autoConfirm depuis quota error)
+        if (!autoConfirm) {
+          if (!confirm('ZIP téléchargé.\n\nVérifie qu\'il est bien dans tes téléchargements / iCloud, puis confirme pour libérer l\'espace local. Les références aux documents restent dans l\'app (mention « archivé ») mais le contenu sera retiré.')) {
+            alert('Aucune modification : tes documents sont toujours dans l\'app.');
+            return false;
+          }
+        }
+        // Purge des dataUrl mais on garde les métadonnées (filename, type, date d'archive)
+        // EXCLUT le vol courant (excludeFlightId) pour ne pas casser ce que l'utilisateur est en train de remplir.
+        const stamp = new Date().toISOString();
+        setFlights(prev => prev.map(f => {
+          if (excludeFlightId && f.id === excludeFlightId) return f; // ne touche pas au vol courant
+          return {
+            ...f,
+            documents: (f.documents||[]).map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d),
+            fuelEntries: (f.fuelEntries||[]).map(e => e.invoiceDataUrl ? { ...e, invoiceDataUrl:'', invoiceArchived: true, invoiceArchivedAt: stamp } : e),
+          };
+        }));
+        setCompanyDocs(prev => prev.map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d));
+        if (!autoConfirm) alert('✓ Documents archivés et espace local libéré.');
+        return true;
+      }
       function importJSON(obj) {
         if (!obj || typeof obj !== 'object') return alert('JSON invalide.');
         if (!confirm('Importer ce fichier ? Les données existantes seront remplacées par celles du fichier.')) return;
@@ -6976,6 +7147,40 @@
 
       return (
         <I18nContext.Provider value={{ lang, setLang }}>
+        {/* Popup automatique quand le stockage local est plein.
+            Propose d'archiver tous les autres vols (sauf le vol courant) en
+            ZIP local pour libérer de la place et continuer à remplir le vol. */}
+        {storageFullModal && (
+          <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center" data-storage-modal>
+            <div className="absolute inset-0 bg-black/60" onClick={()=>setStorageFullModal(null)} />
+            <div className="relative card w-full sm:max-w-lg max-h-[90vh] overflow-y-auto anim-pop p-5"
+                 style={{ borderRadius: '20px 20px 0 0' }}>
+              <div className="text-center mb-3">
+                <div className="text-4xl mb-2">💾</div>
+                <h3 className="text-lg font-semibold">Stockage local plein</h3>
+              </div>
+              <div className="text-sm text-[var(--text-dim)] space-y-2 mb-4">
+                <p>L'app a atteint la limite de stockage du navigateur (~5 MB). Le dernier ajout n'a pas pu être sauvegardé.</p>
+                <p>Solution proposée : <strong>archiver tous les documents des AUTRES vols dans un fichier ZIP</strong> pour libérer de la place. Le vol que tu es en train de remplir reste intact.</p>
+                <ul className="list-disc pl-5 text-xs space-y-1">
+                  <li>Un fichier ZIP avec dossier par vol (date/route/immat) sera téléchargé</li>
+                  <li>Range-le dans iCloud Drive (ou autre)</li>
+                  <li>Les références dans l'app deviennent « archivé », tu y accèderas via le ZIP</li>
+                  <li>Tu pourras continuer à remplir ton vol en cours sans souci</li>
+                </ul>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button className="btn btn-primary" onClick={handleArchiveAndContinue}>
+                  📦 Archiver les autres vols et continuer
+                </button>
+                <button className="btn btn-secondary" onClick={()=>setStorageFullModal(null)}>
+                  Plus tard (j'ouvrirai Réglages → Données)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="min-h-full flex flex-col">
           {/* Header */}
           <header className="glass safe-top sticky top-0 z-40 px-4 py-2.5 flex items-center justify-between">
@@ -7062,7 +7267,8 @@
             {tab==='settings' && <SettingsScreen
               settings={settings} onUpdateSettings={setSettings}
               onExportJSON={exportJSON} onImportJSON={importJSON} onClearAll={clearAll}
-              syncStatus={syncStatus} onSyncPull={syncPull} onSyncPush={syncPush} />}
+              syncStatus={syncStatus} onSyncPull={syncPull} onSyncPush={syncPush}
+              onArchiveDocs={archiveAndFreeDocuments} />}
           </main>
 
           {/* Tab bar bas (mobile) — scroll horizontal */}
