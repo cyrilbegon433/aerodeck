@@ -5847,8 +5847,42 @@
       const gh = settings.gh || { enabled: false, token: '', gistId: '', lastWrittenAt: 0 };
       // État local : montrer/masquer le token (par défaut masqué pour la sécurité)
       const [showToken, setShowToken] = useState(false);
+      const [testResult, setTestResult] = useState('');
       function updateGh(patch) {
         onUpdateSettings({ ...settings, gh: { ...gh, ...patch } });
+      }
+      // Test simple : GET /user → si le token marche, on récupère le login.
+      async function testToken() {
+        if (!gh.token) { setTestResult('❌ Token vide.'); return; }
+        setTestResult('⏳ Test en cours…');
+        try {
+          // On essaie d'abord avec "Bearer" puis avec "token" si ça échoue
+          let r = await fetch('https://api.github.com/user', {
+            headers: {
+              'Authorization': `Bearer ${gh.token}`,
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+            },
+          });
+          if (r.status === 401) {
+            // Réessaie avec "token" (ancien format, parfois plus tolérant)
+            r = await fetch('https://api.github.com/user', {
+              headers: {
+                'Authorization': `token ${gh.token}`,
+                'Accept': 'application/vnd.github+json',
+              },
+            });
+          }
+          if (r.ok) {
+            const j = await r.json();
+            setTestResult(`✅ Token OK — connecté en tant que "${j.login}". Tu peux maintenant cliquer "Pousser maintenant".`);
+          } else {
+            const text = await r.text();
+            setTestResult(`❌ HTTP ${r.status} — ${text.slice(0, 200)}`);
+          }
+        } catch (e) {
+          setTestResult('❌ Erreur réseau : ' + e.message);
+        }
       }
       const syncBg = syncStatus.status === 'syncing' ? 'bg-[var(--warn)]/15 text-[var(--warn)] border-[var(--warn)]/30'
                   : syncStatus.status === 'synced'  ? 'bg-[var(--ok)]/15 text-[var(--ok)] border-[var(--ok)]/30'
@@ -5928,6 +5962,12 @@
             </div>
             <div className="flex flex-wrap gap-2">
               <button
+                className="btn btn-secondary !py-1.5 !px-3 text-sm"
+                disabled={!gh.token}
+                onClick={testToken}>
+                🧪 Tester le token
+              </button>
+              <button
                 className="btn btn-primary !py-1.5 !px-3 text-sm"
                 disabled={!gh.enabled || !gh.token}
                 onClick={()=>onSyncPush?.()}>
@@ -5940,6 +5980,15 @@
                 ↓ Récupérer maintenant
               </button>
             </div>
+            {testResult && (
+              <div className={`text-xs px-2 py-2 rounded-md font-mono break-all ${
+                testResult.startsWith('✅') ? 'bg-[var(--ok)]/15 text-[var(--ok)]' :
+                testResult.startsWith('❌') ? 'bg-[var(--err)]/15 text-[var(--err)]' :
+                'bg-[var(--bg-elev)] text-[var(--text-dim)]'
+              }`}>
+                {testResult}
+              </div>
+            )}
             {gh.enabled && syncStatus.lastSyncAt > 0 && (
               <div className="text-xs text-[var(--text-dim)]">
                 Dernière sync : {new Date(syncStatus.lastSyncAt).toLocaleTimeString()} · Push auto 5 sec après modif · Pull auto toutes les 30 sec
