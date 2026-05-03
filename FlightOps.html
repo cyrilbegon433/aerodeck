@@ -5836,7 +5836,7 @@
     // ------------------------------------------------------------------
     // 12i) ÉCRAN — RÉGLAGES (langue, thème, heure, unités, formats)
     // ------------------------------------------------------------------
-    function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll }) {
+    function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll, syncStatus = {}, onSyncPull, onSyncPush }) {
       const { lang, setLang } = React.useContext(I18nContext);
       const t = useT();
       function update(k, v) { onUpdateSettings({ ...settings, [k]: v }); }
@@ -5844,9 +5844,89 @@
       const usage = storageUsageMB();
       const themeApplied = effectiveTheme(settings.theme || 'dark');
 
+      const gh = settings.gh || { enabled: false, token: '', gistId: '', lastWrittenAt: 0 };
+      function updateGh(patch) {
+        onUpdateSettings({ ...settings, gh: { ...gh, ...patch } });
+      }
+      const syncBg = syncStatus.status === 'syncing' ? 'bg-[var(--warn)]/15 text-[var(--warn)] border-[var(--warn)]/30'
+                  : syncStatus.status === 'synced'  ? 'bg-[var(--ok)]/15 text-[var(--ok)] border-[var(--ok)]/30'
+                  : syncStatus.status === 'error'   ? 'bg-[var(--err)]/15 text-[var(--err)] border-[var(--err)]/30'
+                  : 'bg-[var(--bg-elev)] text-[var(--text-dim)] border-[var(--border-soft)]';
+      const syncIcon = syncStatus.status === 'syncing' ? '⏳' : syncStatus.status === 'synced' ? '✓' : syncStatus.status === 'error' ? '⚠' : '·';
+
       return (
         <div className="space-y-3">
           <h2 className="text-xl font-semibold">⚙️ Réglages</h2>
+
+          {/* === Synchronisation cloud GitHub Gist === */}
+          <div className="card p-3 space-y-3">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="label !mb-0">☁️ Synchronisation Mac ↔ iPhone</div>
+              {gh.enabled && (
+                <div className={`text-xs px-2 py-1 rounded-md border font-mono ${syncBg}`}>
+                  {syncIcon} {syncStatus.message || 'inactive'}
+                </div>
+              )}
+            </div>
+            <Hint title="Comment activer la synchro (~3 min)">
+              1. Va sur <a href="https://github.com/settings/tokens?type=beta" target="_blank" className="underline text-[var(--accent)]">github.com/settings/tokens</a> (token fine-grained).<br/>
+              2. <strong>Generate new token</strong> → nom : "AeroDeck sync" → expiration au choix.<br/>
+              3. Dans <strong>Permissions</strong> → <strong>Account permissions</strong> → <strong>Gists</strong> = <strong>Read and write</strong>.<br/>
+              4. Crée le token et copie-le. Colle-le ci-dessous, active la sync, puis clique <strong>Activer</strong>.<br/>
+              <br/>
+              Le token reste sur ton appareil (localStorage). Le gist créé est privé.
+              Sur ton autre appareil, colle le même token + le même Gist ID (visible ici après création) pour synchroniser.
+            </Hint>
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked={!!gh.enabled} onChange={e=>updateGh({ enabled: e.target.checked })} />
+                <span>Activer la synchro</span>
+              </label>
+            </div>
+            <div>
+              <div className="label whitespace-nowrap">Personal Access Token (gist scope)</div>
+              <input
+                type="password"
+                className="input font-mono text-xs"
+                placeholder="github_pat_..."
+                value={gh.token || ''}
+                onChange={e=>updateGh({ token: e.target.value.trim() })}
+                autoComplete="off"
+              />
+            </div>
+            <div>
+              <div className="label whitespace-nowrap">Gist ID</div>
+              <input
+                className="input font-mono text-xs"
+                placeholder="(créé automatiquement à la 1re sync)"
+                value={gh.gistId || ''}
+                onChange={e=>updateGh({ gistId: e.target.value.trim() })}
+                autoComplete="off"
+              />
+              <div className="text-xs text-[var(--text-dim)] mt-1">
+                Sur ton 2e appareil, copie cet ID après la 1re sync sur le 1er appareil.
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                className="btn btn-primary !py-1.5 !px-3 text-sm"
+                disabled={!gh.enabled || !gh.token}
+                onClick={()=>onSyncPush?.()}>
+                {gh.gistId ? '↑ Pousser maintenant' : '↑ Activer (créer le gist)'}
+              </button>
+              <button
+                className="btn btn-secondary !py-1.5 !px-3 text-sm"
+                disabled={!gh.enabled || !gh.token || !gh.gistId}
+                onClick={()=>onSyncPull?.()}>
+                ↓ Récupérer maintenant
+              </button>
+            </div>
+            {gh.enabled && syncStatus.lastSyncAt > 0 && (
+              <div className="text-xs text-[var(--text-dim)]">
+                Dernière sync : {new Date(syncStatus.lastSyncAt).toLocaleTimeString()} · Push auto 5 sec après modif · Pull auto toutes les 30 sec
+              </div>
+            )}
+          </div>
 
           {/* Apparence */}
           <div className="card p-3 space-y-3">
@@ -6042,6 +6122,65 @@
     }
 
     // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // 12k) SYNCHRO CLOUD via GITHUB GIST (privé)
+    // ------------------------------------------------------------------
+    // Stratégie : un gist privé contient un fichier `aerodeck.json` avec tout
+    // l'état persisté de l'app. Chaque appareil :
+    //   - pull le gist au démarrage (si plus récent que local → applique)
+    //   - push (debounced 5 sec) à chaque modification locale
+    //   - polle le gist toutes les 30 sec pour détecter les changements distants
+    // Conflit résolu en "last write wins" basé sur __sync.lastWrittenAt local.
+
+    async function ghCreateGist(token, data) {
+      const res = await fetch('https://api.github.com/gists', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          description: 'AeroDeck — données synchronisées',
+          public: false,
+          files: { 'aerodeck.json': { content: JSON.stringify(data, null, 2) } }
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} : ${(await res.text()).slice(0,200)}`);
+      const j = await res.json();
+      return j.id;
+    }
+    async function ghReadGist(token, gistId) {
+      const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+        headers: { 'Authorization': `Bearer ${token}`, 'Accept': 'application/vnd.github+json' },
+        cache: 'no-store',
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} : ${(await res.text()).slice(0,200)}`);
+      const j = await res.json();
+      const file = j.files && j.files['aerodeck.json'];
+      if (!file) throw new Error('Le gist ne contient pas aerodeck.json');
+      let parsed;
+      try { parsed = JSON.parse(file.content); }
+      catch(e) { throw new Error('aerodeck.json malformé : ' + e.message); }
+      return { data: parsed, updatedAt: j.updated_at };
+    }
+    async function ghWriteGist(token, gistId, data) {
+      const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Accept': 'application/vnd.github+json',
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          files: { 'aerodeck.json': { content: JSON.stringify(data, null, 2) } }
+        })
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} : ${(await res.text()).slice(0,200)}`);
+      return await res.json();
+    }
+
+    // ------------------------------------------------------------------
     // 13) APP RACINE
     // ------------------------------------------------------------------
 
@@ -6065,6 +6204,132 @@
         const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods });
         if (!ok) console.warn('Sauvegarde locale impossible — exporte le JSON manuellement.');
       }, [flights, aircraft, documents, categories, settings, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
+
+      // === Synchronisation cloud (GitHub Gist) ============================
+      // État local non-persisté (juste UI)
+      const [syncStatus, setSyncStatus] = useState({ status: 'idle', message: '', lastSyncAt: 0 });
+      // Empêche de pousser pendant l'hydratation initiale (sinon écrase le distant)
+      const hydratedRef = useRef(false);
+      // Marqueur du dernier `updated_at` distant qu'on a vu (pour polling)
+      const lastSeenUpdatedAtRef = useRef('');
+
+      // Construit le snapshot complet à synchroniser
+      function buildSnapshot() {
+        return {
+          __sync: { lastWrittenAt: Date.now(), version: 1 },
+          flights, aircraft, documents, categories,
+          settings: { ...settings, language: lang },
+          maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods,
+        };
+      }
+      // Applique un snapshot reçu (remplace l'état local)
+      function applySnapshot(snap) {
+        if (!snap) return;
+        const m = migrateState({ ...snap });
+        setFlights(m.flights || []);
+        setAircraft(m.aircraft || []);
+        setDocuments(m.documents || []);
+        setCategories(m.categories || DEFAULT_CATEGORIES);
+        setSettings(prev => ({ ...(m.settings || prev), gh: prev.gh })); // garde la config gh locale
+        setMaintenance(m.maintenance || []);
+        setCompanyDocs(m.companyDocs || []);
+        setPilots(m.pilots || []);
+        setPilotStatuses(m.pilotStatuses || []);
+        setDutyPeriods(m.dutyPeriods || []);
+        if (m.settings?.language) setLang(m.settings.language);
+      }
+
+      // Pull manuel (utilisé au démarrage et par le bouton "Sync now")
+      async function syncPull() {
+        const gh = settings.gh || {};
+        if (!gh.enabled || !gh.token || !gh.gistId) return;
+        setSyncStatus(prev => ({ status: 'syncing', message: 'Téléchargement…', lastSyncAt: prev.lastSyncAt }));
+        try {
+          const { data, updatedAt } = await ghReadGist(gh.token, gh.gistId);
+          lastSeenUpdatedAtRef.current = updatedAt;
+          const remoteTs = data?.__sync?.lastWrittenAt || 0;
+          const localTs  = (settings.gh?.lastWrittenAt) || 0;
+          if (remoteTs > localTs) {
+            // Distant plus récent : applique
+            applySnapshot(data);
+            setSettings(prev => ({ ...prev, gh: { ...(prev.gh||{}), lastWrittenAt: remoteTs }}));
+            setSyncStatus({ status: 'synced', message: 'Reçu du cloud ✓', lastSyncAt: Date.now() });
+          } else if (remoteTs < localTs) {
+            // Local plus récent : pousse
+            await syncPush();
+          } else {
+            setSyncStatus({ status: 'synced', message: 'À jour', lastSyncAt: Date.now() });
+          }
+        } catch (e) {
+          setSyncStatus(prev => ({ status: 'error', message: 'Pull : ' + e.message, lastSyncAt: prev.lastSyncAt }));
+        }
+      }
+      // Push manuel ou debouncé
+      async function syncPush() {
+        const gh = settings.gh || {};
+        if (!gh.enabled || !gh.token) return;
+        const snap = buildSnapshot();
+        setSyncStatus(prev => ({ status: 'syncing', message: 'Envoi…', lastSyncAt: prev.lastSyncAt }));
+        try {
+          let gistId = gh.gistId;
+          if (!gistId) {
+            // Première sync : crée le gist
+            gistId = await ghCreateGist(gh.token, snap);
+            setSettings(prev => ({ ...prev, gh: { ...(prev.gh||{}), gistId, lastWrittenAt: snap.__sync.lastWrittenAt } }));
+          } else {
+            const r = await ghWriteGist(gh.token, gistId, snap);
+            lastSeenUpdatedAtRef.current = r.updated_at;
+            setSettings(prev => ({ ...prev, gh: { ...(prev.gh||{}), lastWrittenAt: snap.__sync.lastWrittenAt } }));
+          }
+          setSyncStatus({ status: 'synced', message: 'Envoyé ✓', lastSyncAt: Date.now() });
+        } catch (e) {
+          setSyncStatus(prev => ({ status: 'error', message: 'Push : ' + e.message, lastSyncAt: prev.lastSyncAt }));
+        }
+      }
+
+      // Pull au démarrage si la sync est activée
+      useEffect(() => {
+        const gh = settings.gh || {};
+        if (gh.enabled && gh.token && gh.gistId && !hydratedRef.current) {
+          syncPull().finally(() => { hydratedRef.current = true; });
+        } else {
+          hydratedRef.current = true;
+        }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, []);
+
+      // Push debouncé : 5 sec après la dernière modification
+      useEffect(() => {
+        if (!hydratedRef.current) return;
+        const gh = settings.gh || {};
+        if (!gh.enabled || !gh.token) return;
+        const t = setTimeout(() => { syncPush(); }, 5000);
+        return () => clearTimeout(t);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [flights, aircraft, documents, categories, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods]);
+
+      // Polling : check toutes les 30 sec si le distant a changé
+      useEffect(() => {
+        const gh = settings.gh || {};
+        if (!gh.enabled || !gh.token || !gh.gistId) return;
+        const id = setInterval(async () => {
+          try {
+            const { data, updatedAt } = await ghReadGist(gh.token, gh.gistId);
+            if (updatedAt && updatedAt !== lastSeenUpdatedAtRef.current) {
+              lastSeenUpdatedAtRef.current = updatedAt;
+              const remoteTs = data?.__sync?.lastWrittenAt || 0;
+              const localTs = settings.gh?.lastWrittenAt || 0;
+              if (remoteTs > localTs) {
+                applySnapshot(data);
+                setSettings(prev => ({ ...prev, gh: { ...(prev.gh||{}), lastWrittenAt: remoteTs } }));
+                setSyncStatus({ status: 'synced', message: 'Reçu du cloud ✓', lastSyncAt: Date.now() });
+              }
+            }
+          } catch (e) { /* silence le polling */ }
+        }, 30000);
+        return () => clearInterval(id);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [settings.gh?.enabled, settings.gh?.token, settings.gh?.gistId]);
 
       // -- handlers --
       function upsert(arrSetter) {
@@ -6245,7 +6510,8 @@
               settings={settings} onUpdateSettings={setSettings} />}
             {tab==='settings' && <SettingsScreen
               settings={settings} onUpdateSettings={setSettings}
-              onExportJSON={exportJSON} onImportJSON={importJSON} onClearAll={clearAll} />}
+              onExportJSON={exportJSON} onImportJSON={importJSON} onClearAll={clearAll}
+              syncStatus={syncStatus} onSyncPull={syncPull} onSyncPush={syncPush} />}
           </main>
 
           {/* Tab bar bas (mobile) — scroll horizontal */}
