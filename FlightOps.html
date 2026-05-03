@@ -1803,7 +1803,9 @@
 
       return (
         <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3">
+          {/* Date + Avion : empilés sur mobile (sinon le select Avion empiète sur
+              la colonne Date dès que le nom de l'avion est long), 2 colonnes en desktop. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="min-w-0">
               <div className="label whitespace-nowrap">Date (Zulu)</div>
               <input type="date" className="input" value={f.date} onChange={e=>set('date', e.target.value)} />
