@@ -3702,15 +3702,14 @@
                 setYear(d.getUTCFullYear()); setMonth(d.getUTCMonth());
               }}>›</button>
             </div>
-            {/* Wrapper scrollable horizontalement sur mobile : la grille garde la largeur
-                desktop (~770 px), et l'utilisateur balaie pour voir les 7 jours.
-                Sur Mac, w-full prend toute la largeur disponible et il n'y a pas de scroll. */}
-            <div className="overflow-x-auto -mx-1 px-1">
-              <div className="min-w-[770px] sm:min-w-0">
-            <div className="grid grid-cols-7 gap-1 text-xs text-center text-[var(--text-dim)] mb-1">
+            {/* Calendrier mois — toutes les cases visibles d'un coup, pas de scroll.
+                Sur mobile (<640px) on affiche : numéro + pastille statut + ✈ par vol
+                + immats raccourcies (4 derniers caractères). Sur desktop on affiche
+                la version complète (immat + FT). */}
+            <div className="grid grid-cols-7 gap-0.5 sm:gap-1 text-[10px] sm:text-xs text-center text-[var(--text-dim)] mb-1">
               {dows.map(d => <div key={d}>{d}</div>)}
             </div>
-            <div className="grid grid-cols-7 gap-1">
+            <div className="grid grid-cols-7 gap-0.5 sm:gap-1">
               {grid.map((d, i) => {
                 const list = d ? (flightsByDay[d]||[]) : [];
                 const isToday = d && (year===now.getUTCFullYear() && month===now.getUTCMonth() && d===now.getUTCDate());
@@ -3728,7 +3727,7 @@
                 const dowName = d ? dows[i % 7] : '';
                 return (
                   <div key={i}
-                       className={`min-h-24 sm:min-h-32 p-2 rounded-lg border flex flex-col transition-all ${d ? 'bg-[var(--bg-elev)] border-[var(--border-soft)] hover:border-[var(--border)]' : 'border-transparent'} ${isToday?'!border-[var(--accent)] shadow-[0_0_18px_-4px_var(--accent-glow)]':''} ${d ? 'cursor-pointer' : ''} ${selectedCls}`}
+                       className={`min-h-20 sm:min-h-32 p-1 sm:p-2 rounded-md sm:rounded-lg border flex flex-col transition-all ${d ? 'bg-[var(--bg-elev)] border-[var(--border-soft)] hover:border-[var(--border)]' : 'border-transparent'} ${isToday?'!border-[var(--accent)] shadow-[0_0_18px_-4px_var(--accent-glow)]':''} ${d ? 'cursor-pointer' : ''} ${selectedCls}`}
                        style={cellStyle}
                        onClick={()=>{
                          if (!d) return;
@@ -3744,20 +3743,53 @@
                        }}>
                     {d && (
                       <>
-                        <div className="flex items-start justify-between gap-1">
+                        {/* Ligne 1 : numéro du jour + pastille statut */}
+                        <div className="flex items-start justify-between gap-0.5">
                           <div className="flex flex-col leading-tight">
-                            <span className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">{dowName}</span>
-                            <span className={`text-base font-semibold ${isToday?'text-[var(--accent)]':'text-[var(--text)]'}`}>{d}</span>
+                            <span className="hidden sm:inline text-[10px] uppercase tracking-wider text-[var(--text-dim)]">{dowName}</span>
+                            <span className={`text-xs sm:text-base font-semibold ${isToday?'text-[var(--accent)]':'text-[var(--text)]'}`}>{d}</span>
                           </div>
                           {stEntry && (
-                            <div className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: stEntry.color, color: '#06243a' }}>
-                              {PILOT_STATUS_DEFAULTS[stEntry.status]?.label || stEntry.status}
-                            </div>
+                            <>
+                              {/* Mobile : pastille colorée 6×6 px */}
+                              <span className="sm:hidden inline-block w-1.5 h-1.5 rounded-full mt-1 flex-shrink-0" style={{ background: stEntry.color }} title={PILOT_STATUS_DEFAULTS[stEntry.status]?.label || stEntry.status} />
+                              {/* Desktop : badge avec label */}
+                              <div className="hidden sm:block text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: stEntry.color, color: '#06243a' }}>
+                                {PILOT_STATUS_DEFAULTS[stEntry.status]?.label || stEntry.status}
+                              </div>
+                            </>
                           )}
                         </div>
-                        {/* Liste des immats du jour avec FT + liserai statut Ops.
-                            Cliquer ouvre le panneau détail (même en mode statut pilote). */}
-                        <div className="space-y-0.5 mt-1 flex-1 min-h-0"
+                        {/* MOBILE : avions ✈ + immats raccourcies (4 derniers caractères) */}
+                        {list.length > 0 && (
+                          <div className="sm:hidden flex flex-col gap-0.5 mt-0.5 flex-1 min-h-0"
+                               onClick={(e)=>{ e.stopPropagation(); setDayDetailDate(dateISO); }}>
+                            {/* Ligne avions : un ✈ par vol, jusqu'à 4 */}
+                            <div className="flex flex-wrap gap-0 leading-none justify-center" style={{ color: '#fde68a' }}>
+                              {list.slice(0,4).map(f => (
+                                <span key={f.id} className="text-[8px]" title={`Vol ${f.from}→${f.to}`}>✈</span>
+                              ))}
+                              {list.length > 4 && <span className="text-[7px] text-[var(--text-dim)]">+{list.length-4}</span>}
+                            </div>
+                            {/* Immats raccourcies : 2 max, font 7px, centrées */}
+                            <div className="flex flex-col items-center gap-0 leading-tight overflow-hidden">
+                              {list.slice(0,2).map(f => {
+                                const ac = aircraft.find(a => a.id === f.aircraftId);
+                                const reg = ac?.registration || '—';
+                                // Garde uniquement la partie après le tiret (ex: C-FAAA → FAAA)
+                                const shortReg = reg.includes('-') ? reg.split('-').pop() : reg;
+                                return (
+                                  <span key={f.id} className="text-[7px] font-mono text-[var(--accent)] truncate max-w-full" title={reg}>
+                                    {shortReg}
+                                  </span>
+                                );
+                              })}
+                              {list.length > 2 && <span className="text-[7px] text-[var(--text-dim)]">+{list.length-2}</span>}
+                            </div>
+                          </div>
+                        )}
+                        {/* DESKTOP : liste détaillée des immats + FT + liserai statut Ops */}
+                        <div className="hidden sm:block space-y-0.5 mt-1 flex-1 min-h-0"
                              onClick={(e)=>{
                                e.stopPropagation();
                                setDayDetailDate(dateISO);
@@ -3780,9 +3812,9 @@
                           })}
                           {list.length > 3 && <div className="text-[10px] text-[var(--text-dim)]">+{list.length-3}</div>}
                         </div>
-                        {/* Petits avions ✈️ en bas — un par vol, jusqu'à 8 */}
+                        {/* DESKTOP : avions ✈️ en bas */}
                         {list.length > 0 && (
-                          <div className="flex flex-wrap gap-0.5 mt-1 leading-none" style={{ color: '#fde68a' }}>
+                          <div className="hidden sm:flex flex-wrap gap-0.5 mt-1 leading-none" style={{ color: '#fde68a' }}>
                             {list.slice(0,8).map(f => (
                               <span key={f.id} className="text-sm" title={`Vol ${f.from}→${f.to}`}>✈️</span>
                             ))}
@@ -3794,8 +3826,6 @@
                   </div>
                 );
               })}
-            </div>
-              </div>
             </div>
           </div>
 
