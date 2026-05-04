@@ -2686,9 +2686,6 @@
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {f.flightType && (
-                      <span className="badge">{flightTypeLabel(f.flightType)}</span>
-                    )}
                     <span className="badge">{f.rules}</span>
                     {f.isNavigation && <span className="badge">🧭 Nav</span>}
                     {isDuoFlight(f) && <span className="badge">🤝 Duo</span>}
@@ -2708,8 +2705,6 @@
                         ⏲️ {f.ttsnBefore||'?'} → {f.ttsnAfter||'?'}
                       </span>
                     )}
-                    {fs && <span className="badge">⛽ {fs}{fuelInvoices?` · ${fuelInvoices}🧾`:''}</span>}
-                    {os && <span className="badge">🛢️ {os}</span>}
                     {(f.documents||[]).length>0 && <span className="badge">📎 {f.documents.length}</span>}
                   </div>
                 </div>
@@ -3488,8 +3483,13 @@
       }, [documents]);
 
       // Total global et nb factures
-      const totalAmount = useMemo(() => documents.reduce((s,d) => s + (parseFloat(d.amount)||0), 0), [documents]);
-      const totalCount = documents.length;
+      // Total global = TOUTES les dépenses (réelles + visites mécanicien virtuelles).
+      // Sert à afficher le hero "💰 Total dépenses" + la tuile "Toutes".
+      const totalAmount = useMemo(
+        () => documentsAll.reduce((s,d) => s + (parseFloat(d.amount)||0), 0),
+        [documentsAll]
+      );
+      const totalCount = documentsAll.length;
       // Devise principale (la plus utilisée) pour l'affichage du total
       const mainCurrency = useMemo(() => {
         const m = {};
@@ -3539,6 +3539,19 @@
                 <div className="text-3xl sm:text-4xl font-mono tabular-nums font-bold text-[var(--accent)] leading-tight mt-1">
                   {totalAmount.toFixed(2)} <span className="text-lg text-[var(--text-dim)]">{mainCurrency}</span>
                 </div>
+                {cadGrand && cadGrand.total > 0 && mainCurrency !== 'CAD' && (
+                  <div className="text-base font-mono tabular-nums font-semibold mt-0.5" style={{ color: 'var(--accent)' }}>
+                    ≈ {cadGrand.total.toFixed(2)} <span className="text-xs text-[var(--text-dim)]">CAD</span>
+                    {cadGrand.missing > 0 && (
+                      <span className="ml-2 text-[10px] text-[var(--warn)]" title="Taux non trouvé pour certaines factures (offline ou date trop ancienne)">
+                        ⚠ {cadGrand.missing} taux manquant{cadGrand.missing>1?'s':''}
+                      </span>
+                    )}
+                  </div>
+                )}
+                {fxLoading && !cadGrand && (
+                  <div className="text-xs text-[var(--text-dim)] italic mt-0.5">Conversion CAD en cours…</div>
+                )}
                 <div className="text-xs text-[var(--text-dim)] mt-1">
                   {totalCount} facture{totalCount>1?'s':''} · {usedCats.length} catégorie{usedCats.length>1?'s':''} active{usedCats.length>1?'s':''}
                 </div>
@@ -3792,7 +3805,7 @@
               scannée (extraFlightFuel). Donne une vraie vue d'ensemble du coût
               total d'exploitation. Toujours visible (même à 0) pour montrer
               la structure et donner envie de saisir. */}
-          {(documents.length > 0 || extraFlightFuel > 0) && grandTotal > 0 && (
+          {(documents.length > 0 || extraFlightFuel > 0 || mechanicVirtualDocs.length > 0) && grandTotal > 0 && (
             <div className="card p-3">
               <button type="button"
                 onClick={()=>setShowBreakdown(s=>!s)}
@@ -8602,6 +8615,18 @@
           return merged;
         });
       }
+      // Fusion union par id : prend le remote + ajoute les items locaux qui n'existent
+      // pas en remote (typiquement des créations récentes pas encore poussées).
+      // Évite que le pull écrase une création locale toute fraîche pendant la fenêtre
+      // de 5s du debounce push. Trade-off : si un item a été supprimé sur l'autre
+      // appareil, il peut momentanément réapparaître ici jusqu'à la prochaine sync.
+      function mergeUnionById(remoteList, localList, idKey = 'id') {
+        const remote = Array.isArray(remoteList) ? remoteList : [];
+        const local  = Array.isArray(localList)  ? localList  : [];
+        const remoteIds = new Set(remote.map(x => x[idKey]));
+        const localOnly = local.filter(x => x[idKey] && !remoteIds.has(x[idKey]));
+        return [...remote, ...localOnly];
+      }
       // Applique un snapshot reçu (remplace l'état local) MAIS conserve les binaires
       // (dataUrl, thumbnail, invoiceDataUrl) qui n'étaient pas dans le snapshot.
       function applySnapshot(snap) {
@@ -8633,11 +8658,14 @@
           return { ...rm, attachments: mergeKeepLocalBinaries(rm.attachments, local.attachments) };
         });
         setMaintenance(remoteMaint);
-        setMechanicVisits(m.mechanicVisits || []);
+        // Pour mechanicVisits : fusion union par id (évite d'écraser une création
+        // locale qui n'est pas encore poussée). Idem pour pilots / pilotStatuses /
+        // dutyPeriods qui n'ont pas non plus de timestamps par enregistrement.
+        setMechanicVisits(mergeUnionById(m.mechanicVisits || [], mechanicVisits));
         setCompanyDocs(mergeKeepLocalBinaries(m.companyDocs || [], companyDocs));
-        setPilots(m.pilots || []);
+        setPilots(mergeUnionById(m.pilots || [], pilots));
         setPilotStatuses(m.pilotStatuses || []);
-        setDutyPeriods(m.dutyPeriods || []);
+        setDutyPeriods(mergeUnionById(m.dutyPeriods || [], dutyPeriods));
         if (m.settings?.language) setLang(m.settings.language);
       }
 
