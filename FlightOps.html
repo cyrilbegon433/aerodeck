@@ -8702,11 +8702,16 @@
         setMaintenance(remoteMaint);
         // mechanicVisits : merge union par id (préserve créations locales pas encore
         // poussées) PUIS filtre par tombstones (suppressions propagées dans les 2 sens).
-        // GC tombstones > 30 jours : tous les appareils ont eu le temps de se synchroniser.
+        // IMPORTANT : on lit l'état via REF, pas via la closure, car applySnapshot
+        // est appelée depuis des listeners (polling/focus) qui capturent l'état au
+        // moment de leur création. Sans ref, on perdrait toute modif locale faite
+        // depuis (ex: un tombstone créé après un setup du polling).
         const remoteVisits     = m.mechanicVisits || [];
         const remoteTombstones = m.mechanicVisitTombstones || [];
+        const localVisits      = mechanicVisitsRef.current || [];
+        const localTombstones  = mechanicVisitTombstonesRef.current || [];
         const tombMap = new Map();
-        for (const t of (mechanicVisitTombstones || [])) if (t && t.id) tombMap.set(t.id, t);
+        for (const t of localTombstones) if (t && t.id) tombMap.set(t.id, t);
         for (const t of remoteTombstones) {
           if (!t || !t.id) continue;
           const exist = tombMap.get(t.id);
@@ -8715,7 +8720,7 @@
         const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
         const cleanedTombs = [...tombMap.values()].filter(t => (t.deletedAt || 0) > cutoff);
         const tombIds = new Set(cleanedTombs.map(t => t.id));
-        const mergedVisits = mergeUnionById(remoteVisits, mechanicVisits)
+        const mergedVisits = mergeUnionById(remoteVisits, localVisits)
           .filter(v => v && v.id && !tombIds.has(v.id));
         setMechanicVisits(mergedVisits);
         setMechanicVisitTombstones(cleanedTombs);
@@ -8881,6 +8886,15 @@
       // Ref vers flights pour comparer ancien vs nouveau au save (cascade delete).
       const flightsRef = useRef(flights);
       useEffect(() => { flightsRef.current = flights; }, [flights]);
+      // Refs vers mechanicVisits + tombstones : applySnapshot est appelée depuis le
+      // polling/focus listener qui captent ces variables dans leur closure. Sans ref,
+      // applySnapshot lirait des valeurs obsolètes et perdrait les modifs récentes
+      // (ex: une suppression jamais propagée car le tombstone fraîchement créé n'est
+      // pas vu par la closure).
+      const mechanicVisitsRef = useRef(mechanicVisits);
+      useEffect(() => { mechanicVisitsRef.current = mechanicVisits; }, [mechanicVisits]);
+      const mechanicVisitTombstonesRef = useRef(mechanicVisitTombstones);
+      useEffect(() => { mechanicVisitTombstonesRef.current = mechanicVisitTombstones; }, [mechanicVisitTombstones]);
 
       // Wrapper d'upsert vol qui crée automatiquement les dépenses Carburant Avion
       // pour chaque ligne de fuel ayant un montant + un N° de facture, sans dépense déjà liée.
