@@ -4041,18 +4041,22 @@
                   }
                   setEditing(d); setShowForm(true);
                 }}>
+                  {/* Icône facture générique (receipt) avec couleur de la catégorie.
+                      Plus moderne et plus "expense" que de répéter l'icône catégorie
+                      qui est déjà visible dans le badge en bas. */}
                   {d.thumbnail
-                    ? <img src={d.thumbnail} alt="" className="w-20 h-20 object-cover rounded-lg" />
-                    : (CATEGORY_LUCIDE[cat.id]
-                        ? <CategoryIconChip name={CATEGORY_LUCIDE[cat.id]} color={cat.color} size={80} iconSize={36} shape="rounded-lg" />
-                        : <div className="w-20 h-20 grid place-items-center bg-[var(--bg-elev)] rounded-lg text-3xl">{cat.icon}</div>)
+                    ? <img src={d.thumbnail} alt="" className="w-20 h-20 object-cover rounded-lg flex-shrink-0" />
+                    : <CategoryIconChip name="receipt" color={cat.color} size={80} iconSize={38} shape="rounded-lg" />
                   }
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <div className="font-medium truncate">{d.supplier || '—'}</div>
-                      <div className="font-mono tabular-nums">{parseFloat(d.amount||0).toFixed(2)} {d.currency}</div>
+                    {/* Ligne 1 : DATE (gauche) + MONTANT (droite) */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs text-[var(--text-dim)] font-mono">{d.date || '—'}{ac && ` · ${ac.registration}`}</div>
+                      <div className="font-mono tabular-nums font-semibold whitespace-nowrap">{parseFloat(d.amount||0).toFixed(2)} {d.currency}</div>
                     </div>
-                    <div className="text-xs text-[var(--text-dim)]">{d.date || '—'} {ac && `· ${ac.registration}`}</div>
+                    {/* Ligne 2 : FOURNISSEUR (sous la date, mis en valeur) */}
+                    <div className="font-medium truncate mt-0.5">{d.supplier || '—'}</div>
+                    {/* Ligne 3 : badge catégorie */}
                     <div className="mt-1">
                       <span className="badge inline-flex items-center gap-1.5" style={{ borderColor: cat.color }}>
                         {CATEGORY_LUCIDE[cat.id]
@@ -7856,9 +7860,10 @@
                       {(totalTO + totalLDG) > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="planeLanding" size={11} strokeWidth={2.5} />{totalTO}/{totalLDG}</span>}
                       <span className="badge">{flightTypeLabel(f.flightType)}</span>
                     </div>
+                    {/* Bouton corbeille — même style que la colonne supprimer du tableau Staff desktop. */}
                     <div className="flex justify-end mt-2">
                       <button type="button"
-                        className="text-[var(--err)] hover:opacity-80 text-sm"
+                        className="text-[var(--err)] hover:opacity-80 p-1"
                         title="Supprimer ce vol"
                         onClick={(e)=>{
                           e.stopPropagation();
@@ -7866,10 +7871,7 @@
                             onDeleteFlight && onDeleteFlight(f.id);
                           }
                         }}>
-                        <span className="inline-flex items-center gap-1.5">
-                          <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
-                          Retirer
-                        </span>
+                        <LucideIcon name="trash2" size={18} strokeWidth={2.25} />
                       </button>
                     </div>
                   </div>
