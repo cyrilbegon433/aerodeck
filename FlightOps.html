@@ -5884,24 +5884,14 @@
       const [viewingInvoice, setViewingInvoice] = useState(false);
 
       // Critère "rempli" : qty > 0 ET montant > 0 (les deux infos minimales utiles).
-      // Si rempli on replie automatiquement la ligne en pastille verte ; si la ligne
-      // est encore vide on l'affiche dépliée pour saisir.
+      // Le repli n'est jamais automatique pendant la frappe (sinon dès que l'utilisateur
+      // tape "5" pour amorcer "500", la ligne se replie). On replie uniquement :
+      //   - au montage si la ligne est déjà remplie (rouverture d'un vol existant),
+      //   - via le bouton "Replier" explicite.
       const qtyN = parseFloat(entry.qty) || 0;
       const amtN = parseFloat(entry.amount) || 0;
       const isFilled = qtyN > 0 && amtN > 0;
-      // collapsed : initialisé à isFilled au montage. Modifiable par l'utilisateur.
       const [collapsed, setCollapsed] = useState(isFilled);
-      // Si la ligne devient remplie pendant la saisie (passage vide → rempli), on
-      // re-replie automatiquement. Si l'utilisateur a explicitement déplié, on
-      // respecte son choix tant qu'il continue à éditer (on évite le repli sauvage
-      // pendant la frappe en exigeant un cycle vide → rempli).
-      const wasFilledRef = useRef(isFilled);
-      useEffect(() => {
-        if (isFilled && !wasFilledRef.current) {
-          setCollapsed(true);
-        }
-        wasFilledRef.current = isFilled;
-      }, [isFilled]);
 
       const { triggerCamera, triggerFiles, busy, inputs } = useScanToExpense({
         categoryId, addExpense, aircraftId, flightDate,
@@ -6137,7 +6127,12 @@
         const next = [...entries]; next[i] = e; onChange(next);
       }
       function removeEntry(i) {
-        if (!confirm('Retirer ce plein ? La facture déjà rattachée reste dans Dépenses (non supprimée).')) return;
+        const e = entries[i];
+        const hasLinkedExpense = !!(e && e.invoiceDocId);
+        const msg = hasLinkedExpense
+          ? 'Retirer ce plein ? La dépense Carburant Avion liée sera également supprimée à l\'enregistrement du vol.'
+          : 'Retirer ce plein ?';
+        if (!confirm(msg)) return;
         const next = [...entries]; next.splice(i,1); onChange(next);
       }
 
@@ -7639,6 +7634,9 @@
       // chaque modif. La détection de doublons lit toujours la valeur la plus récente.
       const documentsRef = useRef(documents);
       useEffect(() => { documentsRef.current = documents; }, [documents]);
+      // Ref vers flights pour comparer ancien vs nouveau au save (cascade delete).
+      const flightsRef = useRef(flights);
+      useEffect(() => { flightsRef.current = flights; }, [flights]);
 
       // Wrapper d'upsert vol qui crée automatiquement les dépenses Carburant Avion
       // pour chaque ligne de fuel ayant un montant + un N° de facture, sans dépense déjà liée.
@@ -7647,6 +7645,22 @@
       // refuse, on lie la ligne à la dépense existante (évite de re-prompter au prochain save).
       const upsertFlightWithFuelExpenses = useCallback((flight) => {
         const docsNow = documentsRef.current || [];
+        const flightsNow = flightsRef.current || [];
+        // Cascade delete : repère les fuelEntries qui existaient avant et qui ont
+        // disparu de ce save. Pour chacune, on enlève la dépense liée si elle existe.
+        const previousFlight = flightsNow.find(f => f.id === flight.id);
+        const removedExpenseIds = [];
+        if (previousFlight) {
+          const newIds = new Set((flight.fuelEntries || []).map(e => e.id));
+          for (const oldE of (previousFlight.fuelEntries || [])) {
+            if (!oldE.id || newIds.has(oldE.id)) continue;
+            // Cette ligne a été retirée du vol. Si elle référence une dépense qui
+            // existe vraiment, on programme sa suppression.
+            if (oldE.invoiceDocId && docsNow.some(d => d.id === oldE.invoiceDocId)) {
+              removedExpenseIds.push(oldE.invoiceDocId);
+            }
+          }
+        }
         const justAdded = []; // dépenses créées dans ce save (pour détecter doublons intra-save)
         const updatedFuelEntries = (flight.fuelEntries || []).map(e => {
           const amt = parseFloat(e.amount);
@@ -7711,6 +7725,10 @@
           ? flight
           : { ...flight, fuelEntries: updatedFuelEntries };
         upsert(setFlights)(flightToSave);
+        // Cascade : retire les dépenses liées aux fuelEntries supprimées
+        if (removedExpenseIds.length > 0) {
+          setDocuments(prev => prev.filter(d => !removedExpenseIds.includes(d.id)));
+        }
       }, [addExpense]);
 
       function exportJSON() {
