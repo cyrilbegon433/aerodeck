@@ -8489,6 +8489,10 @@
       // Visites mécanicien (déplacements + frais) — répartis sur N avions concernés.
       // Comptés dans Stats > Coût d'exploitation par avion sauf si includeInOpex=false.
       const [mechanicVisits, setMechanicVisits] = useState(initial?.mechanicVisits || []);
+      // Tombstones de visites supprimées : { id, deletedAt }. Propagés via sync pour
+      // que la suppression sur un appareil se répande sur les autres (sans quoi le
+      // merge union par id ferait revivre l'élément supprimé). GC après 30 jours.
+      const [mechanicVisitTombstones, setMechanicVisitTombstones] = useState(initial?.mechanicVisitTombstones || []);
       const [companyDocs, setCompanyDocs] = useState(initial?.companyDocs || []);
       const [pilots,      setPilots]      = useState(initial?.pilots      || []);
       const [pilotStatuses, setPilotStatuses] = useState(initial?.pilotStatuses || []);
@@ -8518,14 +8522,14 @@
 
       // persistance auto + détection quota
       useEffect(() => {
-        const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods });
+        const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, mechanicVisits, mechanicVisitTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods });
         if (!ok) {
           // Quota dépassé : propose à l'utilisateur d'archiver les autres vols
           // pour libérer de l'espace et continuer à remplir le vol en cours.
           console.warn('Sauvegarde locale impossible — quota dépassé.');
           setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
         }
-      }, [flights, aircraft, documents, categories, settings, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
+      }, [flights, aircraft, documents, categories, settings, maintenance, mechanicVisits, mechanicVisitTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
 
       // Force l'affichage de la popup pour tester (utilisé par bouton dans Réglages).
       // En mode test on n'exclut AUCUN vol, comme ça l'utilisateur voit
@@ -8624,6 +8628,7 @@
           settings: { ...settingsClean, language: lang },
           maintenance: maintenanceLite,
           mechanicVisits,
+          mechanicVisitTombstones,
           companyDocs: companyDocsLite,
           pilots, pilotStatuses, dutyPeriods,
         };
@@ -8695,10 +8700,25 @@
           return { ...rm, attachments: mergeKeepLocalBinaries(rm.attachments, local.attachments) };
         });
         setMaintenance(remoteMaint);
-        // Pour mechanicVisits : fusion union par id (évite d'écraser une création
-        // locale qui n'est pas encore poussée). Idem pour pilots / pilotStatuses /
-        // dutyPeriods qui n'ont pas non plus de timestamps par enregistrement.
-        setMechanicVisits(mergeUnionById(m.mechanicVisits || [], mechanicVisits));
+        // mechanicVisits : merge union par id (préserve créations locales pas encore
+        // poussées) PUIS filtre par tombstones (suppressions propagées dans les 2 sens).
+        // GC tombstones > 30 jours : tous les appareils ont eu le temps de se synchroniser.
+        const remoteVisits     = m.mechanicVisits || [];
+        const remoteTombstones = m.mechanicVisitTombstones || [];
+        const tombMap = new Map();
+        for (const t of (mechanicVisitTombstones || [])) if (t && t.id) tombMap.set(t.id, t);
+        for (const t of remoteTombstones) {
+          if (!t || !t.id) continue;
+          const exist = tombMap.get(t.id);
+          if (!exist || ((t.deletedAt || 0) > (exist.deletedAt || 0))) tombMap.set(t.id, t);
+        }
+        const cutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const cleanedTombs = [...tombMap.values()].filter(t => (t.deletedAt || 0) > cutoff);
+        const tombIds = new Set(cleanedTombs.map(t => t.id));
+        const mergedVisits = mergeUnionById(remoteVisits, mechanicVisits)
+          .filter(v => v && v.id && !tombIds.has(v.id));
+        setMechanicVisits(mergedVisits);
+        setMechanicVisitTombstones(cleanedTombs);
         setCompanyDocs(mergeKeepLocalBinaries(m.companyDocs || [], companyDocs));
         setPilots(mergeUnionById(m.pilots || [], pilots));
         setPilotStatuses(m.pilotStatuses || []);
@@ -9360,7 +9380,16 @@
               onAircraftUpdate={upsert(setAircraft)}
               mechanicVisits={mechanicVisits}
               onMechanicVisitUpsert={upsert(setMechanicVisits)}
-              onMechanicVisitDelete={remove(setMechanicVisits)} />}
+              onMechanicVisitDelete={(id) => {
+                // Soft delete : retire de la liste + ajoute un tombstone pour propager la
+                // suppression vers les autres appareils via sync. Sans le tombstone, le
+                // merge union ré-ajouterait l'élément depuis le remote.
+                setMechanicVisits(prev => prev.filter(v => v.id !== id));
+                setMechanicVisitTombstones(prev => {
+                  if (prev.some(t => t.id === id)) return prev;
+                  return [...prev, { id, deletedAt: Date.now() }];
+                });
+              }} />}
             {tab==='documents' && <DocumentsScreen
               documents={documents} aircraft={aircraft} categories={categories} pilots={pilots}
               flights={flights}
