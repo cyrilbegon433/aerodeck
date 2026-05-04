@@ -9183,28 +9183,35 @@
         }
         const TYPE_FOLDERS = { wb: 'WB', fpl: 'FPL', ofpl: 'OFPL', other: 'Autres' };
 
-        // === Vols : un dossier par vol (date_route_immat) ===
-        // On itère sur targetFlights (= tous les vols sauf le vol courant si excludeFlightId est passé)
+        // === Vols : un dossier par vol (date_route_immat) — UNIQUEMENT s'il y a au
+        //     moins un fichier à archiver. Pas de dossiers vides dans le ZIP. ===
         for (const f of targetFlights) {
+          const docsWithBinary    = (f.documents||[]).filter(d => d.dataUrl);
+          const fuelWithInvoice   = (f.fuelEntries||[]).filter(e => e.invoiceDataUrl);
+          if (docsWithBinary.length === 0 && fuelWithInvoice.length === 0) {
+            continue; // vol sans aucun fichier à archiver → on saute
+          }
           const ac = aircraft.find(a => a.id === f.aircraftId);
           const reg = ac?.registration || 'NOREG';
           const folderName = `${f.date || 'sans-date'}_${safe(f.from)}-${safe(f.to)}_${safe(reg)}`;
           const folder = zip.folder(folderName);
-          // Documents joints (W&B / FPL / OFPL / Autre)
-          for (const d of (f.documents||[])) {
-            if (!d.dataUrl) continue;
+          // Documents joints (W&B / FPL / OFPL / Autre) — sous-dossier par type créé
+          // à la demande (zip.folder dans la boucle, JSZip dédoublonne automatiquement).
+          for (const d of docsWithBinary) {
             const sub = folder.folder(TYPE_FOLDERS[d.type] || 'Autres');
             const ext = extFor(d.mime, 'pdf');
             const name = d.fileName || `${TYPE_FOLDERS[d.type]||'doc'}.${ext}`;
             sub.file(safe(name), dataUrlToBytes(d.dataUrl));
           }
-          // Factures carburant
-          const factSub = folder.folder('Factures');
-          for (const e of (f.fuelEntries||[])) {
-            if (!e.invoiceDataUrl) continue;
-            const ext = extFor(e.invoiceMime, 'pdf');
-            const name = e.invoiceFileName || `facture_${e.invoiceNumber||e.id}.${ext}`;
-            factSub.file(safe(name), dataUrlToBytes(e.invoiceDataUrl));
+          // Factures carburant — sous-dossier "Factures" créé seulement s'il y a au
+          // moins une facture à mettre dedans (sinon on évite le folder vide).
+          if (fuelWithInvoice.length > 0) {
+            const factSub = folder.folder('Factures');
+            for (const e of fuelWithInvoice) {
+              const ext = extFor(e.invoiceMime, 'pdf');
+              const name = e.invoiceFileName || `facture_${e.invoiceNumber||e.id}.${ext}`;
+              factSub.file(safe(name), dataUrlToBytes(e.invoiceDataUrl));
+            }
           }
         }
         // === Documents Compagnie ===
