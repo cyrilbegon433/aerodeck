@@ -4299,8 +4299,22 @@
         for (const d of filteredDocs) {
           m[d.categoryId] = (m[d.categoryId]||0) + (parseFloat(d.amount)||0);
         }
+        // Visites mécanicien (includeInOpex !== false) sur la période sélectionnée :
+        // ajoutées sous catégorie 'mechanic_visit' avec montant total réparti = total
+        // (le split par avion ne change pas la somme globale).
+        for (const v of (mechanicVisits || [])) {
+          if (v.includeInOpex === false) continue;
+          if (!v.date) continue;
+          const dt = new Date(v.date+'T00:00:00Z');
+          if (isNaN(dt.getTime())) continue;
+          if (dt.getUTCFullYear() !== year) continue;
+          if (month !== 0 && dt.getUTCMonth()+1 !== month) continue;
+          const total = parseFloat(v.amount) || 0;
+          if (total <= 0) continue;
+          m['mechanic_visit'] = (m['mechanic_visit']||0) + total;
+        }
         return m;
-      }, [filteredDocs]);
+      }, [filteredDocs, mechanicVisits, year, month]);
 
       function exportFlightsCSV() {
         const headers = ['date','from','to','registration','type','functionType','rules','night','blockOut','takeOff','landing','blockIn','flightTime_min','airTime_min','takeoffs','landings','nightLandings','approaches','fuel','fuelUnit','notes'];
