@@ -2610,11 +2610,19 @@
       );
     }
 
-    function LogbookScreen({ flights, aircraft, pilots=[], addExpense, onAddOrUpdate, onDelete, settings={} }) {
+    function LogbookScreen({ flights, aircraft, pilots=[], addExpense, onAddOrUpdate, onDelete, settings={}, reopenFlightId=null, onConsumeReopen=()=>{} }) {
       const t = useT();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
       const [filterAircraft, setFilterAircraft] = useState('all');
+      // Si App demande de rouvrir une fiche vol (typiquement après archivage stockage
+      // plein), on ouvre la modal d'édition sur ce vol et on consomme l'instruction.
+      useEffect(() => {
+        if (!reopenFlightId) return;
+        const f = flights.find(x => x.id === reopenFlightId);
+        if (f) { setEditing(f); setShowForm(true); }
+        onConsumeReopen();
+      }, [reopenFlightId, flights, onConsumeReopen]);
 
       const sorted = useMemo(() => {
         const arr = [...flights];
@@ -3194,12 +3202,28 @@
       }
       const hasFile = !!(d.dataUrl || d.thumbnail);
       const isPdf = d.mime === 'application/pdf';
+      // État archivé : flag posé par archiveAndFreeDocuments. Le binaire est dans le ZIP.
+      const isArchived = !!d.archived || (!hasFile && !!d.archivedAt && !!d.fileName);
 
       return (
         <div className="space-y-3">
           <div className="card p-3">
             <div className="label">Pièce jointe (facture, ticket…)</div>
-            {hasFile ? (
+            {isArchived ? (
+              /* Encart vert "OK archivé" : binaire dans le ZIP, métadonnées préservées */
+              <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
+                <div className="w-12 h-12 grid place-items-center bg-[var(--ok)]/20 rounded text-2xl flex-shrink-0 text-[var(--ok)]">💾</div>
+                <div className="flex-1 min-w-0 text-xs">
+                  <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
+                  <div className="truncate text-[var(--text-dim)]">{d.fileName || 'Pièce jointe'} — fichier dans ton ZIP de sauvegarde</div>
+                </div>
+                <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
+                  onClick={()=>{
+                    if (!confirm('Retirer la référence à ce fichier archivé ?')) return;
+                    setD(prev => ({ ...prev, thumbnail:'', dataUrl:'', fileName:'', mime:'', archived: false }));
+                  }}>Retirer</button>
+              </div>
+            ) : hasFile ? (
               <div className="space-y-2">
                 {/* Rangée DocRow style : aperçu + nom + Ouvrir + Retirer */}
                 <div className="flex items-center gap-2 bg-[var(--bg-card)] p-2 rounded-lg">
@@ -7113,12 +7137,37 @@
             (() => {
               const isPdf = entry.invoiceMime === 'application/pdf';
               const hasBinary = !!(entry.invoiceDataUrl);
-              const archived = !hasBinary && !entry.invoiceFileName; // dépouillé après archive
+              // Détection d'archive : on se fie d'abord au flag invoiceArchived posé
+              // par archiveAndFreeDocuments. Fallback : pas de binaire dispo = archivé.
+              const archived = !!entry.invoiceArchived || (!hasBinary && !!entry.invoiceDocId);
+              if (archived) {
+                return (
+                  <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
+                    <div className="w-10 h-10 grid place-items-center bg-[var(--ok)]/20 rounded text-xl flex-shrink-0 text-[var(--ok)]">💾</div>
+                    <div className="flex-1 min-w-0 text-xs">
+                      <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
+                      <div className="truncate text-[var(--text-dim)]">Facture{entry.invoiceFileName ? ` · ${entry.invoiceFileName}` : ''}</div>
+                    </div>
+                    <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
+                      onClick={()=>{
+                        if (!confirm('Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l\'onglet Dépenses (non supprimée).')) return;
+                        onChange({
+                          ...entry,
+                          invoiceDocId: '',
+                          invoiceDataUrl: '',
+                          invoiceFileName: '',
+                          invoiceMime: '',
+                          invoiceArchived: false,
+                        });
+                      }}>
+                      Retirer
+                    </button>
+                  </div>
+                );
+              }
               return (
                 <div className="flex items-center gap-2 bg-[var(--bg-card)] p-2 rounded-lg">
-                  {archived ? (
-                    <div className="w-10 h-10 grid place-items-center bg-[var(--bg-elev)] rounded text-xl flex-shrink-0">💾</div>
-                  ) : isPdf ? (
+                  {isPdf ? (
                     <div className="w-10 h-10 grid place-items-center bg-[var(--bg-elev)] rounded text-xl flex-shrink-0">📄</div>
                   ) : hasBinary ? (
                     <img src={entry.invoiceDataUrl} alt="" className="w-10 h-10 object-cover rounded flex-shrink-0" />
@@ -7127,11 +7176,9 @@
                   )}
                   <div className="flex-1 min-w-0 text-xs">
                     <div className="truncate font-medium">{entry.invoiceFileName || 'Facture'}</div>
-                    <div className="truncate text-[var(--text-dim)]">
-                      {archived ? 'Sauvegardée (archivée hors app)' : '✓ Facture rattachée'}
-                    </div>
+                    <div className="truncate text-[var(--text-dim)]">✓ Facture rattachée</div>
                   </div>
-                  {!archived && hasBinary && (
+                  {hasBinary && (
                     <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs"
                       onClick={()=>setViewingInvoice(true)}>
                       Ouvrir
@@ -8537,6 +8584,10 @@
       // === Détection quota stockage : popup auto pour archiver ===
       const [storageFullModal, setStorageFullModal] = useState(null); // { lastEditedId } | null
       const lastEditedFlightIdRef = useRef(null); // suit le dernier vol modifié
+      // Demande à LogbookScreen de rouvrir une fiche vol après archivage. Utile
+      // pour ramener l'utilisateur exactement où il en était quand le popup
+      // stockage plein s'est déclenché (ex: pendant l'ajout d'un OFPL).
+      const [reopenFlightId, setReopenFlightId] = useState(null);
 
       // Détecte le dernier vol modifié pour pouvoir l'exclure de l'archivage auto.
       // Quand le contenu de flights change, on prend l'ID du vol avec le createdAt
@@ -8599,8 +8650,13 @@
           const ok = await archiveAndFreeDocuments({ keepInAppFlightId: keep, autoConfirm: true });
           setStorageFullModal(null);
           if (ok) {
-            const keepMsg = keep ? '\n\nLes documents de ton vol courant sont conservés dans l\'app (ils sont aussi dans le ZIP en sauvegarde).' : '';
-            alert(`✓ ${docCount} document(s) archivé(s) dans le ZIP.${keepMsg}`);
+            alert(`✓ ${docCount} document(s) archivé(s) dans le ZIP. Les documents affichent maintenant « OK archivé » dans tes vols.`);
+            // Ramène l'utilisateur sur la fiche vol qu'il était en train de remplir,
+            // pour qu'il puisse continuer à le compléter et le valider Complet.
+            if (keep) {
+              setTab('logbook');
+              setReopenFlightId(keep);
+            }
           } else {
             alert('L\'archivage n\'a pas pu être complété. Vérifie la console du navigateur pour plus d\'infos.');
           }
@@ -9406,6 +9462,8 @@
             {tab==='logbook' && <LogbookScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               settings={settings}
+              reopenFlightId={reopenFlightId}
+              onConsumeReopen={()=>setReopenFlightId(null)}
               onAddOrUpdate={upsertFlightWithFuelExpenses} onDelete={remove(setFlights)} />}
             {tab==='staff' && <StaffScreen
               flights={flights} aircraft={aircraft} pilots={pilots}
