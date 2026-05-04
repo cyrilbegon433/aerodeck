@@ -2687,19 +2687,12 @@
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
                     <span className="badge">{f.rules}</span>
-                    {f.isNavigation && <span className="badge">🧭 Nav</span>}
                     {isDuoFlight(f) && <span className="badge">🤝 Duo</span>}
                     {/* Affichage temps de nuit : valeur calculée OU legacy boolean */}
                     {(f.nightTime||0) > 0 && <span className="badge">🌙 {fmtDuration(f.nightTime)}</span>}
                     {(f.nightTime||0) === 0 && f.night && <span className="badge">🌙 nuit</span>}
                     {f.rules === 'IFR' && f.approaches?.slice(0,3).map(a => <span key={a} className="badge">{a}</span>)}
                     {f.rules === 'IFR' && f.approaches?.length>3 && <span className="badge">+{f.approaches.length-3}</span>}
-                    {((f.takeoffsPic||0)+(f.landingsPic||0)+(f.takeoffsSic||0)+(f.landingsSic||0))>0 && (
-                      <span className="badge" title="TO/LDG par pilote">
-                        🛬 PIC {f.takeoffsPic||0}/{f.landingsPic||0}
-                        {((f.takeoffsSic||0)+(f.landingsSic||0))>0 && ` · SIC ${f.takeoffsSic||0}/${f.landingsSic||0}`}
-                      </span>
-                    )}
                     {(f.ttsnAfter||f.ttsnBefore) && (
                       <span className="badge font-mono" title="TTSN avion (avant → après)">
                         ⏲️ {f.ttsnBefore||'?'} → {f.ttsnAfter||'?'}
@@ -3388,34 +3381,51 @@
 
       useEffect(() => {
         let cancelled = false;
-        async function compute(list, setter) {
+        // 1) Récupère TOUTES les paires (date, devise) uniques nécessaires en une passe.
+        //    Évite N appels séquentiels : on dédoublonne et on fetch en parallèle.
+        async function ensureRates(lists) {
+          const pairs = new Set();
+          for (const list of lists) {
+            for (const d of list) {
+              const cur = (d.currency || 'CAD').toUpperCase();
+              if (cur === 'CAD') continue;
+              const date = d.date || todayZuluDate();
+              pairs.add(`${date}|${cur}`);
+            }
+          }
+          const map = new Map();
+          await Promise.all([...pairs].map(async (key) => {
+            const [date, cur] = key.split('|');
+            const r = await getFxRate(date, cur, 'CAD');
+            if (r != null) map.set(key, r);
+          }));
+          return map;
+        }
+        // 2) Calcule un total à partir d'une liste, en utilisant la map de taux pré-fetched.
+        function sumWithRates(list, rates) {
           let total = 0, missing = 0;
           for (const d of list) {
             const amt = parseFloat(d.amount) || 0;
             if (!amt) continue;
             const cur = (d.currency || 'CAD').toUpperCase();
+            if (cur === 'CAD') { total += amt; continue; }
             const date = d.date || todayZuluDate();
-            if (cur === 'CAD') {
-              total += amt;
-            } else {
-              const rate = await getFxRate(date, cur, 'CAD');
-              if (rate != null) total += amt * rate;
-              else { missing++; total += amt; }
-            }
-            if (cancelled) return;
+            const rate = rates.get(`${date}|${cur}`);
+            if (rate != null) total += amt * rate;
+            else { missing++; total += amt; }
           }
-          if (!cancelled) setter({ total, missing });
+          return { total, missing };
         }
         async function run() {
           setFxLoading(true);
-          await Promise.all([
-            compute(filtered,      r => setCadFiltered(r)),
-            compute(documentsAll,  r => setCadGrand(r)),
-          ]);
-          if (!cancelled) {
-            setFxMissing((cadFiltered?.missing || 0) + (cadGrand?.missing || 0));
-            setFxLoading(false);
-          }
+          const rates = await ensureRates([filtered, documentsAll]);
+          if (cancelled) return;
+          const filteredRes = sumWithRates(filtered, rates);
+          const grandRes    = sumWithRates(documentsAll, rates);
+          setCadFiltered(filteredRes);
+          setCadGrand(grandRes);
+          setFxMissing(filteredRes.missing + grandRes.missing);
+          setFxLoading(false);
         }
         run();
         return () => { cancelled = true; };
