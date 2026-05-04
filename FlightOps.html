@@ -527,6 +527,8 @@
         keywords: ['formation pilote','training simulator','flightsafety','cae training','instructor','recurrent training'] },
       { id: 'fees',        group: 'Aéronef', name: 'Taxes / Redevances', icon: '💼', color: '#22d3ee',
         keywords: ['redevance','landing fee','navigation fee','passenger psc','airport fee','dgac','redevance aéroport'] },
+      { id: 'mechanic_visit', group: 'Aéronef', name: 'Mécanique (visites & déplacement)', icon: '🧰', color: '#fb7185',
+        keywords: [] },
 
       // ----- TRANSPORT SOL -----
       { id: 'car_rental',  group: 'Transport sol', name: 'Location Voiture', icon: '🚗', color: '#06b6d4',
@@ -568,6 +570,14 @@
           const standardIds = new Set(DEFAULT_CATEGORIES.map(c=>c.id));
           const customs = state.categories.filter(c => !standardIds.has(c.id) && c.id !== 'fuel');
           state.categories = [...DEFAULT_CATEGORIES, ...customs];
+        }
+        // Auto-ajout des catégories par défaut manquantes (ex: mechanic_visit ajoutée
+        // après une release). On insère à la fin, l'ordre des catégories existantes
+        // est préservé pour ne pas surprendre l'utilisateur.
+        const existingIds = new Set(state.categories.map(c => c.id));
+        const missing = DEFAULT_CATEGORIES.filter(c => !existingIds.has(c.id));
+        if (missing.length > 0) {
+          state.categories = [...state.categories, ...missing];
         }
       }
       // Migrer les vols : convertir fuelUplift / oilUplift (champs simples v2) en
@@ -756,6 +766,36 @@
       const m = String(d.getUTCMonth()+1).padStart(2,'0');
       const dd = String(d.getUTCDate()).padStart(2,'0');
       return `${y}-${m}-${dd}`;
+    }
+
+    // === Taux de change FX (Frankfurter, ECB, gratuit sans clé) ===
+    // Récupère le taux historique pour une date donnée (YYYY-MM-DD).
+    // Cache localStorage permanent : les taux historiques ne changent jamais.
+    // Renvoie un nombre (ex: 1.46 = 1 EUR vaut 1.46 CAD ce jour-là) ou null si échec.
+    async function getFxRate(date, fromCurrency, toCurrency = 'CAD') {
+      if (!date || !fromCurrency || fromCurrency === toCurrency) return 1;
+      const key = `fx_${date}_${fromCurrency}_${toCurrency}`;
+      try {
+        const cached = localStorage.getItem(key);
+        if (cached) {
+          const v = parseFloat(cached);
+          if (!isNaN(v) && v > 0) return v;
+        }
+      } catch (_) {}
+      try {
+        // Frankfurter renvoie automatiquement le taux du jour ouvré le plus proche
+        // si la date tombe sur un week-end / jour férié BCE.
+        const url = `https://api.frankfurter.app/${date}?from=${fromCurrency}&to=${toCurrency}`;
+        const res = await fetch(url, { cache: 'force-cache' });
+        if (!res.ok) throw new Error('FX HTTP ' + res.status);
+        const j = await res.json();
+        const rate = j && j.rates && j.rates[toCurrency];
+        if (rate && rate > 0) {
+          try { localStorage.setItem(key, String(rate)); } catch (_) {}
+          return rate;
+        }
+      } catch (_) {}
+      return null; // échec : appel d'amont décide du fallback (compter brut ou ignorer)
     }
     function nowZuluHHMM() {
       const d = new Date();
@@ -1523,6 +1563,7 @@
       insurance:     'shield',
       training:      'graduationCap',
       fees:          'briefcase',
+      mechanic_visit:'wrench',
       car_rental:    'car',
       car_fuel:      'fuel',
       tolls:         'signpost',
@@ -3244,7 +3285,7 @@
       );
     }
 
-    function DocumentsScreen({ documents, aircraft, categories, pilots = [], flights = [], onAddOrUpdate, onDelete }) {
+    function DocumentsScreen({ documents, aircraft, categories, pilots = [], flights = [], mechanicVisits = [], onAddOrUpdate, onDelete, onOpenMaintenanceTab }) {
       const t = useT();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
@@ -3265,8 +3306,42 @@
       const selectedCat = filterCat !== 'all' ? categories.find(c => c.id === filterCat) : null;
       const isAircraftCategory = selectedCat?.group === 'Aéronef';
 
+      // Visites mécanicien → docs virtuels en catégorie 'mechanic_visit'.
+      // Une visite avec N avions cochés génère N docs virtuels (montant réparti).
+      // includeInOpex = false → on EXCLUT du flux Dépenses (totaux + listes).
+      const mechanicVirtualDocs = useMemo(() => {
+        const out = [];
+        for (const v of (mechanicVisits || [])) {
+          if (v.includeInOpex === false) continue;
+          const acIds = Array.isArray(v.aircraftIds) ? v.aircraftIds.filter(Boolean) : [];
+          if (acIds.length === 0) continue;
+          const total = parseFloat(v.amount) || 0;
+          if (total <= 0) continue;
+          const split = total / acIds.length;
+          for (const acId of acIds) {
+            out.push({
+              id: 'mvdoc_' + v.id + '_' + acId,
+              date: v.date || '',
+              supplier: v.mechanic || 'Mécanicien',
+              amount: split,
+              currency: v.currency || 'EUR',
+              categoryId: 'mechanic_visit',
+              aircraftId: acId,
+              notes: v.notes || '',
+              isMechanicVisit: true,        // flag pour reconnaître à l'édition
+              sourceMechanicVisitId: v.id,
+              addedAt: v.addedAt || 0,
+            });
+          }
+        }
+        return out;
+      }, [mechanicVisits]);
+
+      // Pool de documents global (réels + virtuels mécanicien) pour totaux/filtrage
+      const documentsAll = useMemo(() => [...documents, ...mechanicVirtualDocs], [documents, mechanicVirtualDocs]);
+
       const filtered = useMemo(() => {
-        let arr = [...documents];
+        let arr = [...documentsAll];
         if (filterCat !== 'all') arr = arr.filter(d => d.categoryId === filterCat);
         if (filterSupplier.trim()) {
           const q = filterSupplier.toLowerCase();
@@ -3301,10 +3376,56 @@
           return 0;
         });
         return arr;
-      }, [documents, filterCat, filterSupplier, sort, filterYear, filterMonth, filterDate, filterAircraft, filterPilot]);
+      }, [documentsAll, filterCat, filterSupplier, sort, filterYear, filterMonth, filterDate, filterAircraft, filterPilot]);
 
       // Total filtré (pour le panneau récap)
       const filteredTotal = useMemo(() => filtered.reduce((s,d) => s + (parseFloat(d.amount)||0), 0), [filtered]);
+
+      // === Conversion CAD : convertit chaque facture/visite à la date qui lui est propre ===
+      // Cache local pour éviter de re-fetch les mêmes paires (date, devise).
+      // Affiche pendant le chargement, met à jour quand tous les taux sont prêts.
+      // Si un taux est introuvable (offline + pas en cache), on additionne le montant brut
+      // et on incrémente missingCount pour le signaler.
+      const [cadFiltered, setCadFiltered] = useState(null);
+      const [cadGrand,    setCadGrand]    = useState(null);
+      const [fxLoading,   setFxLoading]   = useState(false);
+      const [fxMissing,   setFxMissing]   = useState(0);
+
+      useEffect(() => {
+        let cancelled = false;
+        async function compute(list, setter) {
+          let total = 0, missing = 0;
+          for (const d of list) {
+            const amt = parseFloat(d.amount) || 0;
+            if (!amt) continue;
+            const cur = (d.currency || 'CAD').toUpperCase();
+            const date = d.date || todayZuluDate();
+            if (cur === 'CAD') {
+              total += amt;
+            } else {
+              const rate = await getFxRate(date, cur, 'CAD');
+              if (rate != null) total += amt * rate;
+              else { missing++; total += amt; }
+            }
+            if (cancelled) return;
+          }
+          if (!cancelled) setter({ total, missing });
+        }
+        async function run() {
+          setFxLoading(true);
+          await Promise.all([
+            compute(filtered,      r => setCadFiltered(r)),
+            compute(documentsAll,  r => setCadGrand(r)),
+          ]);
+          if (!cancelled) {
+            setFxMissing((cadFiltered?.missing || 0) + (cadGrand?.missing || 0));
+            setFxLoading(false);
+          }
+        }
+        run();
+        return () => { cancelled = true; };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [filtered, documentsAll]);
       const filteredCurrency = useMemo(() => {
         const m = {};
         for (const d of filtered) {
@@ -3316,12 +3437,12 @@
 
       const totalsByCat = useMemo(() => {
         const m = {};
-        for (const d of documents) {
+        for (const d of documentsAll) {
           const k = d.categoryId || 'other';
           m[k] = (m[k]||0) + (parseFloat(d.amount)||0);
         }
         return m;
-      }, [documents]);
+      }, [documentsAll]);
 
       // Carburant avion supplémentaire saisi dans les fiches vol mais sans
       // facture rattachée (les pleins avec invoiceDocId sont déjà comptés dans
@@ -3524,18 +3645,36 @@
                   <div className="text-2xl font-mono tabular-nums font-bold" style={{ color: selectedCat.color }}>
                     {filteredTotal.toFixed(2)} <span className="text-sm text-[var(--text-dim)]">{filteredCurrency}</span>
                   </div>
+                  {cadFiltered && cadFiltered.total > 0 && (
+                    <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--accent)' }}>
+                      ≈ {cadFiltered.total.toFixed(2)} CAD
+                      {cadFiltered.missing > 0 && (
+                        <span className="ml-1 text-[var(--warn)]" title="Taux non trouvé pour certaines factures (offline ou date trop ancienne) — montant brut additionné">
+                          ⚠ {cadFiltered.missing} taux manquant{cadFiltered.missing>1?'s':''}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  {fxLoading && !cadFiltered && (
+                    <div className="text-xs text-[var(--text-dim)] italic mt-0.5">Conversion CAD en cours…</div>
+                  )}
                   <div className="text-xs text-[var(--text-dim)]">{filtered.length} facture{filtered.length>1?'s':''}</div>
                 </div>
                 <button type="button"
                   className="btn !text-white font-semibold flex items-center gap-1.5"
                   style={{ background: selectedCat.color }}
                   onClick={()=>{
+                    if (selectedCat.id === 'mechanic_visit') {
+                      // Les visites mécanicien se créent dans Maintenance (modèle dédié)
+                      onOpenMaintenanceTab && onOpenMaintenanceTab();
+                      return;
+                    }
                     setEditing({ categoryId: selectedCat.id });
                     setShowForm(true);
                   }}>
                   <span>+</span>
                   {CATEGORY_LUCIDE[selectedCat.id] ? <LucideIcon name={CATEGORY_LUCIDE[selectedCat.id]} size={16} /> : <span>{selectedCat.icon}</span>}
-                  <span>Nouvelle dépense</span>
+                  <span>{selectedCat.id === 'mechanic_visit' ? 'Nouvelle visite (Maintenance)' : 'Nouvelle dépense'}</span>
                 </button>
               </div>
               {/* Filtres période — repliable sur mobile via la flèche sous le filtre fournisseur */}
@@ -3616,7 +3755,19 @@
               const cat = catObj(d.categoryId);
               const ac = aircraft.find(a => a.id === d.aircraftId);
               return (
-                <div key={d.id} className="card p-3 flex gap-3 cursor-pointer" onClick={()=>{ setEditing(d); setShowForm(true); }}>
+                <div key={d.id} className="card p-3 flex gap-3 cursor-pointer" onClick={()=>{
+                  if (d.isMechanicVisit) {
+                    // Doc virtuel : on renvoie l'utilisateur vers l'onglet Maintenance
+                    // pour modifier la visite source.
+                    if (onOpenMaintenanceTab) {
+                      onOpenMaintenanceTab();
+                    } else {
+                      alert('Visite mécanicien — modifier dans l\'onglet Maintenance.');
+                    }
+                    return;
+                  }
+                  setEditing(d); setShowForm(true);
+                }}>
                   {d.thumbnail
                     ? <img src={d.thumbnail} alt="" className="w-20 h-20 object-cover rounded-lg" />
                     : <div className="w-20 h-20 grid place-items-center bg-[var(--bg-elev)] rounded-lg text-3xl">{cat.icon}</div>
@@ -3653,6 +3804,11 @@
                     Répartition par catégorie
                   </span>
                   <span className="text-xs text-[var(--text-dim)] font-mono">{grandTotal.toFixed(2)} {mainCurrency}</span>
+                  {cadGrand && cadGrand.total > 0 && (
+                    <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>
+                      ≈ {cadGrand.total.toFixed(2)} CAD
+                    </span>
+                  )}
                 </div>
                 <span className="text-[10px] text-[var(--text-dim)]">
                   {extraFlightFuel > 0 ? `inclut ${extraFlightFuel.toFixed(2)} ${mainCurrency} de carburant non scanné` : ''}
@@ -3784,7 +3940,7 @@
       );
     }
 
-    function StatsScreen({ flights, aircraft, documents, categories, pilots=[], onExportJSON, onImportJSON, onClearAll, settings, onUpdateSettings }) {
+    function StatsScreen({ flights, aircraft, documents, categories, pilots=[], mechanicVisits=[], onExportJSON, onImportJSON, onClearAll, settings, onUpdateSettings }) {
       // période courante : par défaut année calendaire en cours
       const now = new Date();
       const [year, setYear]   = useState(now.getUTCFullYear());
@@ -3984,6 +4140,19 @@
         });
       }, [documents, year, month]);
 
+      // Vols filtrés UNIQUEMENT par période (année/mois), SANS filtre pilote.
+      // Sert au coût d'exploitation par avion : on veut TOUS les vols de l'avion
+      // peu importe qui pilotait. Idem pour la conso fuel et le tab-to-tab.
+      const aircraftScopedFlights = useMemo(() => {
+        return flights.filter(f => {
+          if (!f.date) return false;
+          const d = new Date(f.date+'T00:00:00Z');
+          if (d.getUTCFullYear() !== year) return false;
+          if (month !== 0 && d.getUTCMonth()+1 !== month) return false;
+          return true;
+        });
+      }, [flights, year, month]);
+
       // Coût d'exploitation par avion (sur la période filtrée).
       // - cost  : somme des dépenses dont aircraftId = avion (toutes catégories)
       // - hours : somme du Flight Time (minutes → heures décimales)
@@ -4009,8 +4178,25 @@
           const amt = parseFloat(d.amount) || 0;
           ensure(d.aircraftId).cost += amt;
         }
-        // Heures et fuel : on passe par les vols filtrés (période + pilote)
-        for (const f of filteredFlights) {
+        // Visites mécanicien : on filtre par période, on exclut celles avec includeInOpex=false,
+        // puis on répartit le montant total sur le nombre d'avions concernés.
+        for (const v of (mechanicVisits || [])) {
+          if (v.includeInOpex === false) continue;
+          if (!v.date) continue;
+          const dt = new Date(v.date+'T00:00:00Z');
+          if (isNaN(dt.getTime())) continue;
+          if (dt.getUTCFullYear() !== year) continue;
+          if (month !== 0 && dt.getUTCMonth()+1 !== month) continue;
+          const acIds = Array.isArray(v.aircraftIds) ? v.aircraftIds.filter(Boolean) : [];
+          if (acIds.length === 0) continue;
+          const total = parseFloat(v.amount) || 0;
+          if (total <= 0) continue;
+          const split = total / acIds.length;
+          for (const acId of acIds) ensure(acId).cost += split;
+        }
+        // Heures et fuel : on passe par les vols de la période SANS filtre pilote
+        // (un avion peut être piloté par plusieurs pilotes — on veut le vrai coût total).
+        for (const f of aircraftScopedFlights) {
           if (!f.aircraftId) continue;
           const slot = ensure(f.aircraftId);
           slot.ftMin += (f.flightTime || 0);
@@ -4019,13 +4205,13 @@
             slot.fuelL += toL(e.qty, e.unit);
           }
         }
-        // Méthode tab-to-tab : si l'avion a ≥ 2 entrées "full" sur la période filtrée,
+        // Méthode tab-to-tab : si l'avion a ≥ 2 entrées "full" sur la période,
         // on calcule la conso REELLE entre full et full (plus précise) sur l'intervalle.
         // On somme l'AT entre les vols dans l'intervalle, et le fuel des entrées entre full
         // (exclusif du premier full, inclusif du second).
         const tabToTab = {};
         for (const a of aircraft.filter(x => (x.kind||'real')==='real')) {
-          const acFlights = filteredFlights
+          const acFlights = aircraftScopedFlights
             .filter(f => f.aircraftId === a.id)
             .sort((x, y) => (x.date || '').localeCompare(y.date || ''));
           // Pool d'entrées (entry, flight) trié chrono
@@ -4078,7 +4264,7 @@
             lPerHourMethod: tt ? `tab-to-tab (${tt.fullCount} fulls)` : (atH > 0 ? 'approximation' : null),
           };
         }).sort((a, b) => b.cost - a.cost);
-      }, [filteredDocs, filteredFlights, aircraft]);
+      }, [filteredDocs, aircraftScopedFlights, aircraft, mechanicVisits, year, month]);
 
       // Top fournisseurs sur la période filtrée (somme dépenses)
       const topSuppliers = useMemo(() => {
@@ -5567,12 +5753,14 @@
       );
     }
 
-    function MaintenanceScreen({ maintenance, aircraft, flights, onAddOrUpdate, onDelete, onAircraftUpdate }) {
+    function MaintenanceScreen({ maintenance, aircraft, flights, onAddOrUpdate, onDelete, onAircraftUpdate, mechanicVisits=[], onMechanicVisitUpsert, onMechanicVisitDelete }) {
       const t = useT();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
       const [filterAc, setFilterAc] = useState('all');
       const [filterStatus, setFilterStatus] = useState('all');
+      const [showMechVisitForm, setShowMechVisitForm] = useState(false);
+      const [editingMechVisit, setEditingMechVisit] = useState(null);
 
       // TTSN actuel d'un avion = ttsnAfter du dernier vol enregistré pour cet avion,
       // sinon valeur initiale ttsn / airframeStartHours. Sert au calcul Hours left.
@@ -5681,6 +5869,63 @@
             </div>
           )}
 
+          {/* Visites mécanicien — déplacements + frais (billet avion, hôtel, voiture, taxi, etc.).
+              Si une visite concerne plusieurs avions, le total est divisé par le nombre d'avions
+              pour le coût d'exploitation. La case "Compter dans le coût d'exploitation" permet
+              d'exclure les visites qui ne devraient pas peser sur les stats (ex. déplacement raté). */}
+          <div className="card p-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="label !mb-0 inline-flex items-center gap-2">
+                <LucideIcon name="briefcase" size={16} strokeWidth={2.25} />
+                Visites mécanicien
+              </div>
+              <button className="btn btn-primary !py-1 !px-3 text-sm"
+                onClick={()=>{ setEditingMechVisit(null); setShowMechVisitForm(true); }}
+                disabled={aircraft.length===0}>
+                + Nouvelle visite
+              </button>
+            </div>
+            {mechanicVisits.length === 0 ? (
+              <div className="text-xs text-[var(--text-dim)]">
+                Aucune visite enregistrée. Saisis ici les frais de déplacement quand un mécanicien vient sur site
+                (billet avion, hôtel, location voiture, taxi…). Si plusieurs avions sont réparés lors de la même visite,
+                le coût est divisé entre les avions concernés.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {[...mechanicVisits].sort((a,b)=>(b.date||'').localeCompare(a.date||'')).map(v => {
+                  const acIds = Array.isArray(v.aircraftIds) ? v.aircraftIds : [];
+                  const total = parseFloat(v.amount) || 0;
+                  const split = acIds.length > 0 ? total / acIds.length : total;
+                  const acLabels = acIds.map(id => aircraft.find(a=>a.id===id)?.registration || '?').join(' · ');
+                  return (
+                    <div key={v.id}
+                      onClick={()=>{ setEditingMechVisit(v); setShowMechVisitForm(true); }}
+                      className="bg-[var(--bg-elev)] p-3 rounded-lg cursor-pointer hover:bg-[var(--bg-card)]">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-semibold flex items-center gap-2">
+                            <span>{v.date || '—'}</span>
+                            {v.mechanic && <span className="text-[var(--text-dim)]">· {v.mechanic}</span>}
+                            {!v.includeInOpex && <span className="badge text-[10px]">hors stats</span>}
+                          </div>
+                          <div className="text-xs text-[var(--text-dim)] truncate">{acLabels || '— aucun avion —'}</div>
+                          {v.notes && <div className="text-xs mt-1 line-clamp-2">{v.notes}</div>}
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <div className="font-mono font-semibold">{total.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{v.currency||'EUR'}</span></div>
+                          {acIds.length > 1 && (
+                            <div className="text-[10px] text-[var(--text-dim)]">soit {split.toFixed(2)} / avion</div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-2">
             <select className="select" value={filterAc} onChange={e=>setFilterAc(e.target.value)}>
               <option value="all">Tous avions</option>
@@ -5746,6 +5991,125 @@
               onSave={(m)=>{ onAddOrUpdate(m); setShowForm(false); }}
             />
           </Modal>
+
+          <Modal
+            open={showMechVisitForm}
+            onClose={()=>setShowMechVisitForm(false)}
+            title={editingMechVisit ? 'Modifier la visite mécanicien' : 'Nouvelle visite mécanicien'}
+            footer={editingMechVisit && (
+              <button className="btn btn-danger" onClick={()=>{
+                if (confirm('Supprimer cette visite mécanicien ?')) {
+                  onMechanicVisitDelete && onMechanicVisitDelete(editingMechVisit.id);
+                  setShowMechVisitForm(false);
+                }
+              }}>Supprimer</button>
+            )}
+          >
+            <MechanicVisitForm
+              initial={editingMechVisit}
+              aircraft={aircraft}
+              onCancel={()=>setShowMechVisitForm(false)}
+              onSave={(v)=>{ onMechanicVisitUpsert && onMechanicVisitUpsert(v); setShowMechVisitForm(false); }}
+            />
+          </Modal>
+        </div>
+      );
+    }
+
+    // ------------------------------------------------------------------
+    // Formulaire visite mécanicien : déplacement + frais répartis sur N avions
+    // ------------------------------------------------------------------
+    function MechanicVisitForm({ initial, aircraft, onSave, onCancel }) {
+      const blank = {
+        id: null,
+        date: todayZuluDate(),
+        mechanic: '',
+        amount: '',
+        currency: 'EUR',
+        aircraftIds: [],
+        includeInOpex: true,
+        notes: '',
+      };
+      const [v, setV] = useState({ ...blank, ...(initial||{}), aircraftIds: (initial?.aircraftIds || blank.aircraftIds) });
+      function set(k, val) { setV(p => ({ ...p, [k]: val })); }
+      function toggleAircraft(id) {
+        setV(p => {
+          const arr = Array.isArray(p.aircraftIds) ? p.aircraftIds : [];
+          return { ...p, aircraftIds: arr.includes(id) ? arr.filter(x => x !== id) : [...arr, id] };
+        });
+      }
+      const total = parseFloat(v.amount) || 0;
+      const split = (v.aircraftIds||[]).length > 0 ? total / v.aircraftIds.length : total;
+
+      return (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="label whitespace-nowrap">Date</div>
+              <input type="date" className="input" value={v.date} onChange={e=>set('date', e.target.value)} />
+            </div>
+            <div>
+              <div className="label whitespace-nowrap">Mécanicien <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
+              <input className="input" placeholder="ex: Jean Dupont" value={v.mechanic} onChange={e=>set('mechanic', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div className="col-span-2">
+              <div className="label whitespace-nowrap">Montant total déplacement & frais</div>
+              <input type="number" step="0.01" className="input font-mono text-lg" placeholder="0.00" value={v.amount} onChange={e=>set('amount', e.target.value)} />
+            </div>
+            <div>
+              <div className="label whitespace-nowrap">Devise</div>
+              <select className="select" value={v.currency} onChange={e=>set('currency', e.target.value)}>
+                <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option><option>CAD</option>
+              </select>
+            </div>
+          </div>
+          <div className="card p-3">
+            <div className="label">Avions concernés (cocher tous ceux sur lesquels le mécanicien intervient)</div>
+            {aircraft.length === 0 ? (
+              <div className="text-xs text-[var(--text-dim)]">Aucun avion enregistré.</div>
+            ) : (
+              <div className="space-y-1">
+                {aircraft.filter(a => (a.kind||'real')==='real').map(a => {
+                  const checked = (v.aircraftIds||[]).includes(a.id);
+                  return (
+                    <label key={a.id} className="flex items-center gap-2 select-none cursor-pointer p-2 rounded hover:bg-[var(--bg-elev)]">
+                      <input type="checkbox" className="w-5 h-5 accent-[#22d3ee]"
+                        checked={checked} onChange={()=>toggleAircraft(a.id)} />
+                      <span className="font-mono text-[var(--accent)]">{a.registration}</span>
+                      <span className="text-[var(--text-dim)] text-sm">{a.type}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+            {(v.aircraftIds||[]).length > 1 && total > 0 && (
+              <div className="text-xs text-[var(--accent)] mt-2 font-mono">
+                Coût réparti = {total.toFixed(2)} {v.currency} / {v.aircraftIds.length} avions = <strong>{split.toFixed(2)} {v.currency} par avion</strong>
+              </div>
+            )}
+          </div>
+          <label className="flex items-center gap-2 select-none cursor-pointer bg-[var(--bg-card)] p-2 rounded">
+            <input type="checkbox" className="w-5 h-5 accent-[#22d3ee]"
+              checked={!!v.includeInOpex}
+              onChange={e=>set('includeInOpex', e.target.checked)} />
+            <span className="text-sm font-medium">Compter dans le coût d'exploitation</span>
+            <span className="text-xs text-[var(--text-dim)]">— décoche pour exclure cette visite des stats</span>
+          </label>
+          <div>
+            <div className="label">Notes <span className="normal-case tracking-normal opacity-70">(billet d'avion, hôtel, voiture, taxi…)</span></div>
+            <textarea className="textarea" rows={3} placeholder="ex : Vol AC123 Montréal-Bromont 350 CAD, hôtel 2 nuits 280 CAD, location 80 CAD"
+              value={v.notes} onChange={e=>set('notes', e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button className="btn btn-secondary" onClick={onCancel}>Annuler</button>
+            <button className="btn btn-primary" onClick={()=>{
+              if (!v.amount || parseFloat(v.amount) <= 0) return alert('Renseigne un montant.');
+              if ((v.aircraftIds||[]).length === 0) return alert('Sélectionne au moins un avion concerné.');
+              onSave({ ...v, id: v.id || 'mv_' + Date.now() });
+            }}>Enregistrer</button>
+          </div>
         </div>
       );
     }
@@ -8058,6 +8422,9 @@
       const [categories, setCategories] = useState(initial?.categories || DEFAULT_CATEGORIES);
       const [settings, setSettings]   = useState(initial?.settings    || { askBeforeDelete: true });
       const [maintenance, setMaintenance] = useState(initial?.maintenance || []);
+      // Visites mécanicien (déplacements + frais) — répartis sur N avions concernés.
+      // Comptés dans Stats > Coût d'exploitation par avion sauf si includeInOpex=false.
+      const [mechanicVisits, setMechanicVisits] = useState(initial?.mechanicVisits || []);
       const [companyDocs, setCompanyDocs] = useState(initial?.companyDocs || []);
       const [pilots,      setPilots]      = useState(initial?.pilots      || []);
       const [pilotStatuses, setPilotStatuses] = useState(initial?.pilotStatuses || []);
@@ -8087,14 +8454,14 @@
 
       // persistance auto + détection quota
       useEffect(() => {
-        const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods });
+        const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods });
         if (!ok) {
           // Quota dépassé : propose à l'utilisateur d'archiver les autres vols
           // pour libérer de l'espace et continuer à remplir le vol en cours.
           console.warn('Sauvegarde locale impossible — quota dépassé.');
           setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
         }
-      }, [flights, aircraft, documents, categories, settings, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
+      }, [flights, aircraft, documents, categories, settings, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
 
       // Force l'affichage de la popup pour tester (utilisé par bouton dans Réglages).
       // En mode test on n'exclut AUCUN vol, comme ça l'utilisateur voit
@@ -8192,6 +8559,7 @@
           categories,
           settings: { ...settingsClean, language: lang },
           maintenance: maintenanceLite,
+          mechanicVisits,
           companyDocs: companyDocsLite,
           pilots, pilotStatuses, dutyPeriods,
         };
@@ -8251,6 +8619,7 @@
           return { ...rm, attachments: mergeKeepLocalBinaries(rm.attachments, local.attachments) };
         });
         setMaintenance(remoteMaint);
+        setMechanicVisits(m.mechanicVisits || []);
         setCompanyDocs(mergeKeepLocalBinaries(m.companyDocs || [], companyDocs));
         setPilots(m.pilots || []);
         setPilotStatuses(m.pilotStatuses || []);
@@ -8909,16 +9278,22 @@
             {tab==='maintenance' && <MaintenanceScreen
               maintenance={maintenance} aircraft={aircraft} flights={flights}
               onAddOrUpdate={upsert(setMaintenance)} onDelete={remove(setMaintenance)}
-              onAircraftUpdate={upsert(setAircraft)} />}
+              onAircraftUpdate={upsert(setAircraft)}
+              mechanicVisits={mechanicVisits}
+              onMechanicVisitUpsert={upsert(setMechanicVisits)}
+              onMechanicVisitDelete={remove(setMechanicVisits)} />}
             {tab==='documents' && <DocumentsScreen
               documents={documents} aircraft={aircraft} categories={categories} pilots={pilots}
               flights={flights}
-              onAddOrUpdate={upsert(setDocuments)} onDelete={remove(setDocuments)} />}
+              mechanicVisits={mechanicVisits}
+              onAddOrUpdate={upsert(setDocuments)} onDelete={remove(setDocuments)}
+              onOpenMaintenanceTab={()=>setTab('maintenance')} />}
             {tab==='company' && <CompanyDocsScreen
               companyDocs={companyDocs} aircraft={aircraft}
               onAddOrUpdate={upsert(setCompanyDocs)} onDelete={remove(setCompanyDocs)} />}
             {tab==='stats' && <StatsScreen
               flights={flights} aircraft={aircraft} documents={documents} categories={categories} pilots={pilots}
+              mechanicVisits={mechanicVisits}
               onExportJSON={exportJSON} onImportJSON={importJSON} onClearAll={clearAll}
               settings={settings} onUpdateSettings={setSettings} />}
             {tab==='settings' && <SettingsScreen
