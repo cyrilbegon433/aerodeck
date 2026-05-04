@@ -9229,72 +9229,73 @@
         }
         const TYPE_FOLDERS = { wb: 'WB', fpl: 'FPL', ofpl: 'OFPL', other: 'Autres' };
 
-        // === Vols : un dossier par vol (date_route_immat) — UNIQUEMENT s'il y a au
-        //     moins un fichier à archiver. Pas de dossiers vides dans le ZIP. ===
+        // === Approche flat-path : on collecte d'abord tous les fichiers à archiver
+        //     puis on les ajoute via zip.file(fullPath, bytes). JSZip ne crée que les
+        //     dossiers parents nécessaires — aucun dossier vide ne peut être généré. ===
+        const entries = []; // { path: string, bytes: Uint8Array }
+
+        // --- Vols : un sous-dossier par vol UNIQUEMENT pour ceux qui ont un fichier ---
         for (const f of targetFlights) {
-          const docsWithBinary    = (f.documents||[]).filter(d => d.dataUrl);
-          const fuelWithInvoice   = (f.fuelEntries||[]).filter(e => e.invoiceDataUrl);
-          if (docsWithBinary.length === 0 && fuelWithInvoice.length === 0) {
-            continue; // vol sans aucun fichier à archiver → on saute
-          }
           const ac = aircraft.find(a => a.id === f.aircraftId);
           const reg = ac?.registration || 'NOREG';
           const folderName = `${f.date || 'sans-date'}_${safe(f.from)}-${safe(f.to)}_${safe(reg)}`;
-          const folder = zip.folder(folderName);
-          // Documents joints (W&B / FPL / OFPL / Autre) — sous-dossier par type créé
-          // à la demande (zip.folder dans la boucle, JSZip dédoublonne automatiquement).
-          for (const d of docsWithBinary) {
-            const sub = folder.folder(TYPE_FOLDERS[d.type] || 'Autres');
+          // W&B / FPL / OFPL / Autre
+          for (const d of (f.documents||[])) {
+            if (!d.dataUrl) continue;
+            const sub = TYPE_FOLDERS[d.type] || 'Autres';
             const ext = extFor(d.mime, 'pdf');
             const name = d.fileName || `${TYPE_FOLDERS[d.type]||'doc'}.${ext}`;
-            sub.file(safe(name), dataUrlToBytes(d.dataUrl));
+            entries.push({
+              path: `${folderName}/${sub}/${safe(name)}`,
+              bytes: dataUrlToBytes(d.dataUrl),
+            });
           }
-          // Factures carburant — sous-dossier "Factures" créé seulement s'il y a au
-          // moins une facture à mettre dedans (sinon on évite le folder vide).
-          if (fuelWithInvoice.length > 0) {
-            const factSub = folder.folder('Factures');
-            for (const e of fuelWithInvoice) {
-              const ext = extFor(e.invoiceMime, 'pdf');
-              const name = e.invoiceFileName || `facture_${e.invoiceNumber||e.id}.${ext}`;
-              factSub.file(safe(name), dataUrlToBytes(e.invoiceDataUrl));
-            }
-          }
-        }
-        // === Documents Compagnie ===
-        if ((companyDocs||[]).some(d=>d.dataUrl)) {
-          const coFolder = zip.folder('Documents-Compagnie');
-          for (const d of (companyDocs||[])) {
-            if (!d.dataUrl) continue;
-            const ext = extFor(d.mime, 'pdf');
-            const prefix = (d.effectiveDate ? d.effectiveDate+'_' : '');
-            const name = prefix + (d.fileName || `${d.title||'doc'}.${ext}`);
-            coFolder.file(safe(name), dataUrlToBytes(d.dataUrl));
+          // Factures carburant
+          for (const e of (f.fuelEntries||[])) {
+            if (!e.invoiceDataUrl) continue;
+            const ext = extFor(e.invoiceMime, 'pdf');
+            const name = e.invoiceFileName || `facture_${e.invoiceNumber||e.id}.${ext}`;
+            entries.push({
+              path: `${folderName}/Factures/${safe(name)}`,
+              bytes: dataUrlToBytes(e.invoiceDataUrl),
+            });
           }
         }
 
-        // === DÉPENSES (factures de l'onglet Dépenses) ===
-        // Structure pensée pour la comptabilité : Dépenses / <Catégorie> / <YYYY-MM> / <date>_<fournisseur>_<montant><devise>.<ext>
-        // Exemple : Dépenses/Carburant-Avion/2026-04/15_Total-Energies_120.50EUR.jpg
-        if ((documents||[]).some(d=>d.thumbnail)) {
-          const expFolder = zip.folder('Dépenses');
-          for (const d of (documents||[])) {
-            if (!d.thumbnail) continue;
-            const cat = categories.find(c => c.id === d.categoryId) || categories[categories.length-1];
-            const catFolder = expFolder.folder(safe(cat.name));
-            // Sous-dossier YYYY-MM (regroupement comptable mensuel)
-            const dateStr = d.date || 'sans-date';
-            const ym = dateStr.length >= 7 ? dateStr.slice(0,7) : 'sans-date';
-            const monthFolder = catFolder.folder(ym);
-            // Nom de fichier : JJ_Fournisseur_Montant.ext (utile au tri)
-            const day = dateStr.length >= 10 ? dateStr.slice(8,10) : '00';
-            const supplier = safe(d.supplier || 'inconnu').replace(/\s+/g, '-');
-            const amount = d.amount ? `${parseFloat(d.amount).toFixed(2)}${d.currency||'EUR'}` : '';
-            const baseName = [day, supplier, amount].filter(Boolean).join('_');
-            // Le thumbnail est en JPEG (on le sait, c'est généré par fileToResizedDataURL)
-            const ext = extFor(null, 'jpg');
-            const fileName = `${baseName || 'facture'}.${ext}`;
-            monthFolder.file(safe(fileName), dataUrlToBytes(d.thumbnail));
-          }
+        // --- Documents Compagnie ---
+        for (const d of (companyDocs||[])) {
+          if (!d.dataUrl) continue;
+          const ext = extFor(d.mime, 'pdf');
+          const prefix = (d.effectiveDate ? d.effectiveDate+'_' : '');
+          const name = prefix + (d.fileName || `${d.title||'doc'}.${ext}`);
+          entries.push({
+            path: `Documents-Compagnie/${safe(name)}`,
+            bytes: dataUrlToBytes(d.dataUrl),
+          });
+        }
+
+        // --- DÉPENSES : Dépenses / <Catégorie> / <YYYY-MM> / <date>_<fournisseur>_<montant><devise>.<ext>
+        for (const d of (documents||[])) {
+          if (!d.thumbnail) continue;
+          const cat = categories.find(c => c.id === d.categoryId) || categories[categories.length-1];
+          const dateStr = d.date || 'sans-date';
+          const ym = dateStr.length >= 7 ? dateStr.slice(0,7) : 'sans-date';
+          const day = dateStr.length >= 10 ? dateStr.slice(8,10) : '00';
+          const supplier = safe(d.supplier || 'inconnu').replace(/\s+/g, '-');
+          const amount = d.amount ? `${parseFloat(d.amount).toFixed(2)}${d.currency||'EUR'}` : '';
+          const baseName = [day, supplier, amount].filter(Boolean).join('_');
+          const ext = extFor(null, 'jpg');
+          const fileName = `${baseName || 'facture'}.${ext}`;
+          entries.push({
+            path: `Dépenses/${safe(cat.name)}/${ym}/${safe(fileName)}`,
+            bytes: dataUrlToBytes(d.thumbnail),
+          });
+        }
+
+        // Ajout au ZIP via zip.file(fullPath, bytes) — JSZip crée uniquement les
+        // dossiers parents nécessaires (pas de dossier vide possible).
+        for (const e of entries) {
+          zip.file(e.path, e.bytes);
         }
 
         // Génère et télécharge le ZIP
