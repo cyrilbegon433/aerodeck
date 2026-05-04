@@ -1859,6 +1859,22 @@
       function DocRow({ d }) {
         const t = typeLabel(d.type);
         const isPdf = d.mime === 'application/pdf';
+        // État archivé : le binaire (dataUrl) a été déplacé dans le ZIP de sauvegarde
+        // par archiveAndFreeDocuments. Les métadonnées (fileName, type) restent pour
+        // garder une trace dans le vol, et on affiche un badge vert "OK archivé".
+        const isArchived = !!d.archived || (!d.dataUrl && !!d.archivedAt);
+        if (isArchived) {
+          return (
+            <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
+              <div className="w-10 h-10 grid place-items-center bg-[var(--ok)]/20 rounded text-xl flex-shrink-0 text-[var(--ok)]">💾</div>
+              <div className="flex-1 min-w-0 text-xs">
+                <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
+                <div className="truncate text-[var(--text-dim)]">{t.icon} {t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
+              </div>
+              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}>Retirer</button>
+            </div>
+          );
+        }
         return (
           <div className="flex items-center gap-2 bg-[var(--bg-card)] p-2 rounded-lg">
             {isPdf ? (
@@ -9156,12 +9172,14 @@
             return false;
           }
         }
-        // Purge des dataUrl mais on garde les métadonnées (filename, type, date d'archive)
-        // EXCLUT le vol courant (keepInAppFlightId) pour que ses docs restent visibles
-        // et utilisables pendant qu'on remplit le vol — ils sont ZIPPÉS quand même.
+        // Purge des dataUrl pour TOUS les vols (y compris le vol courant si présent).
+        // Les métadonnées sont conservées (filename, type, date d'archive, statut de
+        // validation) — on garde une trace pour que chaque doc affiche « ✓ OK archivé »
+        // et que le vol garde son liseré vert s'il était validé Complet.
+        // Note : keepInAppFlightId est ignoré désormais — l'utilisateur veut tout
+        // archiver pour libérer un maximum d'espace.
         const stamp = new Date().toISOString();
         setFlights(prev => prev.map(f => {
-          if (keepInAppFlightId && f.id === keepInAppFlightId) return f; // garde ses docs intacts dans l'app
           return {
             ...f,
             documents: (f.documents||[]).map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d),
@@ -9259,12 +9277,12 @@
               </div>
               <div className="text-sm text-[var(--text-dim)] space-y-2 mb-4">
                 <p>L'app a atteint la limite de stockage du navigateur (~5 MB). Le dernier ajout n'a pas pu être sauvegardé.</p>
-                <p><strong className="text-[var(--ok)]">✓ Tous tes vols restent dans l'app</strong> — seuls les fichiers binaires (photos, scans, PDF) sont déplacés dans un ZIP de sauvegarde pour libérer de la place. Les cards de vols continueront d'être visibles avec une mention « OK archivé ».</p>
+                <p><strong className="text-[var(--ok)]">✓ Tous tes vols restent dans l'app</strong> avec leur statut de validation (liseré vert si Complet). Seuls les fichiers binaires (photos, scans, PDF) sont déplacés dans un ZIP de sauvegarde pour libérer la place.</p>
                 <ul className="list-disc pl-5 text-xs space-y-1">
                   <li>Un fichier ZIP avec dossier par vol (date/route/immat) sera téléchargé</li>
                   <li>Range-le dans iCloud Drive (ou autre)</li>
-                  <li>Les références dans l'app deviennent « ✓ OK archivé » (badge vert), tu accèderas aux fichiers via le ZIP</li>
-                  <li>Le vol que tu remplis garde ses fichiers intacts dans l'app</li>
+                  <li>Chaque document (W&B, FPL, OFPL, factures…) affiche « ✓ OK archivé » à la place de son aperçu</li>
+                  <li>Tu peux toujours retirer un document archivé pour libérer la trace</li>
                 </ul>
               </div>
               <div className="flex flex-col gap-2">
