@@ -2542,8 +2542,10 @@
                   </div>
                 </div>
 
-                {/* Bouton de validation manuelle — vert seulement si tout est OK */}
-                <div className="mt-3 flex flex-wrap gap-2">
+                {/* Bouton de validation manuelle — vert seulement si tout est OK.
+                    Sur mobile : "Annuler la validation" centré et compact pour économiser
+                    la place horizontale. Le bouton "Marquer Complet" reste pleine taille. */}
+                <div className="mt-3 flex flex-wrap gap-2 justify-center sm:justify-start">
                   {f.verificationStatus !== 'complete' ? (
                     <button type="button"
                       disabled={!canComplete}
@@ -2556,7 +2558,7 @@
                   ) : (
                     <button type="button"
                       onClick={()=>set('verificationStatus', 'pending')}
-                      className="btn btn-secondary"
+                      className="btn btn-secondary !py-1.5 !px-3 text-xs sm:text-sm sm:!py-2 sm:!px-4"
                       title="Annuler la validation Complet (revient au statut auto)">
                       ↶ Annuler la validation
                     </button>
@@ -2726,6 +2728,23 @@
                       </span>
                     )}
                     {(f.documents||[]).length>0 && <span className="badge">📎 {f.documents.length}</span>}
+                    {/* Indication visuelle quand des éléments du vol ont été archivés
+                        en ZIP (docs joints, factures fuel, etc.). Le vol reste intact
+                        dans l'app, seuls les binaires sont retirés. */}
+                    {(((f.documents||[]).some(d => d.archived)) ||
+                      ((f.fuelEntries||[]).some(e => e.invoiceArchived)) ||
+                      ((f.oilEntries||[]).some(e => e.archived))
+                    ) && (
+                      <span className="badge"
+                        style={{
+                          background: 'var(--ok)' + '22',
+                          borderColor: 'var(--ok)',
+                          color: 'var(--ok)'
+                        }}
+                        title="Documents archivés en ZIP — le vol reste dans l'app, les fichiers sont dans la sauvegarde téléchargée">
+                        ✓ OK archivé
+                      </span>
+                    )}
                   </div>
                 </div>
               );
@@ -9240,12 +9259,12 @@
               </div>
               <div className="text-sm text-[var(--text-dim)] space-y-2 mb-4">
                 <p>L'app a atteint la limite de stockage du navigateur (~5 MB). Le dernier ajout n'a pas pu être sauvegardé.</p>
-                <p>Solution proposée : <strong>archiver tous les documents des AUTRES vols dans un fichier ZIP</strong> pour libérer de la place. Le vol que tu es en train de remplir reste intact.</p>
+                <p><strong className="text-[var(--ok)]">✓ Tous tes vols restent dans l'app</strong> — seuls les fichiers binaires (photos, scans, PDF) sont déplacés dans un ZIP de sauvegarde pour libérer de la place. Les cards de vols continueront d'être visibles avec une mention « OK archivé ».</p>
                 <ul className="list-disc pl-5 text-xs space-y-1">
                   <li>Un fichier ZIP avec dossier par vol (date/route/immat) sera téléchargé</li>
                   <li>Range-le dans iCloud Drive (ou autre)</li>
-                  <li>Les références dans l'app deviennent « archivé », tu y accèderas via le ZIP</li>
-                  <li>Tu pourras continuer à remplir ton vol en cours sans souci</li>
+                  <li>Les références dans l'app deviennent « ✓ OK archivé » (badge vert), tu accèderas aux fichiers via le ZIP</li>
+                  <li>Le vol que tu remplis garde ses fichiers intacts dans l'app</li>
                 </ul>
               </div>
               <div className="flex flex-col gap-2">
