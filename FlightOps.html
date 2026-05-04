@@ -1890,7 +1890,7 @@
     // 9b) ÉCRAN — CARNET DE VOL
     // ------------------------------------------------------------------
 
-    function FlightForm({ initial, aircraft, pilots=[], addExpense, onSave, onCancel, settings={} }) {
+    function FlightForm({ initial, aircraft, pilots=[], addExpense, onSave, onCancel, settings={}, flights=[] }) {
       const blank = {
         id: null,
         date: todayZuluDate(),
@@ -2394,6 +2394,8 @@
                 addExpense={addExpense}
                 aircraftId={f.aircraftId}
                 flightDate={f.date}
+                flights={flights}
+                currentFlightId={f.id}
                 defaultUnit={settings.defaultFuelUnit||'L'}
                 defaultCurrency={settings.defaultCurrency||'EUR'}
               />
@@ -2687,6 +2689,7 @@
               pilots={pilots}
               addExpense={addExpense}
               settings={settings}
+              flights={flights}
               onCancel={()=>setShowForm(false)}
               onSave={(f)=>{ onAddOrUpdate(f); setShowForm(false); }}
             />
@@ -3988,6 +3991,13 @@
           if (!byId[id]) byId[id] = { cost: 0, ftMin: 0, atMin: 0, fuelL: 0 };
           return byId[id];
         };
+        const toL = (q, u) => {
+          const v = parseFloat(q) || 0;
+          if (u === 'L') return v;
+          if (u === 'kg') return v / 0.72;
+          if (u === 'USG') return v * 3.785;
+          return v;
+        };
         // Dépenses : toutes catégories liées à un avion
         for (const d of filteredDocs) {
           if (!d.aircraftId) continue;
@@ -4001,17 +4011,55 @@
           slot.ftMin += (f.flightTime || 0);
           slot.atMin += (f.airTime || 0);
           for (const e of (f.fuelEntries || [])) {
-            const q = parseFloat(e.qty) || 0;
-            if (q <= 0) continue;
-            if (e.unit === 'L')   slot.fuelL += q;
-            else if (e.unit === 'kg')  slot.fuelL += q / 0.72;   // densité avgas ≈ 0.72 kg/L
-            else if (e.unit === 'USG') slot.fuelL += q * 3.785;
+            slot.fuelL += toL(e.qty, e.unit);
+          }
+        }
+        // Méthode tab-to-tab : si l'avion a ≥ 2 entrées "full" sur la période filtrée,
+        // on calcule la conso REELLE entre full et full (plus précise) sur l'intervalle.
+        // On somme l'AT entre les vols dans l'intervalle, et le fuel des entrées entre full
+        // (exclusif du premier full, inclusif du second).
+        const tabToTab = {};
+        for (const a of aircraft.filter(x => (x.kind||'real')==='real')) {
+          const acFlights = filteredFlights
+            .filter(f => f.aircraftId === a.id)
+            .sort((x, y) => (x.date || '').localeCompare(y.date || ''));
+          // Pool d'entrées (entry, flight) trié chrono
+          const entries = [];
+          for (const f of acFlights) {
+            for (const e of (f.fuelEntries || [])) {
+              entries.push({ e, f });
+            }
+          }
+          entries.sort((a, b) => (a.f.date || '').localeCompare(b.f.date || ''));
+          const fullIdxs = entries.map((x, i) => x.e.full && (parseFloat(x.e.qty)||0) > 0 ? i : -1).filter(i => i >= 0);
+          if (fullIdxs.length >= 2) {
+            const firstFullIdx = fullIdxs[0];
+            const lastFullIdx  = fullIdxs[fullIdxs.length - 1];
+            // Somme fuel L entre firstFullIdx (exclusif) et lastFullIdx (inclusif)
+            let burnedL = 0;
+            for (let i = firstFullIdx + 1; i <= lastFullIdx; i++) {
+              burnedL += toL(entries[i].e.qty, entries[i].e.unit);
+            }
+            // AT cumulé sur les vols dont la date est strictement après celle du firstFull
+            // et inférieure ou égale à celle du lastFull
+            const dStart = entries[firstFullIdx].f.date;
+            const dEnd   = entries[lastFullIdx].f.date;
+            let atMinBetween = 0;
+            for (const f of acFlights) {
+              if (!f.date) continue;
+              if (f.date > dStart && f.date <= dEnd) atMinBetween += (f.airTime || 0);
+            }
+            const atH = atMinBetween / 60;
+            if (atH > 0 && burnedL > 0) {
+              tabToTab[a.id] = { burnedL, atH, lPerHour: burnedL / atH, fullCount: fullIdxs.length };
+            }
           }
         }
         return aircraft.filter(a => (a.kind||'real') === 'real').map(a => {
           const s = byId[a.id] || { cost: 0, ftMin: 0, atMin: 0, fuelL: 0 };
           const ftH = s.ftMin / 60;
           const atH = s.atMin / 60;
+          const tt = tabToTab[a.id] || null;
           return {
             aircraft: a,
             cost: s.cost,
@@ -4019,7 +4067,10 @@
             atHours: atH,
             fuelL: s.fuelL,
             costPerHour: ftH > 0 ? s.cost / ftH : null,
-            lPerHour:    atH > 0 ? s.fuelL / atH : null,
+            // Si tab-to-tab dispo : on l'utilise (plus précis). Sinon : approximation
+            // brute = somme totale fuel / Air Time.
+            lPerHour: tt ? tt.lPerHour : (atH > 0 ? s.fuelL / atH : null),
+            lPerHourMethod: tt ? `tab-to-tab (${tt.fullCount} fulls)` : (atH > 0 ? 'approximation' : null),
           };
         }).sort((a, b) => b.cost - a.cost);
       }, [filteredDocs, filteredFlights, aircraft]);
@@ -4535,6 +4586,9 @@
                           <div className="font-mono tabular-nums text-base font-semibold" style={{ color: '#fbbf24' }}>
                             {row.lPerHour != null ? `${row.lPerHour.toFixed(1)} L/h` : '—'}
                           </div>
+                          {row.lPerHourMethod && (
+                            <div className="text-[9px] text-[var(--text-dim)] italic mt-0.5">{row.lPerHourMethod}</div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -5321,6 +5375,7 @@
               aircraft={aircraft}
               pilots={pilots}
               addExpense={addExpense}
+              flights={flights}
               onCancel={()=>setShowForm(false)}
               onSave={(f)=>{ onUpsertFlight && onUpsertFlight(f); setShowForm(false); }}
             />
@@ -6355,7 +6410,7 @@
       );
     }
 
-    function FuelOrOilRow({ entry, index, onChange, onRemove, kind, addExpense, aircraftId, flightDate }) {
+    function FuelOrOilRow({ entry, index, onChange, onRemove, kind, addExpense, aircraftId, flightDate, flights=[], currentFlightId=null }) {
       // kind = 'fuel' (note : on n'utilise plus FuelOrOilRow pour 'oil' depuis v4 — l'huile a son
       // propre composant simplifié OilEntryRow. On garde le paramètre kind pour rétrocompat.)
       const isFuel = kind === 'fuel';
@@ -6446,6 +6501,34 @@
             <div className="label whitespace-nowrap">Date du plein</div>
             <input type="date" className="input" value={entry.date || flightDate || ''} onChange={e=>set('date', e.target.value)} />
           </div>
+          {/* Localisation du plein : avant ou après le vol — utile pour suivi conso. */}
+          {isFuel && (
+            <div>
+              <div className="label whitespace-nowrap">Localisation du plein</div>
+              <div className="grid grid-cols-2 gap-2">
+                <button type="button"
+                  onClick={()=>set('location','departure')}
+                  className={`p-2 rounded-lg border text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors ${
+                    (entry.location||'departure')==='departure'
+                      ? 'bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]'
+                      : 'bg-[var(--bg-elev)] border-[var(--border-soft)] text-[var(--text-dim)] hover:border-[var(--border)]'
+                  }`}>
+                  <LucideIcon name="planeTakeoff" size={18} strokeWidth={2.25} />
+                  Départ
+                </button>
+                <button type="button"
+                  onClick={()=>set('location','arrival')}
+                  className={`p-2 rounded-lg border text-sm font-medium inline-flex items-center justify-center gap-2 transition-colors ${
+                    entry.location==='arrival'
+                      ? 'bg-[var(--accent)]/15 border-[var(--accent)] text-[var(--accent)]'
+                      : 'bg-[var(--bg-elev)] border-[var(--border-soft)] text-[var(--text-dim)] hover:border-[var(--border)]'
+                  }`}>
+                  <LucideIcon name="planeLanding" size={18} strokeWidth={2.25} />
+                  Arrivée
+                </button>
+              </div>
+            </div>
+          )}
           <div>
             <div className="label whitespace-nowrap">N° de facture</div>
             <input className="input" placeholder="ex: 2026-04-001234" value={entry.invoiceNumber||''} onChange={e=>set('invoiceNumber', e.target.value)} />
@@ -6462,6 +6545,17 @@
               </select>
             </div>
           </div>
+          {/* Case Full : indique que les réservoirs sont au maximum après ce plein.
+              Permet de calculer la conso réelle entre deux pleins "Full" (méthode tab-to-tab). */}
+          {isFuel && (
+            <label className="flex items-center gap-2 select-none cursor-pointer text-sm bg-[var(--bg-card)] p-2 rounded">
+              <input type="checkbox" className="w-5 h-5 accent-[#22d3ee]"
+                checked={!!entry.full}
+                onChange={e=>set('full', e.target.checked)} />
+              <span className="font-medium">Full</span>
+              <span className="text-xs text-[var(--text-dim)]">— réservoirs au max après ce plein</span>
+            </label>
+          )}
           {/* Fournisseur en pleine largeur, Montant en dessous (gros chiffre),
               Devise sous le Montant — pas de tassement, tout est lisible. */}
           <div>
@@ -6481,6 +6575,69 @@
               <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option><option>CAD</option>
             </select>
           </div>
+          {/* Conso depuis le dernier plein FULL (méthode tab-to-tab).
+              On rassemble TOUS les fuelEntries de cet avion à travers tous les vols,
+              on les trie chronologiquement (date + id ms), puis pour l'entrée courante
+              (si elle est full) on cherche le dernier full précédent et on somme tous
+              les qty (convertis en L) entre les deux (exclusif de l'ancien, inclusif du courant). */}
+          {isFuel && entry.full && (() => {
+            const toL = (q, u) => {
+              const v = parseFloat(q) || 0;
+              if (u === 'L') return v;
+              if (u === 'kg') return v / 0.72;
+              if (u === 'USG') return v * 3.785;
+              return v;
+            };
+            const idMs = (id) => {
+              const m = String(id||'').match(/_(\d{10,})/);
+              return m ? parseInt(m[1], 10) : 0;
+            };
+            // Pool global de fuel entries pour cet avion (vols sauvés + vol courant en mémoire)
+            const others = (flights || [])
+              .filter(f => f.aircraftId === aircraftId && f.id !== currentFlightId)
+              .flatMap(f => (f.fuelEntries || []).map(fe => ({ ...fe, _flightDate: f.date })));
+            // L'entrée courante est dans le state local du form, pas encore dans flights.
+            // On l'ajoute au pool en utilisant flightDate comme date fallback.
+            const pool = [...others, { ...entry, _flightDate: entry.date || flightDate }];
+            // Tri chronologique strict
+            pool.sort((a, b) => {
+              const da = (a._flightDate || a.date || '');
+              const db = (b._flightDate || b.date || '');
+              if (da !== db) return da.localeCompare(db);
+              return idMs(a.id) - idMs(b.id);
+            });
+            const idx = pool.findIndex(x => x.id === entry.id);
+            // Cherche le dernier full STRICTEMENT avant
+            let prevFullIdx = -1;
+            for (let i = idx - 1; i >= 0; i--) {
+              if (pool[i].full && (parseFloat(pool[i].qty) || 0) > 0) { prevFullIdx = i; break; }
+            }
+            if (prevFullIdx === -1) {
+              return (
+                <div className="text-xs text-[var(--text-dim)] italic bg-[var(--bg-card)] p-2 rounded">
+                  Pas encore d'autre plein « Full » enregistré pour {aircraftId ? 'cet avion' : 'l\'avion'} — la conso depuis dernier full sera calculée dès qu'un autre plein Full existera.
+                </div>
+              );
+            }
+            const prev = pool[prevFullIdx];
+            // Somme des qty entre prev (exclusif) et current (inclusif)
+            let burnedL = 0;
+            for (let i = prevFullIdx + 1; i <= idx; i++) {
+              burnedL += toL(pool[i].qty, pool[i].unit);
+            }
+            return (
+              <div className="bg-[var(--ok)]/10 border border-[var(--ok)]/30 p-2 rounded text-sm">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[var(--ok)] font-semibold">⛽ Brûlé depuis le dernier Full</span>
+                  <span className="font-mono tabular-nums font-bold text-[var(--ok)]">{burnedL.toFixed(1)} L</span>
+                </div>
+                <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
+                  Dernier Full : {prev._flightDate || prev.date || '?'} ({(parseFloat(prev.qty)||0).toFixed(1)} {prev.unit}). Méthode tab-to-tab.
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Zone facture : si une facture est rattachée, on l'affiche en rangée
               compacte style DocRow (thumb + nom + Ouvrir + Retirer), comme sur les
               W&B/FPL/OFPL. Sinon, on propose le bouton + Ajouter une facture. */}
@@ -6593,7 +6750,7 @@
       );
     }
 
-    function FuelEntriesEditor({ entries, onChange, addExpense, aircraftId, flightDate, defaultUnit='L', defaultCurrency='EUR' }) {
+    function FuelEntriesEditor({ entries, onChange, addExpense, aircraftId, flightDate, flights=[], currentFlightId=null, defaultUnit='L', defaultCurrency='EUR' }) {
       function addEntry() {
         const next = [...(entries||[]), {
           id: 'fe_'+Date.now(),
@@ -6601,6 +6758,8 @@
           invoiceNumber: '',
           qty: '', unit: defaultUnit, supplier: '', amount: '', currency: defaultCurrency,
           invoiceDocId: '', invoiceDataUrl: '', invoiceFileName: '', invoiceMime: '',
+          location: 'departure', // 'departure' = plein avant le vol, 'arrival' = plein à l'arrivée
+          full: false,           // true = réservoirs au max après ce plein
           notes: '',
         }];
         onChange(next);
@@ -6639,7 +6798,8 @@
             {(entries||[]).map((e, i) => (
               <FuelOrOilRow key={e.id||i} entry={e} index={i} kind="fuel"
                 onChange={(ne)=>updateEntry(i, ne)} onRemove={()=>removeEntry(i)}
-                addExpense={addExpense} aircraftId={aircraftId} flightDate={flightDate} />
+                addExpense={addExpense} aircraftId={aircraftId} flightDate={flightDate}
+                flights={flights} currentFlightId={currentFlightId} />
             ))}
           </div>
           {(entries||[]).length > 0 && (
@@ -7009,6 +7169,7 @@
               aircraft={aircraft}
               pilots={pilots}
               addExpense={addExpense}
+              flights={flights}
               onCancel={()=>setShowForm(false)}
               onSave={(f)=>{ onUpsertFlight && onUpsertFlight(f); setShowForm(false); }}
             />
