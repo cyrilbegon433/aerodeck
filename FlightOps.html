@@ -869,13 +869,19 @@
     // Valeurs en minutes. Pour single-pilot ; certaines opérations multi-pilote
     // ont des limites étendues (non couvert ici — version simplifiée).
     const CARS_702_LIMITS = {
-      dailyDuty:        14 * 60,    // max 14h de duty consécutives
-      dailyFlight:       8 * 60,    // max 8h de vol par jour (single-pilot)
-      window7Flight:    60 * 60,    // max 60h sur 7 jours glissants
-      window30Flight:  120 * 60,    // max 120h sur 30 jours
-      window90Flight:  300 * 60,    // max 300h sur 90 jours
-      window365Flight:1200 * 60,    // max 1200h sur 365 jours
-      minRestAfterDuty: 8 * 60,     // 8h de repos minimum après duty
+      dailyDuty:        14 * 60,    // max 14h de duty consécutives — CAR 700.16
+      dailyFlight:       8 * 60,    // max 8h de vol par jour (single-pilot) — CAR 700.21
+      window7Flight:    60 * 60,    // max 60h sur 7 jours glissants — CAR 700.21
+      window30Flight:  120 * 60,    // max 120h sur 30 jours — CAR 700.21
+      window90Flight:  300 * 60,    // max 300h sur 90 jours — CAR 700.21
+      window365Flight:1200 * 60,    // max 1200h sur 365 jours — CAR 700.21
+      minRestAfterDuty: 8 * 60,     // 8h de repos minimum après duty — CAR 700.15
+      // CAR 700.19 — Time-free from duty (jours de repos)
+      // « 36 consecutive hours free from duty in any 7 consecutive days » +
+      // « 3 consecutive days off in any 17 consecutive days » +
+      // « 13 days off in any 30 consecutive days »
+      timeFree36hIn7Days: 36 * 60,  // 36h consécutives libres dans toute fenêtre 7 jours
+      timeFreeDaysIn30:   13,        // 13 jours OFF dans toute fenêtre 30 jours
     };
 
     // Calcule une duty AUTO pour un pilote donné un jour donné, à partir des vols.
@@ -986,6 +992,110 @@
         }
       }
       return total;
+    }
+
+    // Somme des duty times effectifs (auto + manuel) d'un pilote dans une fenêtre
+    // glissante de `daysWindow` jours se terminant à `refDateISO`.
+    function dutyTimeWindow(effectiveDuties, refDateISO, daysWindow) {
+      if (!refDateISO) return 0;
+      const ref = new Date(refDateISO + 'T00:00:00Z');
+      if (isNaN(ref.getTime())) return 0;
+      const startMs = ref.getTime() - (daysWindow - 1) * 86400000;
+      let total = 0;
+      for (const p of effectiveDuties) {
+        if (!p.date) continue;
+        const d = new Date(p.date + 'T00:00:00Z');
+        if (isNaN(d.getTime())) continue;
+        const t = d.getTime();
+        if (t >= startMs && t <= ref.getTime()) {
+          total += dutyMinutes(p);
+        }
+      }
+      return total;
+    }
+
+    // Compte le nombre de jours SANS duty (jours OFF) dans une fenêtre glissante.
+    // Utile pour CAR 700.19 : « 13 jours off dans toute fenêtre de 30 jours ».
+    function offDaysWindow(effectiveDuties, refDateISO, daysWindow) {
+      if (!refDateISO) return daysWindow;
+      const ref = new Date(refDateISO + 'T00:00:00Z');
+      if (isNaN(ref.getTime())) return daysWindow;
+      const startMs = ref.getTime() - (daysWindow - 1) * 86400000;
+      const dutiedDays = new Set();
+      for (const p of effectiveDuties) {
+        if (!p.date) continue;
+        const d = new Date(p.date + 'T00:00:00Z');
+        if (isNaN(d.getTime())) continue;
+        const t = d.getTime();
+        if (t >= startMs && t <= ref.getTime()) {
+          dutiedDays.add(p.date);
+        }
+      }
+      return daysWindow - dutiedDays.size;
+    }
+
+    // Calcule la plus longue période continue SANS duty (en minutes) sur une
+    // fenêtre glissante. Sert à vérifier la règle « 36h consécutives free dans 7 jours »
+    // (CAR 700.19). Approche : scanne les minutes par tranche d'1h.
+    function longestFreeStretch(effectiveDuties, refDateISO, daysWindow) {
+      if (!refDateISO) return daysWindow * 24 * 60;
+      const ref = new Date(refDateISO + 'T00:00:00Z');
+      if (isNaN(ref.getTime())) return 0;
+      // Construit un set des "minutes" busy (granularité 30 min pour rester rapide)
+      const SLOT = 30; // minutes
+      const totalSlots = (daysWindow * 24 * 60) / SLOT;
+      const busy = new Array(totalSlots).fill(false);
+      const windowStartMs = ref.getTime() - (daysWindow * 86400000) + 86400000; // début = ref - daysWindow + 1 jour
+      for (const p of effectiveDuties) {
+        if (!p.date) continue;
+        const sMin = parseHHMM(p.startTime);
+        const eMin = parseHHMM(p.endTime);
+        if (sMin == null || eMin == null) continue;
+        const baseMs = new Date(p.date + 'T00:00:00Z').getTime();
+        if (isNaN(baseMs)) continue;
+        let dutyStart = baseMs + sMin * 60 * 1000;
+        let dutyEnd   = baseMs + eMin * 60 * 1000;
+        if (dutyEnd <= dutyStart) dutyEnd += 24 * 60 * 60 * 1000; // duty traverse minuit
+        // Marque les slots busy
+        for (let t = dutyStart; t < dutyEnd; t += SLOT * 60 * 1000) {
+          if (t < windowStartMs) continue;
+          if (t > ref.getTime() + 86400000) break;
+          const idx = Math.floor((t - windowStartMs) / (SLOT * 60 * 1000));
+          if (idx >= 0 && idx < totalSlots) busy[idx] = true;
+        }
+      }
+      // Trouve la plus longue série de slots libres
+      let longest = 0, current = 0;
+      for (let i = 0; i < totalSlots; i++) {
+        if (!busy[i]) { current++; if (current > longest) longest = current; }
+        else current = 0;
+      }
+      return longest * SLOT;
+    }
+
+    // Repos minimum entre la dernière duty terminée et la prochaine duty (en minutes).
+    // Renvoie null si pas assez d'historique.
+    function minRestSinceLastDuty(effectiveDuties, refDateISO) {
+      if (!refDateISO) return null;
+      const ref = new Date(refDateISO + 'T00:00:00Z');
+      if (isNaN(ref.getTime())) return null;
+      const refMs = ref.getTime();
+      // Trouve la duty terminée la plus récente avant la fin de la journée ref
+      let latestEnd = -Infinity;
+      for (const p of effectiveDuties) {
+        if (!p.date) continue;
+        const sMin = parseHHMM(p.startTime);
+        const eMin = parseHHMM(p.endTime);
+        if (sMin == null || eMin == null) continue;
+        const baseMs = new Date(p.date + 'T00:00:00Z').getTime();
+        let dutyEnd = baseMs + eMin * 60 * 1000;
+        if (eMin <= sMin) dutyEnd += 24 * 60 * 60 * 1000;
+        if (dutyEnd <= refMs + 24 * 60 * 60 * 1000 && dutyEnd > latestEnd) latestEnd = dutyEnd;
+      }
+      if (latestEnd === -Infinity) return null;
+      // Différence entre maintenant (00:00 du lendemain de ref) et la fin de la dernière duty
+      const nowMs = refMs + 24 * 60 * 60 * 1000;
+      return Math.max(0, Math.floor((nowMs - latestEnd) / (60 * 1000)));
     }
 
     // Calcule la clé semaine ISO d'une date YYYY-MM-DD (format YYYY-Wnn)
@@ -3841,6 +3951,82 @@
         });
       }, [documents, year, month]);
 
+      // Coût d'exploitation par avion (sur la période filtrée).
+      // - cost  : somme des dépenses dont aircraftId = avion (toutes catégories)
+      // - hours : somme du Flight Time (minutes → heures décimales)
+      // - fuelL : somme des quantités fuelEntries (kg→L densité avgas 0.72, USG→L 3.785)
+      // - airH  : somme Air Time (pour conso L/h plus représentative que FT)
+      // costPerHour = cost / hours, lPerHour = fuelL / airH
+      const costByAircraft = useMemo(() => {
+        const byId = {};
+        const ensure = (id) => {
+          if (!byId[id]) byId[id] = { cost: 0, ftMin: 0, atMin: 0, fuelL: 0 };
+          return byId[id];
+        };
+        // Dépenses : toutes catégories liées à un avion
+        for (const d of filteredDocs) {
+          if (!d.aircraftId) continue;
+          const amt = parseFloat(d.amount) || 0;
+          ensure(d.aircraftId).cost += amt;
+        }
+        // Heures et fuel : on passe par les vols filtrés (période + pilote)
+        for (const f of filteredFlights) {
+          if (!f.aircraftId) continue;
+          const slot = ensure(f.aircraftId);
+          slot.ftMin += (f.flightTime || 0);
+          slot.atMin += (f.airTime || 0);
+          for (const e of (f.fuelEntries || [])) {
+            const q = parseFloat(e.qty) || 0;
+            if (q <= 0) continue;
+            if (e.unit === 'L')   slot.fuelL += q;
+            else if (e.unit === 'kg')  slot.fuelL += q / 0.72;   // densité avgas ≈ 0.72 kg/L
+            else if (e.unit === 'USG') slot.fuelL += q * 3.785;
+          }
+        }
+        return aircraft.filter(a => (a.kind||'real') === 'real').map(a => {
+          const s = byId[a.id] || { cost: 0, ftMin: 0, atMin: 0, fuelL: 0 };
+          const ftH = s.ftMin / 60;
+          const atH = s.atMin / 60;
+          return {
+            aircraft: a,
+            cost: s.cost,
+            ftHours: ftH,
+            atHours: atH,
+            fuelL: s.fuelL,
+            costPerHour: ftH > 0 ? s.cost / ftH : null,
+            lPerHour:    atH > 0 ? s.fuelL / atH : null,
+          };
+        }).sort((a, b) => b.cost - a.cost);
+      }, [filteredDocs, filteredFlights, aircraft]);
+
+      // Top fournisseurs sur la période filtrée (somme dépenses)
+      const topSuppliers = useMemo(() => {
+        const map = {};
+        for (const d of filteredDocs) {
+          const name = (d.supplier || '').trim();
+          if (!name) continue;
+          if (!map[name]) map[name] = { total: 0, count: 0, currencies: {} };
+          const amt = parseFloat(d.amount) || 0;
+          map[name].total += amt;
+          map[name].count++;
+          const cur = d.currency || 'EUR';
+          map[name].currencies[cur] = (map[name].currencies[cur] || 0) + amt;
+        }
+        return Object.entries(map)
+          .map(([name, v]) => ({ name, ...v }))
+          .sort((a, b) => b.total - a.total)
+          .slice(0, 5);
+      }, [filteredDocs]);
+
+      const mainCurrencyStats = useMemo(() => {
+        const counts = {};
+        for (const d of filteredDocs) {
+          const c = d.currency || 'EUR';
+          counts[c] = (counts[c] || 0) + 1;
+        }
+        return Object.entries(counts).sort((a,b)=>b[1]-a[1])[0]?.[0] || 'EUR';
+      }, [filteredDocs]);
+
       const docTotals = useMemo(() => {
         const m = {};
         for (const d of filteredDocs) {
@@ -4273,6 +4459,95 @@
               </div>
             )}
           </div>
+
+          {/* Coût d'exploitation par avion (sur la période filtrée).
+              Affiche pour chaque avion réel : coût total, coût/heure de vol,
+              consommation L/h (calculée sur Air Time, plus représentative que Flight Time). */}
+          {costByAircraft.length > 0 && (
+            <div className="card p-3">
+              <div className="flex items-center justify-between mb-2">
+                <div className="label !mb-0 inline-flex items-center gap-2">
+                  <LucideIcon name="planeTakeoff" size={16} strokeWidth={2.25} />
+                  Coût d'exploitation par avion
+                </div>
+                <div className="text-xs text-[var(--text-dim)]">{month ? `${String(month).padStart(2,'0')}/${year}` : `année ${year}`}</div>
+              </div>
+              <div className="space-y-2">
+                {costByAircraft.map(row => {
+                  const a = row.aircraft;
+                  return (
+                    <div key={a.id} className="bg-[var(--bg-elev)] p-3 rounded-lg">
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <div className="font-mono text-[var(--accent)] font-semibold">{a.registration}</div>
+                        <div className="text-xs text-[var(--text-dim)] truncate ml-2">{a.type}</div>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">Coût total</div>
+                          <div className="font-mono tabular-nums text-base font-semibold">{row.cost.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{mainCurrencyStats}</span></div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">Heures vol (FT)</div>
+                          <div className="font-mono tabular-nums text-base font-semibold">{row.ftHours.toFixed(1)} <span className="text-[var(--text-dim)] text-xs">h</span></div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">Coût / h vol</div>
+                          <div className="font-mono tabular-nums text-base font-semibold" style={{ color: 'var(--accent)' }}>
+                            {row.costPerHour != null ? `${row.costPerHour.toFixed(2)} ${mainCurrencyStats}` : '—'}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">Conso (L/h AT)</div>
+                          <div className="font-mono tabular-nums text-base font-semibold" style={{ color: '#fbbf24' }}>
+                            {row.lPerHour != null ? `${row.lPerHour.toFixed(1)} L/h` : '—'}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-2">
+                <Hint title="Calcul">
+                  Coût total = somme des dépenses de la période liées à cet avion (toutes catégories).
+                  Coût/h = total ÷ Flight Time (block-to-block). Conso L/h = quantités fuel ÷ Air Time
+                  (kg → L densité avgas 0.72, USG → L 3.785). Filtre par année/mois en haut de Stats.
+                </Hint>
+              </div>
+            </div>
+          )}
+
+          {/* Top fournisseurs sur la période filtrée — utile pour repérer les
+              plus gros postes (FBO, fuel, maintenance) et négocier. */}
+          {topSuppliers.length > 0 && (
+            <div className="card p-3">
+              <div className="label inline-flex items-center gap-2">
+                <LucideIcon name="briefcase" size={16} strokeWidth={2.25} />
+                Top fournisseurs ({topSuppliers.length})
+              </div>
+              <div className="space-y-1.5">
+                {topSuppliers.map((s, i) => {
+                  const max = topSuppliers[0].total || 1;
+                  const pct = (s.total / max) * 100;
+                  return (
+                    <div key={s.name}>
+                      <div className="flex items-center justify-between gap-2 text-sm">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-[var(--text-dim)] font-mono w-5 text-right flex-shrink-0">{i+1}.</span>
+                          <span className="truncate">{s.name}</span>
+                          <span className="text-[10px] text-[var(--text-dim)] flex-shrink-0">{s.count} fact.</span>
+                        </div>
+                        <span className="font-mono tabular-nums">{s.total.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{mainCurrencyStats}</span></span>
+                      </div>
+                      <div className="h-1.5 bg-[var(--bg-elev)] rounded mt-0.5">
+                        <div className="h-1.5 rounded" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div className="card p-3">
             <div className="label">Dépenses par catégorie ({month?`${String(month).padStart(2,'0')}/${year}`:`année ${year}`})</div>
@@ -6816,6 +7091,30 @@
           .reduce((sum, p) => sum + dutyMinutes(p), 0);
       }, [effectiveDuties, today]);
 
+      // Cumuls duty time fenêtres glissantes (pour CAR 700.16 charge globale)
+      const dutyCumuls = useMemo(() => ({
+        d7:  dutyTimeWindow(effectiveDuties, today, 7),
+        d30: dutyTimeWindow(effectiveDuties, today, 30),
+      }), [effectiveDuties, today]);
+
+      // Repos minimum depuis dernière duty (CAR 700.15)
+      const lastRest = useMemo(
+        () => minRestSinceLastDuty(effectiveDuties, today),
+        [effectiveDuties, today]
+      );
+
+      // Plus longue plage libre dans les 7 derniers jours (CAR 700.19)
+      const longestFree7 = useMemo(
+        () => longestFreeStretch(effectiveDuties, today, 7),
+        [effectiveDuties, today]
+      );
+
+      // Jours OFF dans les 30 derniers jours (CAR 700.19)
+      const offDays30 = useMemo(
+        () => offDaysWindow(effectiveDuties, today, 30),
+        [effectiveDuties, today]
+      );
+
       const sortedPeriods = effectiveDuties; // déjà triées par getEffectiveDuties
 
       // Quand on save : si l'entry était une auto (id commence par "auto_"), on génère
@@ -6879,7 +7178,7 @@
 
           {/* Cumuls flight time vs limites CARs 702 */}
           <div className="card p-3 space-y-3">
-            <div className="label">Cumuls flight time vs limites CARs 702</div>
+            <div className="label">Cumuls flight time vs limites CARs 702 — CAR 700.21</div>
             <LimitBar label="Aujourd'hui (vol)" value={cumuls.d1}   limit={CARS_702_LIMITS.dailyFlight} />
             <LimitBar label="7 jours glissants"  value={cumuls.d7}   limit={CARS_702_LIMITS.window7Flight} />
             <LimitBar label="30 jours glissants" value={cumuls.d30}  limit={CARS_702_LIMITS.window30Flight} />
@@ -6892,13 +7191,77 @@
             </div>
           </div>
 
-          {/* Duty time aujourd'hui */}
-          <div className="card p-3">
-            <div className="label">Duty time aujourd'hui ({today})</div>
-            <LimitBar label="Total duty" value={todayDutyMin} limit={CARS_702_LIMITS.dailyDuty} />
+          {/* Duty time : aujourd'hui + cumuls 7/30 jours */}
+          <div className="card p-3 space-y-3">
+            <div className="label">Duty time — CAR 700.16</div>
+            <LimitBar label={`Aujourd'hui (${today})`} value={todayDutyMin} limit={CARS_702_LIMITS.dailyDuty} />
+            <LimitBar label="Duty cumulé 7 jours"  value={dutyCumuls.d7}  limit={7  * CARS_702_LIMITS.dailyDuty} />
+            <LimitBar label="Duty cumulé 30 jours" value={dutyCumuls.d30} limit={30 * CARS_702_LIMITS.dailyDuty} />
             <div className="mt-2">
               <Hint title="Limite quotidienne CARs 702">
-                Limite quotidienne : 14h de duty consécutive. Repos minimum après duty : 8h.
+                Limite quotidienne : 14h de duty consécutive. Le cumul 7/30 jours sert à
+                visualiser la charge globale ; les seuils affichés sont les maxima théoriques (14h × n jours).
+              </Hint>
+            </div>
+          </div>
+
+          {/* Repos & jours OFF — CAR 700.15 et 700.19 */}
+          <div className="card p-3 space-y-3">
+            <div className="label">Repos & jours OFF — CAR 700.15 / 700.19</div>
+            {/* Repos depuis la fin de la dernière duty */}
+            {lastRest != null ? (
+              <div>
+                <div className="flex justify-between text-sm mb-1">
+                  <span>Repos depuis la dernière duty</span>
+                  <span className="font-mono tabular-nums">
+                    <span style={{ color: lastRest >= CARS_702_LIMITS.minRestAfterDuty ? 'var(--ok)' : 'var(--err)' }}>
+                      {fmtDuration(lastRest)}
+                    </span>
+                    <span className="text-[var(--text-dim)]"> / min {fmtDuration(CARS_702_LIMITS.minRestAfterDuty)}</span>
+                  </span>
+                </div>
+                {lastRest < CARS_702_LIMITS.minRestAfterDuty && (
+                  <div className="text-xs text-[var(--err)]">⚠ Repos minimum 8h après duty non respecté.</div>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs text-[var(--text-dim)] italic">Pas encore de duty terminée — repos non calculable.</div>
+            )}
+            {/* Plus longue période free 7 jours (≥ 36h obligatoire) */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span>Plus longue période libre (7 derniers jours)</span>
+                <span className="font-mono tabular-nums">
+                  <span style={{ color: longestFree7 >= CARS_702_LIMITS.timeFree36hIn7Days ? 'var(--ok)' : 'var(--err)' }}>
+                    {fmtDuration(longestFree7)}
+                  </span>
+                  <span className="text-[var(--text-dim)]"> / min {fmtDuration(CARS_702_LIMITS.timeFree36hIn7Days)}</span>
+                </span>
+              </div>
+              {longestFree7 < CARS_702_LIMITS.timeFree36hIn7Days && (
+                <div className="text-xs text-[var(--err)]">⚠ 36h consécutives libres requis dans toute fenêtre 7 jours.</div>
+              )}
+            </div>
+            {/* Jours OFF dans les 30 derniers jours (≥ 13 obligatoire) */}
+            <div>
+              <div className="flex justify-between text-sm mb-1">
+                <span>Jours OFF dans les 30 derniers jours</span>
+                <span className="font-mono tabular-nums">
+                  <span style={{ color: offDays30 >= CARS_702_LIMITS.timeFreeDaysIn30 ? 'var(--ok)' : 'var(--err)' }}>
+                    {offDays30} j
+                  </span>
+                  <span className="text-[var(--text-dim)]"> / min {CARS_702_LIMITS.timeFreeDaysIn30} j</span>
+                </span>
+              </div>
+              {offDays30 < CARS_702_LIMITS.timeFreeDaysIn30 && (
+                <div className="text-xs text-[var(--err)]">⚠ Au moins 13 jours OFF (sans duty) requis sur toute fenêtre 30 jours.</div>
+              )}
+            </div>
+            <div className="mt-1">
+              <Hint title="Règles 700.15 / 700.19">
+                700.15 — Repos minimum 8 h consécutives entre deux périodes de service.
+                700.19 — 36 h consécutives libres dans toute fenêtre de 7 jours +
+                13 jours OFF dans toute fenêtre de 30 jours.
               </Hint>
             </div>
           </div>
