@@ -1859,10 +1859,13 @@
       function DocRow({ d }) {
         const t = typeLabel(d.type);
         const isPdf = d.mime === 'application/pdf';
-        // État archivé : le binaire (dataUrl) a été déplacé dans le ZIP de sauvegarde
-        // par archiveAndFreeDocuments. Les métadonnées (fileName, type) restent pour
-        // garder une trace dans le vol, et on affiche un badge vert "OK archivé".
-        const isArchived = !!d.archived || (!d.dataUrl && !!d.archivedAt);
+        // État archivé : binaire absent. On affiche "OK archivé" dès que dataUrl est
+        // vide/manquant (3 cas couverts : flag explicite, archivedAt présent, ou doc
+        // arrivé via sync sans dataUrl mais avec métadonnées). Évite l'affichage
+        // d'une image/icône cassée non cliquable.
+        const isArchived = !!d.archived
+          || (!d.dataUrl && !!d.archivedAt)
+          || (!d.dataUrl && !!d.id && !!(d.fileName || d.type));
         if (isArchived) {
           return (
             <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
@@ -9319,8 +9322,15 @@
         setFlights(prev => prev.map(f => {
           return {
             ...f,
-            documents: (f.documents||[]).map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d),
-            fuelEntries: (f.fuelEntries||[]).map(e => e.invoiceDataUrl ? { ...e, invoiceDataUrl:'', invoiceArchived: true, invoiceArchivedAt: stamp } : e),
+            // Tous les docs perdent leur dataUrl ET reçoivent le flag archived (même
+            // ceux qui n'avaient pas de binaire localement, p.ex. arrivés via sync)
+            // → garantit l'affichage cohérent "✓ OK archivé" partout.
+            documents: (f.documents||[]).map(d => ({
+              ...d, dataUrl: '', archived: true, archivedAt: d.archivedAt || stamp,
+            })),
+            fuelEntries: (f.fuelEntries||[]).map(e => e.invoiceDocId ? {
+              ...e, invoiceDataUrl: '', invoiceArchived: true, invoiceArchivedAt: e.invoiceArchivedAt || stamp,
+            } : e),
           };
         }));
         setCompanyDocs(prev => prev.map(d => d.dataUrl ? { ...d, dataUrl:'', archived: true, archivedAt: stamp } : d));
