@@ -1869,10 +1869,9 @@
         if (isArchived) {
           return (
             <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
-              <div className="w-10 h-10 grid place-items-center bg-[var(--ok)]/20 rounded text-xl flex-shrink-0 text-[var(--ok)]">💾</div>
               <div className="flex-1 min-w-0 text-xs">
                 <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
-                <div className="truncate text-[var(--text-dim)]">{t.icon} {t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
+                <div className="truncate text-[var(--text-dim)]">{t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
               </div>
               <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}>Retirer</button>
             </div>
@@ -3224,10 +3223,9 @@
             {isArchived ? (
               /* Encart vert "OK archivé" : binaire dans le ZIP, métadonnées préservées */
               <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
-                <div className="w-12 h-12 grid place-items-center bg-[var(--ok)]/20 rounded text-2xl flex-shrink-0 text-[var(--ok)]">💾</div>
                 <div className="flex-1 min-w-0 text-xs">
                   <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
-                  <div className="truncate text-[var(--text-dim)]">{d.fileName || 'Pièce jointe'} — fichier dans ton ZIP de sauvegarde</div>
+                  <div className="truncate text-[var(--text-dim)]">{d.fileName || 'Pièce jointe'}</div>
                 </div>
                 <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
                   onClick={()=>{
@@ -6963,7 +6961,7 @@
               <div className="text-xs text-[var(--text-dim)] truncate">{summary}</div>
               {entry.invoiceDocId && (
                 <div className="text-[10px] text-[var(--ok)]/80 mt-0.5">
-                  {entry.invoiceDataUrl || entry.invoiceFileName ? '📄 Facture rattachée' : '💾 Facture sauvegardée (archivée)'}
+                  {entry.invoiceDataUrl || entry.invoiceFileName ? '📄 Facture rattachée' : '✓ Facture archivée'}
                 </div>
               )}
             </div>
@@ -7155,7 +7153,6 @@
               if (archived) {
                 return (
                   <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
-                    <div className="w-10 h-10 grid place-items-center bg-[var(--ok)]/20 rounded text-xl flex-shrink-0 text-[var(--ok)]">💾</div>
                     <div className="flex-1 min-w-0 text-xs">
                       <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
                       <div className="truncate text-[var(--text-dim)]">Facture{entry.invoiceFileName ? ` · ${entry.invoiceFileName}` : ''}</div>
