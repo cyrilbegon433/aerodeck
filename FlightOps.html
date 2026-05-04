@@ -875,7 +875,11 @@
       window30Flight:  120 * 60,    // max 120h sur 30 jours — CAR 700.21
       window90Flight:  300 * 60,    // max 300h sur 90 jours — CAR 700.21
       window365Flight:1200 * 60,    // max 1200h sur 365 jours — CAR 700.21
-      minRestAfterDuty: 8 * 60,     // 8h de repos minimum après duty — CAR 700.15
+      minRestAfterDuty: 8 * 60,     // 8h de sommeil consécutif minimum à la base — CAR 700.15
+      // CAR 700.15 — Hors base, l'opérateur doit fournir hébergement convenable +
+      // transport + temps repas/hygiène. En pratique → ~10 h de période de repos
+      // entre fin de duty et début de la suivante (8h sommeil + ~2h transport/hygiène/repas).
+      minRestAfterDutyAwayFromBase: 10 * 60,
       // CAR 700.19 — Time-free from duty (jours de repos)
       // « 36 consecutive hours free from duty in any 7 consecutive days » +
       // « 3 consecutive days off in any 17 consecutive days » +
@@ -1074,14 +1078,17 @@
     }
 
     // Repos minimum entre la dernière duty terminée et la prochaine duty (en minutes).
-    // Renvoie null si pas assez d'historique.
-    function minRestSinceLastDuty(effectiveDuties, refDateISO) {
+    // Renvoie un objet { restMin, awayFromBase, lastDutyDate } ou null si pas d'historique.
+    // awayFromBase est déterminé en regardant le DERNIER vol de cette duty :
+    // si l'arrivée (f.to) ≠ baseAirport du pilote → hors base, sinon à la base.
+    function minRestSinceLastDuty(effectiveDuties, refDateISO, flights, pilot) {
       if (!refDateISO) return null;
       const ref = new Date(refDateISO + 'T00:00:00Z');
       if (isNaN(ref.getTime())) return null;
       const refMs = ref.getTime();
       // Trouve la duty terminée la plus récente avant la fin de la journée ref
       let latestEnd = -Infinity;
+      let latestDuty = null;
       for (const p of effectiveDuties) {
         if (!p.date) continue;
         const sMin = parseHHMM(p.startTime);
@@ -1090,12 +1097,29 @@
         const baseMs = new Date(p.date + 'T00:00:00Z').getTime();
         let dutyEnd = baseMs + eMin * 60 * 1000;
         if (eMin <= sMin) dutyEnd += 24 * 60 * 60 * 1000;
-        if (dutyEnd <= refMs + 24 * 60 * 60 * 1000 && dutyEnd > latestEnd) latestEnd = dutyEnd;
+        if (dutyEnd <= refMs + 24 * 60 * 60 * 1000 && dutyEnd > latestEnd) {
+          latestEnd = dutyEnd;
+          latestDuty = p;
+        }
       }
       if (latestEnd === -Infinity) return null;
-      // Différence entre maintenant (00:00 du lendemain de ref) et la fin de la dernière duty
       const nowMs = refMs + 24 * 60 * 60 * 1000;
-      return Math.max(0, Math.floor((nowMs - latestEnd) / (60 * 1000)));
+      const restMin = Math.max(0, Math.floor((nowMs - latestEnd) / (60 * 1000)));
+      // Détection hors base : on regarde le DERNIER vol du jour de la duty pour ce pilote
+      let awayFromBase = false;
+      const baseAp = (pilot?.baseAirport || '').trim().toUpperCase();
+      if (baseAp && pilot?.id && latestDuty?.date && Array.isArray(flights)) {
+        const dayFlights = flights
+          .filter(f => f.date === latestDuty.date &&
+                       (f.pilotId === pilot.id || f.copilotId === pilot.id) &&
+                       f.to)
+          .sort((a, b) => (b.blockIn || '').localeCompare(a.blockIn || ''));
+        if (dayFlights.length > 0) {
+          const lastTo = (dayFlights[0].to || '').trim().toUpperCase();
+          awayFromBase = !!lastTo && lastTo !== baseAp;
+        }
+      }
+      return { restMin, awayFromBase, lastDutyDate: latestDuty?.date || null };
     }
 
     // Calcule la clé semaine ISO d'une date YYYY-MM-DD (format YYYY-Wnn)
@@ -7097,11 +7121,11 @@
         d30: dutyTimeWindow(effectiveDuties, today, 30),
       }), [effectiveDuties, today]);
 
-      // Repos minimum depuis dernière duty (CAR 700.15)
-      const lastRest = useMemo(
-        () => minRestSinceLastDuty(effectiveDuties, today),
-        [effectiveDuties, today]
-      );
+      // Repos minimum depuis dernière duty (CAR 700.15) — inclut détection hors base
+      const lastRest = useMemo(() => {
+        const pilot = pilotFilter !== 'all' ? pilots.find(p => p.id === pilotFilter) : null;
+        return minRestSinceLastDuty(effectiveDuties, today, flights, pilot);
+      }, [effectiveDuties, today, flights, pilots, pilotFilter]);
 
       // Plus longue plage libre dans les 7 derniers jours (CAR 700.19)
       const longestFree7 = useMemo(
@@ -7208,23 +7232,41 @@
           {/* Repos & jours OFF — CAR 700.15 et 700.19 */}
           <div className="card p-3 space-y-3">
             <div className="label">Repos & jours OFF — CAR 700.15 / 700.19</div>
-            {/* Repos depuis la fin de la dernière duty */}
-            {lastRest != null ? (
-              <div>
-                <div className="flex justify-between text-sm mb-1">
-                  <span>Repos depuis la dernière duty</span>
-                  <span className="font-mono tabular-nums">
-                    <span style={{ color: lastRest >= CARS_702_LIMITS.minRestAfterDuty ? 'var(--ok)' : 'var(--err)' }}>
-                      {fmtDuration(lastRest)}
+            {/* Repos depuis la fin de la dernière duty — règle ajustée si hors base */}
+            {lastRest ? (() => {
+              const requiredRest = lastRest.awayFromBase
+                ? CARS_702_LIMITS.minRestAfterDutyAwayFromBase
+                : CARS_702_LIMITS.minRestAfterDuty;
+              const ok = lastRest.restMin >= requiredRest;
+              return (
+                <div>
+                  <div className="flex justify-between text-sm mb-1">
+                    <span>
+                      Repos depuis la dernière duty
+                      {lastRest.awayFromBase
+                        ? <span className="ml-1 text-[var(--warn)] text-xs">(hors base)</span>
+                        : <span className="ml-1 text-[var(--text-dim)] text-xs">(à la base)</span>}
                     </span>
-                    <span className="text-[var(--text-dim)]"> / min {fmtDuration(CARS_702_LIMITS.minRestAfterDuty)}</span>
-                  </span>
+                    <span className="font-mono tabular-nums">
+                      <span style={{ color: ok ? 'var(--ok)' : 'var(--err)' }}>{fmtDuration(lastRest.restMin)}</span>
+                      <span className="text-[var(--text-dim)]"> / min {fmtDuration(requiredRest)}</span>
+                    </span>
+                  </div>
+                  {!ok && (
+                    <div className="text-xs text-[var(--err)]">
+                      ⚠ {lastRest.awayFromBase
+                        ? 'Repos minimum 10h hors base (8h sommeil + transport/repas/hygiène) non respecté.'
+                        : 'Repos minimum 8h après duty non respecté.'}
+                    </div>
+                  )}
+                  {pilotFilter === 'all' && (
+                    <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
+                      Sélectionne un pilote pour la détection hors base (basée sur baseAirport du pilote).
+                    </div>
+                  )}
                 </div>
-                {lastRest < CARS_702_LIMITS.minRestAfterDuty && (
-                  <div className="text-xs text-[var(--err)]">⚠ Repos minimum 8h après duty non respecté.</div>
-                )}
-              </div>
-            ) : (
+              );
+            })() : (
               <div className="text-xs text-[var(--text-dim)] italic">Pas encore de duty terminée — repos non calculable.</div>
             )}
             {/* Plus longue période free 7 jours (≥ 36h obligatoire) */}
@@ -7259,8 +7301,12 @@
             </div>
             <div className="mt-1">
               <Hint title="Règles 700.15 / 700.19">
-                700.15 — Repos minimum 8 h consécutives entre deux périodes de service.
-                700.19 — 36 h consécutives libres dans toute fenêtre de 7 jours +
+                700.15 — Période de repos = au moins 8 h de sommeil consécutif en hébergement
+                convenable + transport + temps repas/hygiène. À la base (pilote rentre chez lui),
+                on retient 8 h. Hors base, on compte 10 h car l'opérateur doit fournir
+                hébergement et transport. Détection hors base : dernière arrivée du jour ≠ baseAirport
+                du pilote.
+                {' '}700.19 — 36 h consécutives libres dans toute fenêtre de 7 jours +
                 13 jours OFF dans toute fenêtre de 30 jours.
               </Hint>
             </div>
