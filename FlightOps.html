@@ -7651,8 +7651,17 @@
         const updatedFuelEntries = (flight.fuelEntries || []).map(e => {
           const amt = parseFloat(e.amount);
           const inv = (e.invoiceNumber || '').trim();
-          const hasNoExpense = !e.invoiceDocId;
-          if (!(amt > 0 && inv && hasNoExpense)) return e;
+          if (!(amt > 0 && inv)) return e; // données minimales requises
+
+          // Cas 1 : la ligne pointe vers une dépense (invoiceDocId) qui existe RÉELLEMENT
+          // dans documents → on ne fait rien, le lien est valide.
+          // Cas 2 : invoiceDocId existe mais doc orphelin (perdu après sync corrompu,
+          // suppression manuelle, etc.) → on traite comme une ligne neuve à créer.
+          if (e.invoiceDocId) {
+            const linked = docsNow.find(d => d.id === e.invoiceDocId);
+            if (linked) return e; // lien sain, rien à faire
+            // sinon : orphelin, on continue pour recréer la dépense
+          }
 
           const entryDate = e.date || flight.date;
           const sameKey = (d) =>
@@ -7706,13 +7715,18 @@
         // Aide à comprendre pourquoi les dépenses fuel ne sont pas créées.
         try {
           const fuelCount = (flight.fuelEntries || []).length;
+          const docsCheck = documentsRef.current || [];
           const skipped = (flight.fuelEntries || []).map(e => {
             const amt = parseFloat(e.amount);
             const inv = (e.invoiceNumber || '').trim();
             const reasons = [];
             if (!(amt > 0)) reasons.push('montant manquant');
             if (!inv) reasons.push('N° facture manquant');
-            if (e.invoiceDocId) reasons.push('déjà liée à dépense');
+            if (e.invoiceDocId) {
+              const linked = docsCheck.find(d => d.id === e.invoiceDocId);
+              if (linked) reasons.push('déjà liée à dépense (sain)');
+              // sinon : orphelin → on recrée, donc PAS dans skipped
+            }
             return reasons.length ? `Ligne fuel ${e.id || '?'} : ${reasons.join(', ')}` : null;
           }).filter(Boolean);
           alert(
