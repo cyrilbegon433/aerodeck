@@ -3782,6 +3782,7 @@
       const [year, setYear]   = useState(now.getUTCFullYear());
       const [month, setMonth] = useState(0); // 0 = toute l'année
       const [pilotFilter, setPilotFilter] = useState('all'); // 'all' = global, sinon pilotId
+      const [showPilotCompare, setShowPilotCompare] = useState(true);
 
       const filteredFlights = useMemo(() => {
         return flights.filter(f => {
@@ -4350,10 +4351,17 @@
                     Une ligne par pilote (avg AT cyan + avg FT bleu) puis une ligne compagnie. */}
                 {pilotFilter === 'all' && atFtByPilot.rows.length > 0 && (
                   <div className="mt-4 pt-3 border-t border-[var(--border-soft)]">
-                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold mb-2">
-                      👥 Comparatif moyennes par pilote
-                    </div>
-                    {(() => {
+                    <button type="button"
+                      onClick={()=>setShowPilotCompare(s=>!s)}
+                      className="w-full flex items-center justify-between gap-2 text-left mb-2 hover:opacity-80 transition-opacity">
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold inline-flex items-center gap-1.5">
+                        👥 Comparatif moyennes par pilote
+                      </div>
+                      <span className="inline-flex transition-transform" style={{ transform: showPilotCompare ? 'rotate(90deg)' : 'rotate(0deg)' }}>
+                        <LucideIcon name="chevronRight" size={16} strokeWidth={2.5} />
+                      </span>
+                    </button>
+                    {showPilotCompare && (() => {
                       const allRows = [...atFtByPilot.rows];
                       if (atFtByPilot.company) allRows.push({ ...atFtByPilot.company, isCompany: true });
                       const maxVal = Math.max(1, ...allRows.map(r => Math.max(r.avgAT, r.avgFT)));
@@ -4399,9 +4407,11 @@
                         </div>
                       );
                     })()}
-                    <div className="mt-2 text-[10px] text-[var(--text-dim)] italic">
-                      Trié par moyenne Flight Time décroissante. Sélectionne un pilote dans le filtre en haut pour zoomer sur ses statistiques.
-                    </div>
+                    {showPilotCompare && (
+                      <div className="mt-2 text-[10px] text-[var(--text-dim)] italic">
+                        Trié par moyenne Flight Time décroissante. Sélectionne un pilote dans le filtre en haut pour zoomer sur ses statistiques.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -4577,19 +4587,30 @@
             <div className="label">Dépenses par catégorie ({month?`${String(month).padStart(2,'0')}/${year}`:`année ${year}`})</div>
             {Object.keys(docTotals).length === 0 && <div className="text-sm text-[var(--text-dim)]">—</div>}
             <div className="space-y-1">
-              {Object.entries(docTotals).sort((a,b)=>b[1]-a[1]).map(([id, total]) => {
-                const c = categories.find(x=>x.id===id) || categories[categories.length-1];
-                const max = Math.max(...Object.values(docTotals));
-                const pct = max ? (total/max)*100 : 0;
-                return (
-                  <div key={id}>
-                    <div className="flex justify-between text-sm"><span>{c.icon} {c.name}</span><span className="font-mono">{total.toFixed(2)}</span></div>
-                    <div className="h-2 bg-[var(--bg-elev)] rounded">
-                      <div className="h-2 rounded" style={{ width:`${pct}%`, background:c.color }} />
+              {(() => {
+                const values = Object.values(docTotals);
+                const max = Math.max(...values, 0);
+                const grand = values.reduce((s,v) => s + v, 0);
+                return Object.entries(docTotals).sort((a,b)=>b[1]-a[1]).map(([id, total]) => {
+                  const c = categories.find(x=>x.id===id) || categories[categories.length-1];
+                  const pctBar   = max   ? (total/max)*100   : 0;
+                  const pctShare = grand ? (total/grand)*100 : 0;
+                  return (
+                    <div key={id}>
+                      <div className="flex justify-between text-sm">
+                        <span>{c.icon} {c.name}</span>
+                        <span className="font-mono tabular-nums">
+                          {total.toFixed(2)}
+                          <span className="text-[var(--text-dim)] ml-2 text-xs">{pctShare.toFixed(1)}%</span>
+                        </span>
+                      </div>
+                      <div className="h-2 bg-[var(--bg-elev)] rounded">
+                        <div className="h-2 rounded" style={{ width:`${pctBar}%`, background:c.color }} />
+                      </div>
                     </div>
-                  </div>
-                );
-              })}
+                  );
+                });
+              })()}
             </div>
           </div>
 
