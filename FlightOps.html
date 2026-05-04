@@ -2131,13 +2131,22 @@
             return alert('Heures incohérentes :\n\n• ' + blockingErrors.join('\n• '));
           }
         }
-        // Si statut "Complet" : on exige toutes les règles métier (heures, docs, etc.)
+        // Si statut "Complet" : on exige toutes les règles métier (heures, docs, etc.).
+        // Auparavant on rétrogradait silencieusement → l'utilisateur ne comprenait pas
+        // pourquoi sa card devenait orange. Désormais on affiche les conditions
+        // manquantes et on lui propose de garder Complet quand même (cas archivés
+        // où les données sont là mais le pilote veut valider explicitement).
         if (f.verificationStatus === 'complete') {
-          const errs = getCompleteValidationErrors(f);
+          const errs = getCompleteValidationErrors(f, aircraft);
           if (errs.length > 0) {
-            // Si l'utilisateur avait validé "Complet" puis a retiré une donnée :
-            // on rétrograde silencieusement le statut au lieu de bloquer l'enregistrement.
-            f.verificationStatus = computeAutoVerificationStatus(f);
+            const ok = confirm(
+              '⚠ Conditions « Complet » manquantes :\n\n• ' + errs.join('\n• ') +
+              '\n\nOK : enregistrer Complet quand même (les données seront vérifiables visuellement)\nAnnuler : enregistrer en statut auto (orange)'
+            );
+            if (!ok) {
+              f.verificationStatus = computeAutoVerificationStatus(f, aircraft);
+            }
+            // Sinon : on laisse 'complete' tel quel
           }
         }
         // Statut auto-calculé pour tous les vols non-Complet (rouge si pas de landing,
@@ -8734,44 +8743,71 @@
                          .replace(/ghs_[A-Za-z0-9]{36,}/g, '[redacted-server-token]');
         return JSON.parse(safe);
       }
-      // Fusion intelligente : applique le remote SANS écraser les binaires locaux.
-      // Quand un doc/entry remote correspond à un local par id, on garde dataUrl/thumbnail
-      // local et on prend les autres champs du remote.
+      // Fusion intelligente : applique le remote SANS écraser les binaires locaux ET
+      // sans perdre les items locaux qui ne sont pas (encore) dans le remote.
       function mergeKeepLocalBinaries(remoteList, localList, idKey = 'id') {
-        if (!Array.isArray(remoteList)) return remoteList;
-        const localById = new Map((localList || []).map(x => [x[idKey], x]));
-        return remoteList.map(r => {
-          const local = localById.get(r[idKey]);
-          if (!local) return r;
-          // Prend remote, restaure les binaires locaux s'ils existent
-          const merged = { ...r };
-          if (local.dataUrl) merged.dataUrl = local.dataUrl;
-          if (local.thumbnail) merged.thumbnail = local.thumbnail;
-          if (local.invoiceDataUrl) merged.invoiceDataUrl = local.invoiceDataUrl;
-          return merged;
-        });
-      }
-      // Fusion docs vol : prend le remote, mais préserve le flag archived local + le
-      // binaire local s'il existe. Évite qu'un pull écrase un état "archived" local
-      // (le push n'a pas encore propagé) ou qu'un dataUrl local fraîchement scanné soit
-      // remplacé par une version stripée du remote.
-      function mergeDocsKeepLocalArchive(remoteList, localList) {
-        if (!Array.isArray(remoteList)) return remoteList;
-        const localById = new Map((localList || []).map(x => [x.id, x]));
-        return remoteList.map(r => {
-          const local = localById.get(r.id);
-          if (!local) return r;
-          const merged = { ...r };
-          // Restaure dataUrl local s'il existe (binaire jamais transmis par le gist)
-          if (local.dataUrl) merged.dataUrl = local.dataUrl;
-          // Préserve flag archived : si local est archivé, on garde l'état archivé
-          if (local.archived) {
-            merged.archived = true;
-            merged.archivedAt = local.archivedAt || merged.archivedAt;
-            merged.dataUrl = ''; // archivé = pas de binaire local
+        const remote = Array.isArray(remoteList) ? remoteList : [];
+        const local  = Array.isArray(localList)  ? localList  : [];
+        const localById = new Map(local.map(x => [x[idKey], x]));
+        const remoteIds = new Set(remote.map(x => x[idKey]));
+        // 1) Merge des items présents dans remote
+        const merged = remote.map(r => {
+          const localItem = localById.get(r[idKey]);
+          if (!localItem) return r;
+          const m = { ...r };
+          if (localItem.dataUrl) m.dataUrl = localItem.dataUrl;
+          if (localItem.thumbnail) m.thumbnail = localItem.thumbnail;
+          if (localItem.invoiceDataUrl) m.invoiceDataUrl = localItem.invoiceDataUrl;
+          // Préserve les flags archived locaux (peuvent ne pas avoir été poussés)
+          if (localItem.archived) {
+            m.archived = true;
+            m.archivedAt = localItem.archivedAt || m.archivedAt;
           }
-          return merged;
+          if (localItem.invoiceArchived) {
+            m.invoiceArchived = true;
+            m.invoiceArchivedAt = localItem.invoiceArchivedAt || m.invoiceArchivedAt;
+          }
+          return m;
         });
+        // 2) Ajoute les items locaux qui ne sont pas dans le remote (création récente
+        //    pas encore poussée, ou item perdu côté remote).
+        for (const li of local) {
+          if (!li[idKey] || remoteIds.has(li[idKey])) continue;
+          merged.push(li);
+        }
+        return merged;
+      }
+      // Fusion docs vol : union par id + préservation du flag archived + restauration
+      // du binaire local. Évite TROIS cas de perte :
+      //   1) Doc fraîchement scanné en local pas encore poussé → on garde le local
+      //   2) État archived local pas encore poussé → on garde archived=true
+      //   3) Binaire local (dataUrl) jamais transmis par le gist → on le restaure
+      function mergeDocsKeepLocalArchive(remoteList, localList) {
+        const remote = Array.isArray(remoteList) ? remoteList : [];
+        const local  = Array.isArray(localList)  ? localList  : [];
+        const localById  = new Map(local.map(x => [x.id, x]));
+        const remoteIds  = new Set(remote.map(x => x.id));
+        // 1) Pour chaque doc du remote : merge avec local s'il existe
+        const merged = remote.map(r => {
+          const localDoc = localById.get(r.id);
+          if (!localDoc) return r;
+          const m = { ...r };
+          if (localDoc.dataUrl) m.dataUrl = localDoc.dataUrl;
+          if (localDoc.archived) {
+            m.archived = true;
+            m.archivedAt = localDoc.archivedAt || m.archivedAt;
+            m.dataUrl = '';
+          }
+          return m;
+        });
+        // 2) Ajoute les docs LOCAUX qui ne sont pas dans le remote (créations récentes
+        //    ou docs préservés que le remote a perdus). Critique pour ne pas vider la
+        //    liste quand le remote est vide ou plus ancien.
+        for (const ld of local) {
+          if (!ld.id || remoteIds.has(ld.id)) continue;
+          merged.push(ld);
+        }
+        return merged;
       }
       // Fusion union par id : prend le remote + ajoute les items locaux qui n'existent
       // pas en remote (typiquement des créations récentes pas encore poussées).
@@ -8800,8 +8836,15 @@
           // est archivé (archived=true), on garde ce flag même si le remote ne l'a
           // pas — sinon un push antérieur écraserait l'état archive.
           const mergedDocs = mergeDocsKeepLocalArchive(rf.documents, local.documents);
+          // Préserve le verificationStatus 'complete' local si remote ne l'a pas
+          // (sans timestamp par enregistrement, on suppose que 'complete' est plus
+          // précieux qu'un autre état — décision explicite du pilote/dispatch).
+          const mergedStatus = (local.verificationStatus === 'complete' && rf.verificationStatus !== 'complete')
+            ? 'complete'
+            : rf.verificationStatus;
           return {
             ...rf,
+            verificationStatus: mergedStatus,
             documents: mergedDocs,
             fuelEntries: mergeKeepLocalBinaries(rf.fuelEntries, local.fuelEntries),
             documentsByCategory: rf.documentsByCategory
