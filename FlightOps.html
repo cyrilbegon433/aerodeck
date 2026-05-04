@@ -85,7 +85,23 @@
     }
 
     html, body, #root { height: 100%; }
+    /* Empêche le "rubber-band" iOS : la page entière ne flotte plus.
+       Le scroll se fait à l'intérieur de #root. Le pinch-to-zoom reste actif. */
+    html {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
+    }
     body {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      overscroll-behavior: none;
       background:
         radial-gradient(1200px 600px at 70% -10%, #1b2a4e 0%, transparent 60%),
         radial-gradient(900px  500px at -10% 110%, #0e2235 0%, transparent 55%),
@@ -95,8 +111,14 @@
                    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       font-feature-settings: "ss01", "ss02", "cv11";
       -webkit-tap-highlight-color: transparent;
-      overscroll-behavior-y: none;
       letter-spacing: 0.005em;
+    }
+    #root {
+      height: 100%;
+      overflow-y: auto;
+      overflow-x: hidden;
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: none;
     }
 
     /* === Conteneurs glass / card === */
