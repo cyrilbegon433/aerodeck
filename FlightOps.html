@@ -469,8 +469,8 @@
         'stats.language':'Langue de l\'interface','stats.confirmDelete':'Demander confirmation avant chaque suppression (recommandé)',
         // Documents joints au vol
         'flight.docs':'Documents joints au vol',
-        'flight.fuel':'⛽ Carburant Avion','flight.fuel.add':'+ Ajouter un plein',
-        'flight.oil':'🛢️ Huile moteur','flight.oil.add':'+ Ajouter','flight.oil.left':'Moteur gauche','flight.oil.right':'Moteur droit',
+        'flight.fuel':'Carburant Avion','flight.fuel.add':'+ Ajouter un plein',
+        'flight.oil':'Huile moteur','flight.oil.add':'+ Ajouter','flight.oil.left':'Moteur gauche','flight.oil.right':'Moteur droit',
       },
       en: {
         'tab.logbook':'Flight','tab.staff':'Staff','tab.calendar':'Calendar','tab.aircraft':'Aircraft','tab.pilots':'Pilots',
@@ -502,8 +502,8 @@
         'stats.exports':'Exports','stats.backupRestore':'Backup / Restore','stats.settings':'Settings',
         'stats.language':'Interface language','stats.confirmDelete':'Confirm each delete (recommended)',
         'flight.docs':'Flight attachments',
-        'flight.fuel':'⛽ Aircraft Fuel','flight.fuel.add':'+ Add fuel uplift',
-        'flight.oil':'🛢️ Engine oil','flight.oil.add':'+ Add','flight.oil.left':'Left engine','flight.oil.right':'Right engine',
+        'flight.fuel':'Aircraft Fuel','flight.fuel.add':'+ Add fuel uplift',
+        'flight.oil':'Engine oil','flight.oil.add':'+ Add','flight.oil.left':'Left engine','flight.oil.right':'Right engine',
       },
     };
 
@@ -1544,7 +1544,9 @@
       barChart3:  'M3 3v18h18 M18 17V9 M13 17V5 M8 17v-3',
       settings:   'M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
       // Catégories de dépenses
-      fuel:       'M3 22h12 M5 9h6V4h2v5h2.5a2.5 2.5 0 0 1 2.5 2.5V19a3 3 0 0 1-6 0v-2 M14.5 4.5l3 3 M19 17V7c0-1.5-1-2.5-2.5-2.5S14 5.5 14 7',
+      // Pompe à essence : corps de pompe (avec écran d'affichage) + tuyau et pistolet à droite.
+      // Beaucoup plus reconnaissable que l'icône "jerry can" Lucide d'origine.
+      fuel:       'M3 22h13 M5 22V7a3 3 0 0 1 3-3h2a3 3 0 0 1 3 3v15 M7 9h4 M7 12h4 M13 14h2a1 1 0 0 1 1 1v4a2 2 0 0 1 4 0V8l-2-2',
       droplet:    'M12 22a7 7 0 0 0 7-7c0-2-1-3.9-3-5.5s-3.5-4-4-6.5c-.5 2.5-2 4.9-4 6.5C6 11.1 5 13 5 15a7 7 0 0 0 7 7z',
       planeLanding: 'M2 22h20 M3.77 10.77 2 9l2-4.5 1.1.55c.55.27.9.82.9 1.43V8l8 4 6-1c.5-.1 1 .04 1.36.4l.34.34c.74.74.59 1.93-.36 2.42L13.5 17 8 16l-3.06 1.53A2 2 0 0 1 2.13 16l-.13-.27a2 2 0 0 1 .9-2.69z',
       home:       'm3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z M9 22V12h6v10',
@@ -1572,6 +1574,27 @@
       mapPin:       'M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0z M12 13a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
       ticket:       'M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z M13 5v2 M13 11v2 M13 17v2',
       cog:          'M12 2v3 M12 19v3 M4.93 4.93l2.12 2.12 M16.95 16.95l2.12 2.12 M2 12h3 M19 12h3 M4.93 19.07l2.12-2.12 M16.95 7.05l2.12-2.12 M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z',
+      // === Système / sync / sécurité ===
+      globe:        'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z M2 12h20 M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
+      cloud:        'M17.5 19a4.5 4.5 0 1 0-1.4-8.78 7 7 0 1 0-12 6.13 5 5 0 0 0 2.4 2.65',
+      cloudOff:     'M2 2l20 20 M5.7 5.7A7 7 0 0 0 4 11a5 5 0 0 0 5 5h7 M9.5 8a4.5 4.5 0 0 1 6.5.4 7 7 0 0 1 4 6.6c0 1.4-.4 2.7-1.1 3.7',
+      cloudCheck:   'M17.5 19a4.5 4.5 0 1 0-1.4-8.78 7 7 0 1 0-12 6.13 5 5 0 0 0 2.4 2.65 M9 14l2 2 4-4',
+      alertTriangle:'m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z M12 9v4 M12 17h.01',
+      refreshCw:    'M3 12a9 9 0 0 1 15-6.7L21 8 M21 3v5h-5 M21 12a9 9 0 0 1-15 6.7L3 16 M8 16H3v5',
+      save:         'M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z M17 21v-8H7v8 M7 3v5h8',
+      database:     'M12 8c5 0 9-1.3 9-3s-4-3-9-3-9 1.3-9 3 4 3 9 3z M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5 M3 12c0 1.7 4 3 9 3s9-1.3 9-3',
+      shield2:      'M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z',
+      // === Affichage / UI ===
+      sun:          'M12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10z M12 1v2 M12 21v2 M4.22 4.22l1.42 1.42 M18.36 18.36l1.42 1.42 M1 12h2 M21 12h2 M4.22 19.78l1.42-1.42 M18.36 5.64l1.42-1.42',
+      eye:          'M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
+      eyeOff:       'M9.88 9.88a3 3 0 1 0 4.24 4.24 M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68 M6.61 6.61A13.526 13.526 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61 M2 2l20 20',
+      // === Météo / nav / divers ===
+      radio:        'M4.9 19.1a14 14 0 0 1 0-14.2 M7.8 16.2a10 10 0 0 1 0-8.4 M19.1 4.9a14 14 0 0 1 0 14.2 M16.2 7.8a10 10 0 0 1 0 8.4 M12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z',
+      clipboard:    'M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2 M9 2h6a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z',
+      monitor:      'M3 4h18a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z M8 21h8 M12 17v4',
+      checkCircle:  'M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4 12 14.01l-3-3',
+      xCircle:      'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z M15 9l-6 6 M9 9l6 6',
+      languages:    'm5 8 6 6 M4 14l6-6 2-3 M2 5h12 M7 2h1 M22 22l-5-10-5 10 M14 18h6',
     };
     function LucideIcon({ name, size = 20, strokeWidth = 2 }) {
       const path = LUCIDE_ICONS[name];
@@ -2533,7 +2556,10 @@
               className="flex items-center justify-between w-full gap-2 text-left"
               onClick={()=>setNightOpen(o=>!o)}
               title={nightOpen ? 'Replier' : 'Déplier'}>
-              <span className="label !mb-0">🌙 Temps de nuit (calculé)</span>
+              <span className="label !mb-0 inline-flex items-center gap-1.5">
+                <span style={{ color: '#a78bfa' }}><LucideIcon name="moon" size={14} strokeWidth={2.5} /></span>
+                Temps de nuit (calculé)
+              </span>
               <span className="flex items-center gap-2 text-xs text-[var(--text-dim)]">
                 {(f.nightTime||0) > 0 && (
                   <span className="font-mono text-[var(--accent)]">{fmtDuration(f.nightTime)}</span>
@@ -2851,8 +2877,8 @@
                     <span className="badge">{f.rules}</span>
                     {isDuoFlight(f) && <span className="badge">🤝 Duo</span>}
                     {/* Affichage temps de nuit : valeur calculée OU legacy boolean */}
-                    {(f.nightTime||0) > 0 && <span className="badge">🌙 {fmtDuration(f.nightTime)}</span>}
-                    {(f.nightTime||0) === 0 && f.night && <span className="badge">🌙 nuit</span>}
+                    {(f.nightTime||0) > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="moon" size={11} strokeWidth={2.5} />{fmtDuration(f.nightTime)}</span>}
+                    {(f.nightTime||0) === 0 && f.night && <span className="badge inline-flex items-center gap-1"><LucideIcon name="moon" size={11} strokeWidth={2.5} />nuit</span>}
                     {f.rules === 'IFR' && f.approaches?.slice(0,3).map(a => <span key={a} className="badge">{a}</span>)}
                     {f.rules === 'IFR' && f.approaches?.length>3 && <span className="badge">+{f.approaches.length-3}</span>}
                     {(f.ttsnAfter||f.ttsnBefore) && (
@@ -3045,7 +3071,10 @@
                    value={a.ttsn} onChange={e=>set('ttsn', parseFloat(e.target.value||'0'))} />
             {lastFlightTtsn && (
               <div className={`text-xs mt-2 px-2 py-1.5 rounded-md ${Math.abs(lastFlightTtsn.value - (parseFloat(a.ttsn)||0)) > 0.05 ? 'bg-[var(--warn)]/15 text-[var(--warn)]' : 'bg-[var(--accent)]/10 text-[var(--accent)]'}`}>
-                <div>📋 TTSN du dernier vol : <span className="font-mono font-semibold">{lastFlightTtsn.value.toFixed(1)} h</span></div>
+                <div className="inline-flex items-center gap-1.5">
+                  <LucideIcon name="clipboard" size={12} strokeWidth={2.5} />
+                  <span>TTSN du dernier vol : <span className="font-mono font-semibold">{lastFlightTtsn.value.toFixed(1)} h</span></span>
+                </div>
                 <div className="text-[var(--text-dim)] mt-0.5">
                   Vol du {lastFlightTtsn.date} {lastFlightTtsn.from}→{lastFlightTtsn.to}
                 </div>
@@ -3797,7 +3826,10 @@
                   onClick={()=>setFilterCat('all')}
                   className={`card p-3 text-left transition-all hover:scale-[1.02] ${filterCat==='all' ? 'ring-2 ring-[var(--accent)] scale-[1.02]' : ''}`}
                   style={filterCat==='all' ? { background: 'rgba(56,189,248,0.15)', borderColor: 'var(--accent)' } : {}}>
-                  <div className="text-2xl mb-1">🌐</div>
+                  <div className="grid place-items-center mx-auto mb-1 w-9 h-9 rounded-xl"
+                       style={{ background: 'rgba(56,189,248,0.18)', color: 'var(--accent)' }}>
+                    <LucideIcon name="globe" size={20} strokeWidth={2.25} />
+                  </div>
                   <div className="text-xs font-semibold">Toutes</div>
                   <div className="text-base font-mono tabular-nums font-bold text-[var(--accent)] mt-0.5">{totalAmount.toFixed(0)} <span className="text-[10px]">{mainCurrency}</span></div>
                   <div className="text-[10px] text-[var(--text-dim)]">{totalCount} facture{totalCount>1?'s':''}</div>
@@ -4719,7 +4751,10 @@
 
           <div className="card p-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="label !mb-0">📅 Heures par mois — 12 derniers mois{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}</div>
+              <div className="label !mb-0 inline-flex items-center gap-1.5">
+                <span style={{ color: 'var(--accent)' }}><LucideIcon name="calendar" size={14} strokeWidth={2.5} /></span>
+                Heures par mois — 12 derniers mois{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}
+              </div>
               <div className="text-xs text-[var(--text-dim)]">{seriesMonthly.length} mois au total</div>
             </div>
             <div className="mt-2 -mx-1">
@@ -4730,7 +4765,10 @@
           {/* === Comparatif Air Time vs Flight Time === */}
           <div className="card p-3">
             <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
-              <div className="label !mb-0">⚙️ Air Time vs Flight Time{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}</div>
+              <div className="label !mb-0 inline-flex items-center gap-1.5">
+                <span style={{ color: 'var(--accent)' }}><LucideIcon name="cog" size={14} strokeWidth={2.5} /></span>
+                Air Time vs Flight Time{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}
+              </div>
               <div className="text-xs text-[var(--text-dim)]">{atFtStats.count} vol(s) terminé(s)</div>
             </div>
 
@@ -7009,7 +7047,7 @@
       if (!hasPreview) {
         return (
           <div className="flex items-center gap-2 mt-2 text-xs bg-[var(--bg-card)] p-2 rounded border border-[var(--border-soft)]">
-            <span className="text-xl">💾</span>
+            <span style={{ color: 'var(--accent)' }}><LucideIcon name="save" size={18} strokeWidth={2.25} /></span>
             <div className="flex-1 min-w-0">
               <div className="text-[var(--accent)] font-medium">Facture sauvegardée (archivée)</div>
               <div className="text-[var(--text-dim)]">Le fichier original a été archivé en ZIP. La dépense reste dans l'onglet Dépenses · Carburant Avion.</div>
@@ -7099,7 +7137,10 @@
         <div className="bg-[var(--bg-elev)] p-3 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">
-              {isFuel ? '⛽ Plein' : '🛢️ Ajout d\'huile'} #{index+1}
+              <span className="inline-flex items-center gap-1.5">
+                <LucideIcon name={isFuel ? 'fuel' : 'droplet'} size={13} strokeWidth={2.5} />
+                {isFuel ? 'Plein' : 'Ajout d\'huile'} #{index+1}
+              </span>
               {isFilled && (
                 <span className="ml-2 text-xs text-[var(--ok)] font-normal">— rempli, sera replié auto</span>
               )}
@@ -7246,7 +7287,10 @@
             return (
               <div className="bg-[var(--ok)]/10 border border-[var(--ok)]/30 p-2 rounded text-sm">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="text-[var(--ok)] font-semibold">⛽ Brûlé depuis le dernier Full</span>
+                  <span className="text-[var(--ok)] font-semibold inline-flex items-center gap-1.5">
+                    <LucideIcon name="fuel" size={13} strokeWidth={2.5} />
+                    Brûlé depuis le dernier Full
+                  </span>
                   <span className="font-mono tabular-nums font-bold text-[var(--ok)]">{burnedL.toFixed(1)} L</span>
                 </div>
                 <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
@@ -7428,7 +7472,10 @@
       return (
         <div className="card p-3">
           <div className="flex items-center justify-between">
-            <div className="label !mb-0">⛽ Carburant Avion</div>
+            <div className="label !mb-0 inline-flex items-center gap-1.5">
+              <span style={{ color: 'var(--accent-2)' }}><LucideIcon name="fuel" size={14} strokeWidth={2.5} /></span>
+              Carburant Avion
+            </div>
             <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" onClick={addEntry}>+ Ajouter un plein</button>
           </div>
           {(entries||[]).length === 0 && (
@@ -7537,7 +7584,10 @@
       return (
         <div className="card p-3">
           <div className="flex items-center justify-between">
-            <div className="label !mb-0">🛢️ Huile moteur</div>
+            <div className="label !mb-0 inline-flex items-center gap-1.5">
+              <span style={{ color: '#a16207' }}><LucideIcon name="droplet" size={14} strokeWidth={2.5} /></span>
+              Huile moteur
+            </div>
             <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" onClick={addEntry}>+ Ajouter</button>
           </div>
           {(entries||[]).length === 0 && (
@@ -7684,10 +7734,10 @@
                     <th className="px-1.5 py-2">Avion</th>
                     <th className="px-1.5 py-2 text-center" title="Classe">Cl.</th>
                     <th className="px-1.5 py-2 text-center">FT</th>
-                    <th className="px-1.5 py-2 text-center" title="IFR">📡</th>
-                    <th className="px-1.5 py-2 text-center" title="Navigation">🧭</th>
-                    <th className="px-1.5 py-2 text-center" title="Duo">🤝</th>
-                    <th className="px-1.5 py-2 text-center" title="Nuit">🌙</th>
+                    <th className="px-1.5 py-2 text-center" title="IFR"><span className="inline-flex justify-center"><LucideIcon name="radio" size={14} strokeWidth={2.25} /></span></th>
+                    <th className="px-1.5 py-2 text-center" title="Navigation"><span className="inline-flex justify-center"><LucideIcon name="compass" size={14} strokeWidth={2.25} /></span></th>
+                    <th className="px-1.5 py-2 text-center" title="Duo"><span className="inline-flex justify-center"><LucideIcon name="users" size={14} strokeWidth={2.25} /></span></th>
+                    <th className="px-1.5 py-2 text-center" title="Nuit"><span className="inline-flex justify-center"><LucideIcon name="moon" size={14} strokeWidth={2.25} /></span></th>
                     <th className="px-1.5 py-2">PIC</th>
                     <th className="px-1.5 py-2">SIC</th>
                     <th className="px-1.5 py-2 text-center" title="Décollages / Atterrissages">TO/LD</th>
@@ -7778,11 +7828,11 @@
                       {sic && <div><span className="text-[var(--accent)] font-semibold">SIC :</span> {pilotDisplayName(sic)}</div>}
                     </div>
                     <div className="flex flex-wrap gap-1 mt-2 text-[10px]">
-                      {ifrTime > 0 && <span className="badge">📡 IFR {fmtDuration(ifrTime)}</span>}
-                      {navTime > 0 && <span className="badge">🧭 Nav {fmtDuration(navTime)}</span>}
-                      {duoTime > 0 && <span className="badge">🤝 Duo {fmtDuration(duoTime)}</span>}
-                      {(f.nightTime||0) > 0 && <span className="badge">🌙 {fmtDuration(f.nightTime)}</span>}
-                      {(totalTO + totalLDG) > 0 && <span className="badge">🛬 {totalTO}/{totalLDG}</span>}
+                      {ifrTime > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="radio" size={11} strokeWidth={2.5} />IFR {fmtDuration(ifrTime)}</span>}
+                      {navTime > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="compass" size={11} strokeWidth={2.5} />Nav {fmtDuration(navTime)}</span>}
+                      {duoTime > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="users" size={11} strokeWidth={2.5} />Duo {fmtDuration(duoTime)}</span>}
+                      {(f.nightTime||0) > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="moon" size={11} strokeWidth={2.5} />{fmtDuration(f.nightTime)}</span>}
+                      {(totalTO + totalLDG) > 0 && <span className="badge inline-flex items-center gap-1"><LucideIcon name="planeLanding" size={11} strokeWidth={2.5} />{totalTO}/{totalLDG}</span>}
                       <span className="badge">{flightTypeLabel(f.flightType)}</span>
                     </div>
                     <div className="flex justify-end mt-2">
@@ -8311,7 +8361,10 @@
           {/* === Synchronisation cloud GitHub Gist === */}
           <div className="card p-3 space-y-3">
             <div className="flex items-center justify-between gap-2 flex-wrap">
-              <div className="label !mb-0">☁️ Synchronisation Mac ↔ iPhone</div>
+              <div className="label !mb-0 inline-flex items-center gap-1.5">
+                <span style={{ color: 'var(--accent)' }}><LucideIcon name="cloud" size={14} strokeWidth={2.5} /></span>
+                Synchronisation Mac ↔ iPhone
+              </div>
               {gh.enabled && (
                 <div className={`text-xs px-2 py-1 rounded-md border font-mono ${syncBg}`}>
                   {syncIcon} {syncStatus.message || 'inactive'}
@@ -8349,7 +8402,7 @@
                   className="btn btn-secondary !py-1.5 !px-3 text-sm"
                   onClick={()=>setShowToken(s => !s)}
                   title={showToken ? 'Masquer' : 'Afficher'}>
-                  {showToken ? '🙈' : '👁'}
+                  <LucideIcon name={showToken ? 'eyeOff' : 'eye'} size={16} strokeWidth={2.25} />
                 </button>
               </div>
               {gh.token && (
@@ -8430,12 +8483,18 @@
                 ))}
               </div>
               <div className="text-xs text-[var(--text-dim)] mt-2">
-                Mode actuellement appliqué : <span className="font-semibold">{themeApplied === 'light' ? '☀️ Jour' : '🌙 Nuit'}</span>.
+                Mode actuellement appliqué : <span className="font-semibold inline-flex items-center gap-1">
+                  <LucideIcon name={themeApplied === 'light' ? 'sun' : 'moon'} size={12} strokeWidth={2.5} />
+                  {themeApplied === 'light' ? 'Jour' : 'Nuit'}
+                </span>.
                 Auto système = suit ton OS. Auto heure = clair entre 7h et 20h locale, sombre sinon.
               </div>
             </div>
             <div>
-              <div className="label">🌐 Langue de l'interface</div>
+              <div className="label inline-flex items-center gap-1.5">
+                <span style={{ color: 'var(--accent)' }}><LucideIcon name="languages" size={14} strokeWidth={2.5} /></span>
+                Langue de l'interface
+              </div>
               <select className="select max-w-xs" value={lang} onChange={e=>setLang(e.target.value)}>
                 {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
               </select>
@@ -8498,7 +8557,10 @@
 
           {/* Format de date */}
           <div className="card p-3 space-y-3">
-            <div className="label">📅 Format de date</div>
+            <div className="label inline-flex items-center gap-1.5">
+              <span style={{ color: 'var(--accent)' }}><LucideIcon name="calendar" size={14} strokeWidth={2.5} /></span>
+              Format de date
+            </div>
             <div className="grid grid-cols-3 gap-2">
               {[
                 ['iso', 'ISO  ' + fmtDateBySetting(todayZuluDate(),'iso')],
@@ -8520,7 +8582,10 @@
 
           {/* Confidentialité */}
           <div className="card p-3 space-y-2">
-            <div className="label">🛡️ Confidentialité & sécurité</div>
+            <div className="label inline-flex items-center gap-1.5">
+              <span style={{ color: '#34d399' }}><LucideIcon name="shieldCheck" size={14} strokeWidth={2.5} /></span>
+              Confidentialité & sécurité
+            </div>
             <label className="flex items-center gap-2 select-none cursor-pointer">
               <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
                 checked={!!settings.askBeforeDelete}
@@ -8534,7 +8599,10 @@
 
           {/* Données */}
           <div className="card p-3 space-y-2">
-            <div className="label">💾 Données — Sauvegardes</div>
+            <div className="label inline-flex items-center gap-1.5">
+              <span style={{ color: 'var(--accent)' }}><LucideIcon name="database" size={14} strokeWidth={2.5} /></span>
+              Données — Sauvegardes
+            </div>
             <div className="text-xs text-[var(--text-dim)]">
               Stockage local utilisé : <span className="font-mono text-[var(--text)]">{usage.toFixed(2)} MB</span>
               {' '}/ ~5 MB (limite navigateur).
@@ -8581,7 +8649,10 @@
 
           {/* Zone sensible */}
           <div className="card p-3 border-[var(--err)]/40">
-            <div className="label">⚠️ Zone sensible</div>
+            <div className="label inline-flex items-center gap-1.5">
+              <span style={{ color: 'var(--err)' }}><LucideIcon name="alertTriangle" size={14} strokeWidth={2.5} /></span>
+              Zone sensible
+            </div>
             <button className="btn btn-danger" onClick={onClearAll}>Effacer toutes les données locales</button>
             <div className="text-xs text-[var(--text-dim)] mt-1">
               Conformément à ta consigne « ne jamais rien supprimer », deux confirmations sont demandées.
@@ -8600,7 +8671,10 @@
       const t = useT();
       return (
         <div className="card p-3">
-          <div className="label">🌐 {t('stats.language')}</div>
+          <div className="label inline-flex items-center gap-1.5">
+            <span style={{ color: 'var(--accent)' }}><LucideIcon name="languages" size={14} strokeWidth={2.5} /></span>
+            {t('stats.language')}
+          </div>
           <select className="select max-w-xs" value={lang} onChange={e=>setLang(e.target.value)}>
             {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
           </select>
@@ -9533,7 +9607,10 @@
             <div className="relative card w-full sm:max-w-lg max-h-[90vh] overflow-y-auto anim-pop p-5"
                  style={{ borderRadius: '20px 20px 0 0' }}>
               <div className="text-center mb-3">
-                <div className="text-4xl mb-2">💾</div>
+                <div className="grid place-items-center mx-auto mb-2 w-14 h-14 rounded-2xl"
+                     style={{ background: 'rgba(245,158,11,0.18)', color: 'var(--warn)', boxShadow: 'inset 0 0 0 1.25px rgba(245,158,11,0.45)' }}>
+                  <LucideIcon name="database" size={28} strokeWidth={2.25} />
+                </div>
                 <h3 className="text-lg font-semibold">Stockage local plein</h3>
               </div>
               <div className="text-sm text-[var(--text-dim)] space-y-2 mb-4">
@@ -9548,7 +9625,8 @@
               </div>
               <div className="flex flex-col gap-2">
                 <button className="btn btn-primary" onClick={handleArchiveAndContinue}>
-                  📦 Archiver les autres vols et continuer
+                  <LucideIcon name="package" size={16} strokeWidth={2.25} />
+                  <span>Archiver les autres vols et continuer</span>
                 </button>
                 <button className="btn btn-secondary" onClick={()=>setStorageFullModal(null)}>
                   Plus tard (j'ouvrirai Réglages → Données)
@@ -9591,7 +9669,15 @@
                            : 'var(--text-dim)',
                       filter: syncStatus.status === 'syncing' ? 'none' : 'drop-shadow(0 0 3px currentColor)',
                     }}>
-                    <span className="text-sm">{syncStatus.status === 'syncing' ? '⏳' : syncStatus.status === 'error' ? '⚠️' : '☁'}</span>
+                    <span className={`leading-none ${syncStatus.status === 'syncing' ? 'animate-spin' : ''}`}>
+                      {syncStatus.status === 'syncing'
+                        ? <LucideIcon name="refreshCw" size={13} strokeWidth={2.5} />
+                        : syncStatus.status === 'error'
+                          ? <LucideIcon name="alertTriangle" size={13} strokeWidth={2.5} />
+                          : syncStatus.status === 'synced'
+                            ? <LucideIcon name="cloudCheck" size={14} strokeWidth={2.25} />
+                            : <LucideIcon name="cloud" size={14} strokeWidth={2.25} />}
+                    </span>
                     <span className="uppercase tracking-wider opacity-80">
                       {syncStatus.status === 'syncing' ? 'Sync…'
                         : syncStatus.status === 'error' ? 'Erreur'
@@ -9618,7 +9704,7 @@
                     : syncStatus.status === 'synced' ? `Sync OK — clique pour pousser`
                     : 'Cloud sync — clique pour pousser maintenant'
                   }
-                  className="hidden sm:inline-block text-xl leading-none p-1 rounded-md transition-all hover:scale-110"
+                  className={`hidden sm:inline-flex items-center justify-center leading-none p-1.5 rounded-md transition-all hover:scale-110 ${syncStatus.status === 'syncing' ? 'animate-spin' : ''}`}
                   style={{
                     color: syncStatus.status === 'syncing' ? 'var(--warn)'
                          : syncStatus.status === 'error'   ? 'var(--err)'
@@ -9626,7 +9712,13 @@
                          : 'var(--text-dim)',
                     filter: syncStatus.status === 'syncing' ? 'none' : 'drop-shadow(0 0 4px currentColor)',
                   }}>
-                  {syncStatus.status === 'syncing' ? '⏳' : syncStatus.status === 'error' ? '⚠️' : '☁'}
+                  {syncStatus.status === 'syncing'
+                    ? <LucideIcon name="refreshCw" size={20} strokeWidth={2.25} />
+                    : syncStatus.status === 'error'
+                      ? <LucideIcon name="alertTriangle" size={20} strokeWidth={2.25} />
+                      : syncStatus.status === 'synced'
+                        ? <LucideIcon name="cloudCheck" size={22} strokeWidth={2.25} />
+                        : <LucideIcon name="cloud" size={22} strokeWidth={2.25} />}
                 </button>
               )}
               {/* Sélecteur de langue : drapeau rond cliquable qui bascule FR ↔ EN.
