@@ -2913,81 +2913,135 @@
         categoryId: 'other',
         aircraftId: '',
         pilotId: '',           // pilote rattaché à la dépense (optionnel)
-        thumbnail: '',         // dataURL JPEG
-        ocrText: '',
+        thumbnail: '',         // dataURL JPEG (ancien champ, conservé pour rétrocompat)
+        ocrText: '',           // legacy : ancien OCR (conservé pour anciens docs)
         fileName: '',
+        mime: '',              // 'image/jpeg' ou 'application/pdf'
+        dataUrl: '',           // image redimensionnée OU PDF complet
         notes: '',
         addedAt: Date.now(),
       };
       const [d, setD] = useState({ ...blank, ...(initial||{}) });
-      const [ocrBusy, setOcrBusy] = useState(false);
-      const [ocrProgress, setOcrProgress] = useState('');
-      const fileRef = useRef(null);
+      const cameraRef = useRef(null);
+      const filesRef  = useRef(null);
+      const [menuOpen, setMenuOpen] = useState(false);
+      const [busy, setBusy] = useState(false);
+      const [viewing, setViewing] = useState(false);
 
       function set(k,v){ setD(p=>({...p,[k]:v})); }
 
-      async function handleFile(e) {
+      // Ajout / remplacement d'un fichier (image ou PDF) — même pattern que les
+      // documents de vol (W&B/FPL/OFPL) ou les factures fuel. Plus d'OCR : la
+      // saisie des champs (date, montant, fournisseur, catégorie) est manuelle.
+      async function handleFiles(e) {
         const file = e.target.files?.[0];
+        e.target.value = '';
         if (!file) return;
+        setBusy(true);
         try {
-          const dataUrl = await fileToResizedDataURL(file, 1100, 0.78);
-          set('thumbnail', dataUrl);
-          set('fileName', file.name || 'capture.jpg');
-        } catch (err) {
-          alert('Image illisible : ' + err.message);
-        }
-      }
-
-      async function runOCR() {
-        if (!d.thumbnail) return alert('Ajoute une photo / un fichier d\'abord.');
-        setOcrBusy(true); setOcrProgress('Préparation…');
-        try {
-          const text = await ocrImage(d.thumbnail, 'fra+eng', (m)=>{
-            const pct = m.progress ? Math.round(m.progress*100) : 0;
-            setOcrProgress(`${m.status} ${pct}%`);
-          });
-          // Extraction
-          const cat = detectCategory(text, categories);
-          const amount = extractAmount(text);
-          const date = extractDate(text);
-          const supplier = extractSupplier(text);
-          setD(p => ({
-            ...p,
-            ocrText: text,
-            categoryId: cat || p.categoryId,
-            amount: amount != null ? String(amount) : p.amount,
-            date: date || p.date,
-            supplier: supplier || p.supplier,
+          const stored = await fileToStoredDoc(file, d.categoryId);
+          setD(prev => ({
+            ...prev,
+            thumbnail: stored.mime === 'application/pdf' ? '' : stored.dataUrl,
+            fileName: stored.fileName,
+            mime: stored.mime,
+            dataUrl: stored.dataUrl,
           }));
         } catch (err) {
-          alert('OCR échoué : ' + err.message);
+          alert('Import : ' + err.message);
         } finally {
-          setOcrBusy(false); setOcrProgress('');
+          setBusy(false);
         }
       }
+      function triggerCamera() { setMenuOpen(false); setTimeout(() => cameraRef.current?.click(), 0); }
+      function triggerFiles()  { setMenuOpen(false); setTimeout(() => filesRef.current?.click(), 0); }
+      function removeFile() {
+        if (!confirm('Retirer le fichier joint à cette dépense ?')) return;
+        setD(prev => ({ ...prev, thumbnail: '', fileName: '', mime: '', dataUrl: '' }));
+      }
+      const hasFile = !!(d.dataUrl || d.thumbnail);
+      const isPdf = d.mime === 'application/pdf';
 
       return (
         <div className="space-y-3">
           <div className="card p-3">
-            <div className="label">Photo / scan de la facture</div>
-            {d.thumbnail ? (
+            <div className="label">Pièce jointe (facture, ticket…)</div>
+            {hasFile ? (
               <div className="space-y-2">
-                <img src={d.thumbnail} alt="aperçu" className="rounded-lg max-h-72 mx-auto" />
-                <div className="flex justify-center gap-2">
-                  <button className="btn btn-secondary" onClick={()=>fileRef.current?.click()}>Remplacer</button>
-                  <button className="btn btn-primary" onClick={runOCR} disabled={ocrBusy}>
-                    {ocrBusy ? `OCR… ${ocrProgress}` : 'Reconnaître automatiquement'}
+                {/* Rangée DocRow style : aperçu + nom + Ouvrir + Retirer */}
+                <div className="flex items-center gap-2 bg-[var(--bg-card)] p-2 rounded-lg">
+                  {isPdf ? (
+                    <div className="w-12 h-12 grid place-items-center bg-[var(--bg-elev)] rounded text-2xl flex-shrink-0">📄</div>
+                  ) : (
+                    <img src={d.thumbnail || d.dataUrl} alt="" className="w-12 h-12 object-cover rounded flex-shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0 text-xs">
+                    <div className="truncate font-medium">{d.fileName || 'Pièce jointe'}</div>
+                    <div className="truncate text-[var(--text-dim)]">✓ Rattachée</div>
+                  </div>
+                  <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs"
+                    onClick={()=>setViewing(true)}>Ouvrir</button>
+                  <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
+                    onClick={removeFile}>Retirer</button>
+                </div>
+                {/* Bouton Remplacer optionnel */}
+                <div className="relative inline-block">
+                  <button type="button" className="btn btn-secondary !py-1 !px-3 text-xs" disabled={busy}
+                    onClick={()=>setMenuOpen(o=>!o)}>
+                    {busy ? 'Import…' : '🔁 Remplacer'}
                   </button>
+                  {menuOpen && (
+                    <>
+                      <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
+                      <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
+                        <button type="button" className="btn btn-secondary w-full mb-1 justify-start" onClick={triggerCamera}>
+                          📷 Scanner avec l'appareil photo
+                        </button>
+                        <button type="button" className="btn btn-secondary w-full justify-start" onClick={triggerFiles}>
+                          📥 Importer un fichier (image ou PDF)
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
-              <div className="flex flex-col items-center gap-2 py-4">
-                <button className="btn btn-primary" onClick={()=>fileRef.current?.click()}>📷 Scanner / choisir</button>
-                <div className="text-xs text-[var(--text-dim)]">JPG / PNG (la photo est redimensionnée pour économiser l'espace)</div>
+              <div className="relative inline-block">
+                <button type="button" className="btn btn-primary" disabled={busy}
+                  onClick={()=>setMenuOpen(o=>!o)}>
+                  {busy ? 'Import…' : '🧾 + Ajouter une facture'}
+                </button>
+                {menuOpen && (
+                  <>
+                    <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
+                    <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
+                      <button type="button" className="btn btn-secondary w-full mb-1 justify-start" onClick={triggerCamera}>
+                        📷 Scanner avec l'appareil photo
+                      </button>
+                      <button type="button" className="btn btn-secondary w-full justify-start" onClick={triggerFiles}>
+                        📥 Importer un fichier (image ou PDF)
+                      </button>
+                    </div>
+                  </>
+                )}
+                <div className="text-xs text-[var(--text-dim)] mt-2">Optionnel — tu peux enregistrer la dépense sans facture.</div>
               </div>
             )}
-            <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFile} />
+            <input ref={cameraRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handleFiles} />
+            <input ref={filesRef}  type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFiles} />
           </div>
+
+          {/* Visionneuse plein écran pour ouvrir le fichier */}
+          {viewing && hasFile && (
+            <DocViewer
+              doc={{
+                dataUrl: d.dataUrl || d.thumbnail,
+                fileName: d.fileName || 'Facture',
+                mime: d.mime,
+              }}
+              onClose={()=>setViewing(false)}
+            />
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>
@@ -3037,13 +3091,6 @@
             <div className="label">Notes</div>
             <textarea className="textarea" rows={2} value={d.notes} onChange={e=>set('notes', e.target.value)} />
           </div>
-
-          {d.ocrText && (
-            <details className="card p-3">
-              <summary className="cursor-pointer text-sm text-[var(--text-dim)]">Texte OCR brut (debug)</summary>
-              <pre className="text-xs whitespace-pre-wrap mt-2">{d.ocrText}</pre>
-            </details>
-          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn btn-secondary" onClick={onCancel}>Annuler</button>
@@ -3316,13 +3363,14 @@
                   <span className="font-semibold text-lg">{selectedCat.name}</span>
                 </div>
                 <button type="button"
-                  className="text-xs text-[var(--text-dim)] hover:text-[var(--accent)]"
+                  className="btn btn-secondary !py-1 !px-2.5 text-xs inline-flex items-center gap-1"
                   onClick={()=>{
                     setFilterCat('all');
                     setFilterYear(0); setFilterMonth(0); setFilterDate('');
                     setFilterAircraft('all'); setFilterPilot('all');
                   }}>
-                  ✕ Retirer le filtre
+                  <LucideIcon name="chevronLeft" size={14} strokeWidth={2.5} />
+                  <span>Retour</span>
                 </button>
               </div>
               {/* Total de la sélection + bouton Nouvelle facture pré-remplie */}
