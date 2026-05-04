@@ -5928,9 +5928,7 @@
               ✓
             </div>
             <div className="flex-1 min-w-0">
-              <div className="text-sm font-semibold text-[var(--ok)]">
-                {isFuel ? '⛽' : '🛢️'} Fuel {index+1} validé
-              </div>
+              <div className="text-sm font-semibold text-[var(--ok)]">OK</div>
               <div className="text-xs text-[var(--text-dim)] truncate">{summary}</div>
               {entry.invoiceDocId && (
                 <div className="text-[10px] text-[var(--ok)]/80 mt-0.5">
@@ -6011,53 +6009,102 @@
               <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option><option>CAD</option>
             </select>
           </div>
-          <div className="relative flex flex-wrap gap-2">
-            {/* Boutons compacts pour gagner de la place visuelle */}
-            <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" disabled={busy}
-              onClick={()=>setMenuOpen(o=>!o)}>
-              {busy ? 'Import…' : (entry.invoiceDocId ? '🔁 Remplacer' : '🧾 Scanner / Importer la facture')}
-            </button>
-            {entry.invoiceDocId && !busy && (
-              <>
-                <button type="button"
-                  className="btn btn-primary !py-1 !px-2 text-xs"
-                  onClick={()=>setViewingInvoice(true)}>
-                  👁 Voir la facture
-                </button>
-                <button type="button"
-                  className="btn btn-danger !py-1 !px-2 text-xs"
-                  onClick={()=>{
-                    if (!confirm('Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l\'onglet Dépenses (non supprimée).')) return;
-                    onChange({
-                      ...entry,
-                      invoiceDocId: '',
-                      invoiceDataUrl: '',
-                      invoiceFileName: '',
-                      invoiceMime: '',
-                    });
-                  }}>
-                  🗑 Retirer
-                </button>
-              </>
-            )}
-            {menuOpen && (
-              <>
-                <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
-                <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
-                  <button type="button" className="btn btn-secondary w-full mb-1 justify-start"
-                    onClick={()=>{ setMenuOpen(false); triggerCamera(); }}>
-                    📷 Scanner avec l'appareil photo
-                  </button>
-                  <button type="button" className="btn btn-secondary w-full justify-start"
-                    onClick={()=>{ setMenuOpen(false); triggerFiles(); }}>
-                    📥 Importer depuis Téléchargements
+          {/* Zone facture : si une facture est rattachée, on l'affiche en rangée
+              compacte style DocRow (thumb + nom + Ouvrir + Retirer), comme sur les
+              W&B/FPL/OFPL. Sinon, on propose le bouton + Ajouter une facture. */}
+          {entry.invoiceDocId ? (
+            (() => {
+              const isPdf = entry.invoiceMime === 'application/pdf';
+              const hasBinary = !!(entry.invoiceDataUrl);
+              const archived = !hasBinary && !entry.invoiceFileName; // dépouillé après archive
+              return (
+                <div className="flex items-center gap-2 bg-[var(--bg-card)] p-2 rounded-lg">
+                  {archived ? (
+                    <div className="w-10 h-10 grid place-items-center bg-[var(--bg-elev)] rounded text-xl flex-shrink-0">💾</div>
+                  ) : isPdf ? (
+                    <div className="w-10 h-10 grid place-items-center bg-[var(--bg-elev)] rounded text-xl flex-shrink-0">📄</div>
+                  ) : hasBinary ? (
+                    <img src={entry.invoiceDataUrl} alt="" className="w-10 h-10 object-cover rounded flex-shrink-0" />
+                  ) : (
+                    <div className="w-10 h-10 grid place-items-center bg-[var(--bg-elev)] rounded text-xl flex-shrink-0">🧾</div>
+                  )}
+                  <div className="flex-1 min-w-0 text-xs">
+                    <div className="truncate font-medium">{entry.invoiceFileName || 'Facture'}</div>
+                    <div className="truncate text-[var(--text-dim)]">
+                      {archived ? 'Sauvegardée (archivée hors app)' : '✓ Facture rattachée'}
+                    </div>
+                  </div>
+                  {!archived && hasBinary && (
+                    <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs"
+                      onClick={()=>setViewingInvoice(true)}>
+                      Ouvrir
+                    </button>
+                  )}
+                  <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
+                    onClick={()=>{
+                      if (!confirm('Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l\'onglet Dépenses (non supprimée).')) return;
+                      onChange({
+                        ...entry,
+                        invoiceDocId: '',
+                        invoiceDataUrl: '',
+                        invoiceFileName: '',
+                        invoiceMime: '',
+                      });
+                    }}>
+                    Retirer
                   </button>
                 </div>
-              </>
-            )}
-            {inputs}
-          </div>
-          <InvoicePreview entry={entry} />
+              );
+            })()
+          ) : (
+            <div className="relative">
+              <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" disabled={busy}
+                onClick={()=>setMenuOpen(o=>!o)}>
+                {busy ? 'Import…' : '🧾 + Ajouter une facture'}
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
+                    <button type="button" className="btn btn-secondary w-full mb-1 justify-start"
+                      onClick={()=>{ setMenuOpen(false); triggerCamera(); }}>
+                      📷 Scanner avec l'appareil photo
+                    </button>
+                    <button type="button" className="btn btn-secondary w-full justify-start"
+                      onClick={()=>{ setMenuOpen(false); triggerFiles(); }}>
+                      📥 Importer depuis Téléchargements
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {/* Bouton "Remplacer" séparé quand une facture est déjà attachée — utile
+              si le scan initial est flou ou le mauvais fichier */}
+          {entry.invoiceDocId && entry.invoiceDataUrl && (
+            <div className="relative">
+              <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" disabled={busy}
+                onClick={()=>setMenuOpen(o=>!o)}>
+                {busy ? 'Import…' : '🔁 Remplacer la facture'}
+              </button>
+              {menuOpen && (
+                <>
+                  <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
+                  <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
+                    <button type="button" className="btn btn-secondary w-full mb-1 justify-start"
+                      onClick={()=>{ setMenuOpen(false); triggerCamera(); }}>
+                      📷 Scanner avec l'appareil photo
+                    </button>
+                    <button type="button" className="btn btn-secondary w-full justify-start"
+                      onClick={()=>{ setMenuOpen(false); triggerFiles(); }}>
+                      📥 Importer depuis Téléchargements
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          {inputs}
           {/* Visionneuse interne pour la facture (même UX que les W&B/FPL/OFPL) */}
           {viewingInvoice && entry.invoiceDocId && (
             <DocViewer
@@ -7197,8 +7244,17 @@
       const j = await res.json();
       const file = j.files && j.files['aerodeck.json'];
       if (!file) throw new Error('Le gist ne contient pas aerodeck.json');
+      // GitHub tronque le champ "content" pour les fichiers > ~1MB et expose
+      // un raw_url permettant de récupérer le contenu complet. Sans ce fallback
+      // on aurait un JSON.parse "Unterminated string" sur les gros gists.
+      let content = file.content;
+      if (file.truncated && file.raw_url) {
+        const rawRes = await fetch(file.raw_url, { cache: 'no-store' });
+        if (!rawRes.ok) throw new Error(`Lecture raw_url : HTTP ${rawRes.status}`);
+        content = await rawRes.text();
+      }
       let parsed;
-      try { parsed = JSON.parse(file.content); }
+      try { parsed = JSON.parse(content); }
       catch(e) { throw new Error('aerodeck.json malformé : ' + e.message); }
       return { data: parsed, updatedAt: j.updated_at };
     }
@@ -7330,11 +7386,43 @@
       // quelque part — ex: collé par erreur dans une note de vol).
       function buildSnapshot() {
         const { gh: _ghStripped, ...settingsClean } = settings || {};
+        // Strip des binaires (base64) avant push : le gist GitHub tronque les
+        // fichiers > ~1MB, ce qui casse le JSON. On envoie uniquement les métadonnées.
+        // Les binaires (factures scannées, photos) restent en local sur chaque appareil.
+        // Les références (invoiceDocId, fileName, mime, invoiceNumber) sont conservées
+        // pour que l'autre appareil sache qu'il y a une facture archivée et affiche
+        // la mention "Facture sauvegardée (archivée)".
+        const stripBinary = (obj) => {
+          const { dataUrl, thumbnail, invoiceDataUrl, ...rest } = obj || {};
+          return rest;
+        };
+        const flightsLite = (flights || []).map(f => ({
+          ...f,
+          fuelEntries: (f.fuelEntries || []).map(stripBinary),
+          // documentsByCategory : 4 volets W&B/FPL/OFPL/Autres avec docs[]
+          documentsByCategory: f.documentsByCategory
+            ? Object.fromEntries(Object.entries(f.documentsByCategory).map(([k, list]) => [
+                k, (list || []).map(stripBinary)
+              ]))
+            : undefined,
+        }));
+        const documentsLite = (documents || []).map(stripBinary);
+        const companyDocsLite = (companyDocs || []).map(stripBinary);
+        const maintenanceLite = (maintenance || []).map(m => ({
+          ...m,
+          attachments: (m.attachments || []).map(stripBinary),
+        }));
+
         const raw = {
-          __sync: { lastWrittenAt: Date.now(), version: 1 },
-          flights, aircraft, documents, categories,
+          __sync: { lastWrittenAt: Date.now(), version: 2 },
+          flights: flightsLite,
+          aircraft,
+          documents: documentsLite,
+          categories,
           settings: { ...settingsClean, language: lang },
-          maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods,
+          maintenance: maintenanceLite,
+          companyDocs: companyDocsLite,
+          pilots, pilotStatuses, dutyPeriods,
         };
         // Sanitisation profonde : remplace tous les motifs de tokens GitHub
         // par "[redacted-pat]" dans tout le JSON sérialisé.
@@ -7344,17 +7432,55 @@
                          .replace(/ghs_[A-Za-z0-9]{36,}/g, '[redacted-server-token]');
         return JSON.parse(safe);
       }
-      // Applique un snapshot reçu (remplace l'état local)
+      // Fusion intelligente : applique le remote SANS écraser les binaires locaux.
+      // Quand un doc/entry remote correspond à un local par id, on garde dataUrl/thumbnail
+      // local et on prend les autres champs du remote.
+      function mergeKeepLocalBinaries(remoteList, localList, idKey = 'id') {
+        if (!Array.isArray(remoteList)) return remoteList;
+        const localById = new Map((localList || []).map(x => [x[idKey], x]));
+        return remoteList.map(r => {
+          const local = localById.get(r[idKey]);
+          if (!local) return r;
+          // Prend remote, restaure les binaires locaux s'ils existent
+          const merged = { ...r };
+          if (local.dataUrl) merged.dataUrl = local.dataUrl;
+          if (local.thumbnail) merged.thumbnail = local.thumbnail;
+          if (local.invoiceDataUrl) merged.invoiceDataUrl = local.invoiceDataUrl;
+          return merged;
+        });
+      }
+      // Applique un snapshot reçu (remplace l'état local) MAIS conserve les binaires
+      // (dataUrl, thumbnail, invoiceDataUrl) qui n'étaient pas dans le snapshot.
       function applySnapshot(snap) {
         if (!snap) return;
         const m = migrateState({ ...snap });
-        setFlights(m.flights || []);
+        // Fusion : on prend les données remote mais on restaure les binaires locaux
+        // (qui n'existent pas dans le snapshot pour cause de strip).
+        const remoteFlights = (m.flights || []).map(rf => {
+          const local = (flights || []).find(f => f.id === rf.id);
+          if (!local) return rf;
+          return {
+            ...rf,
+            fuelEntries: mergeKeepLocalBinaries(rf.fuelEntries, local.fuelEntries),
+            documentsByCategory: rf.documentsByCategory
+              ? Object.fromEntries(Object.entries(rf.documentsByCategory).map(([k, list]) => [
+                  k, mergeKeepLocalBinaries(list, (local.documentsByCategory||{})[k])
+                ]))
+              : rf.documentsByCategory,
+          };
+        });
+        setFlights(remoteFlights);
         setAircraft(m.aircraft || []);
-        setDocuments(m.documents || []);
+        setDocuments(mergeKeepLocalBinaries(m.documents || [], documents));
         setCategories(m.categories || DEFAULT_CATEGORIES);
         setSettings(prev => ({ ...(m.settings || prev), gh: prev.gh })); // garde la config gh locale
-        setMaintenance(m.maintenance || []);
-        setCompanyDocs(m.companyDocs || []);
+        const remoteMaint = (m.maintenance || []).map(rm => {
+          const local = (maintenance || []).find(x => x.id === rm.id);
+          if (!local) return rm;
+          return { ...rm, attachments: mergeKeepLocalBinaries(rm.attachments, local.attachments) };
+        });
+        setMaintenance(remoteMaint);
+        setCompanyDocs(mergeKeepLocalBinaries(m.companyDocs || [], companyDocs));
         setPilots(m.pilots || []);
         setPilotStatuses(m.pilotStatuses || []);
         setDutyPeriods(m.dutyPeriods || []);
@@ -7383,6 +7509,23 @@
             setSyncStatus({ status: 'synced', message: 'À jour', lastSyncAt: Date.now() });
           }
         } catch (e) {
+          // Cas spécial : le gist distant est corrompu (JSON malformé, tronqué…).
+          // On peut le réparer en poussant la version locale (qui est valide).
+          // Évite de proposer ça si on n'a aucune donnée locale (sinon on écrirait
+          // un gist vide par erreur).
+          const isCorrupt = /malformé|JSON Parse/i.test(e.message || '');
+          const hasLocalData = (flights?.length || 0) > 0 || (aircraft?.length || 0) > 0;
+          if (isCorrupt && hasLocalData) {
+            setSyncStatus(prev => ({ status: 'syncing', message: 'Gist corrompu — réparation par push local…', lastSyncAt: prev.lastSyncAt }));
+            try {
+              await syncPush();
+              setSyncStatus({ status: 'synced', message: 'Gist réparé ✓ (poussé depuis cet appareil)', lastSyncAt: Date.now() });
+              return;
+            } catch (e2) {
+              setSyncStatus(prev => ({ status: 'error', message: 'Réparation échouée : ' + e2.message, lastSyncAt: prev.lastSyncAt }));
+              return;
+            }
+          }
           setSyncStatus(prev => ({ status: 'error', message: 'Pull : ' + e.message, lastSyncAt: prev.lastSyncAt }));
         }
       }
