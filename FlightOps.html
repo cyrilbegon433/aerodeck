@@ -359,14 +359,13 @@
     ::-webkit-scrollbar-thumb:hover { background: color-mix(in oklab, var(--border) 50%, var(--accent) 50%); }
 
     /* === Safe area iOS === */
-    /* Marge sous l'encoche / Dynamic Island. On utilise max() avec un minimum
-       garanti large (75px : couvre Dynamic Island, encoche iPhone 12 mini, etc.)
-       au cas où env(safe-area-inset-top) renverrait 0 (PWA / Safari standalone).
-       Puis +18px de respiration pour que le titre AeroDeck et l'heure UTC ne
-       chevauchent jamais la status bar iOS, même avec Wifi/batterie/cell.
-       !important pour gagner la spécificité face aux utilities Tailwind (py-* sur le header). */
-    .safe-top    { padding-top: calc(max(env(safe-area-inset-top), 75px) + 18px) !important; }
-    .safe-bottom { padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 8px) !important; }
+    /* En PWA standalone status-bar 'default', iOS réserve déjà l'espace sous
+       l'encoche → on rajoute juste 10px de respiration pour le titre.
+       En PWA 'black-translucent' (anciennes installs), env() retourne la hauteur
+       de l'encoche → on l'ajoute pour ne pas chevaucher.
+       !important pour gagner face à py-* de Tailwind sur le header. */
+    .safe-top    { padding-top: calc(env(safe-area-inset-top) + 10px) !important; }
+    .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 8px) !important; }
 
     /* === Animations === */
     @keyframes pop  { from { opacity:0; transform: translateY(8px) scale(0.98);} to {opacity:1; transform:none;} }
