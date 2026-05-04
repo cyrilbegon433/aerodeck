@@ -382,7 +382,10 @@
     /* === Animations === */
     @keyframes pop  { from { opacity:0; transform: translateY(8px) scale(0.98);} to {opacity:1; transform:none;} }
     @keyframes fade { from { opacity:0;} to {opacity:1;} }
+    /* Clignotement lent rouge pour indiquer un état d'erreur persistant (sync KO). */
+    @keyframes slowBlink { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
     .anim-pop  { animation: pop  .22s cubic-bezier(.2,.7,.2,1); }
+    .anim-slow-blink { animation: slowBlink 1.6s ease-in-out infinite; }
     .anim-fade { animation: fade .25s ease-out; }
 
     /* === Tabular numbers global pour stats / horloges === */
@@ -1595,6 +1598,12 @@
       checkCircle:  'M22 11.08V12a10 10 0 1 1-5.93-9.14 M22 4 12 14.01l-3-3',
       xCircle:      'M12 22a10 10 0 1 1 0-20 10 10 0 0 1 0 20z M15 9l-6 6 M9 9l6 6',
       languages:    'm5 8 6 6 M4 14l6-6 2-3 M2 5h12 M7 2h1 M22 22l-5-10-5 10 M14 18h6',
+      // === Docs vol & corbeille ===
+      scale:        'm16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z M7 21h10 M12 3v18 M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2',
+      fileText:     'M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5z M14 2v6h6 M16 13H8 M16 17H8 M10 9H8',
+      mapPinned:    'M18 8c0 3.613-3.869 7.429-5.393 8.795a1 1 0 0 1-1.214 0C9.87 15.429 6 11.613 6 8a6 6 0 0 1 12 0z M12 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M8.714 14h-3.71a1 1 0 0 0-.948.683l-2.004 6A1 1 0 0 0 3 22h18a1 1 0 0 0 .948-1.316l-2-6A1 1 0 0 0 19 14h-3.71',
+      file:         'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z M14 2v6h6',
+      trash2:       'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6',
     };
     function LucideIcon({ name, size = 20, strokeWidth = 2 }) {
       const path = LUCIDE_ICONS[name];
@@ -1860,11 +1869,13 @@
     // ------------------------------------------------------------------
 
     // Volets principaux affichés (fixes, dans cet ordre).
+    // `lucide` = nom d'icône Lucide à utiliser dans le JSX (icônes modernes).
+    // `icon` reste pour fallback / migration legacy (utilisé si lucide absent).
     const FLIGHT_DOC_TYPES = [
-      { id: 'wb',    label: 'Weight & Balance', icon: '⚖️' },
-      { id: 'fpl',   label: 'FPL',              icon: '📋' },
-      { id: 'ofpl',  label: 'OFPL',             icon: '🗺️' },
-      { id: 'other', label: 'Autre',            icon: '📄' },
+      { id: 'wb',    label: 'Weight & Balance', icon: '⚖️',  lucide: 'scale',     color: '#a78bfa' },
+      { id: 'fpl',   label: 'FPL',              icon: '📋',  lucide: 'fileText',  color: '#38bdf8' },
+      { id: 'ofpl',  label: 'OFPL',             icon: '🗺️', lucide: 'mapPinned', color: '#34d399' },
+      { id: 'other', label: 'Autre',            icon: '📄',  lucide: 'file',      color: '#94a3b8' },
     ];
     // Libellés humains pour les anciens types (compatibilité ascendante).
     // Les documents existants importés sous ces types restent accessibles via la
@@ -2007,7 +2018,12 @@
             )}
             <div className="flex-1 min-w-0 text-xs">
               <div className="truncate font-medium">{d.fileName}</div>
-              <div className="truncate text-[var(--text-dim)]">{t.icon} {t.label}</div>
+              <div className="truncate text-[var(--text-dim)] inline-flex items-center gap-1">
+                {t.lucide
+                  ? <span style={{ color: t.color || 'var(--accent)' }}><LucideIcon name={t.lucide} size={11} strokeWidth={2.5} /></span>
+                  : <span>{t.icon}</span>}
+                {t.label}
+              </div>
             </div>
             <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" onClick={()=>openDoc(d)}>Ouvrir</button>
             <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}>Retirer</button>
@@ -2030,7 +2046,9 @@
                 <div key={v.id} className="bg-[var(--bg-elev)] p-3 rounded-lg">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-2xl">{v.icon}</span>
+                      {v.lucide
+                        ? <CategoryIconChip name={v.lucide} color={v.color} size={36} iconSize={18} shape="rounded-xl" />
+                        : <span className="text-2xl">{v.icon}</span>}
                       <span className="font-medium truncate">{v.label}</span>
                       {list.length > 0 && <span className="badge">{list.length}</span>}
                     </div>
@@ -3974,14 +3992,17 @@
             </div>
           )}
 
-          {/* === FILTRE FOURNISSEUR + TRI === */}
+          {/* === FILTRE FOURNISSEUR + TRI ===
+              Note : <option> HTML ne peut pas contenir de SVG (rendu texte uniquement),
+              donc on garde un libellé propre sans emoji/icône Lucide ici. Les icônes
+              modernes sont visibles ailleurs (cartes, en-têtes, badges). */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <input className="input" placeholder="🔍 Filtrer par fournisseur…" value={filterSupplier} onChange={e=>setFilterSupplier(e.target.value)} />
+            <input className="input" placeholder="Filtrer par fournisseur…" value={filterSupplier} onChange={e=>setFilterSupplier(e.target.value)} />
             <select className="select" value={sort} onChange={e=>setSort(e.target.value)}>
-              <option value="date_desc">📅 Date (récent → ancien)</option>
-              <option value="date_asc">📅 Date (ancien → récent)</option>
-              <option value="amount_desc">💰 Montant (haut → bas)</option>
-              <option value="supplier">🔤 Fournisseur (A→Z)</option>
+              <option value="date_desc">Date (récent → ancien)</option>
+              <option value="date_asc">Date (ancien → récent)</option>
+              <option value="amount_desc">Montant (haut → bas)</option>
+              <option value="supplier">Fournisseur (A→Z)</option>
             </select>
           </div>
 
@@ -7127,7 +7148,7 @@
             <button type="button"
               className="btn btn-danger !py-1 !px-2 text-xs flex-shrink-0"
               onClick={onRemove}>
-              🗑
+              <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
             </button>
           </div>
         );
@@ -7784,7 +7805,7 @@
                               if (confirm(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`)) {
                                 onDeleteFlight && onDeleteFlight(f.id);
                               }
-                            }}>🗑️</button>
+                            }}><LucideIcon name="trash2" size={16} strokeWidth={2.25} /></button>
                         </td>
                       </tr>
                     );
@@ -7844,7 +7865,12 @@
                           if (confirm(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`)) {
                             onDeleteFlight && onDeleteFlight(f.id);
                           }
-                        }}>🗑️ Retirer</button>
+                        }}>
+                        <span className="inline-flex items-center gap-1.5">
+                          <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
+                          Retirer
+                        </span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -9649,7 +9675,8 @@
               </div>
               <div className="min-w-0">
                 <div className="brand-title leading-tight text-[17px]">{APP_NAME}</div>
-                {/* MOBILE : bouton cloud sync sous le titre AeroDeck */}
+                {/* MOBILE : badge sync texte sous le titre AeroDeck.
+                    Vert si OK, jaune si en cours, rouge clignotant lent si erreur. */}
                 {(settings.gh?.enabled && settings.gh?.token) && (
                   <button
                     type="button"
@@ -9659,40 +9686,26 @@
                       syncStatus.status === 'syncing' ? 'Sync en cours…'
                       : syncStatus.status === 'error' ? 'Erreur sync — clique pour réessayer'
                       : syncStatus.status === 'synced' ? `Sync OK — clique pour resynchroniser (pull + push)`
-                      : 'Cloud sync — clique pour synchroniser maintenant'
+                      : 'Sync — clique pour synchroniser maintenant'
                     }
-                    className="sm:hidden inline-flex items-center gap-1 mt-0.5 text-[11px] leading-none px-1.5 py-0.5 rounded-md transition-all hover:scale-105"
+                    className={`sm:hidden inline-flex items-center mt-0.5 text-[11px] leading-none font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-md transition-all hover:scale-105 ${syncStatus.status === 'error' ? 'anim-slow-blink' : ''}`}
                     style={{
                       color: syncStatus.status === 'syncing' ? 'var(--warn)'
                            : syncStatus.status === 'error'   ? 'var(--err)'
                            : syncStatus.status === 'synced'  ? 'var(--ok)'
                            : 'var(--text-dim)',
-                      filter: syncStatus.status === 'syncing' ? 'none' : 'drop-shadow(0 0 3px currentColor)',
                     }}>
-                    <span className={`leading-none ${syncStatus.status === 'syncing' ? 'animate-spin' : ''}`}>
-                      {syncStatus.status === 'syncing'
-                        ? <LucideIcon name="refreshCw" size={13} strokeWidth={2.5} />
-                        : syncStatus.status === 'error'
-                          ? <LucideIcon name="alertTriangle" size={13} strokeWidth={2.5} />
-                          : syncStatus.status === 'synced'
-                            ? <LucideIcon name="cloudCheck" size={14} strokeWidth={2.25} />
-                            : <LucideIcon name="cloud" size={14} strokeWidth={2.25} />}
-                    </span>
-                    <span className="uppercase tracking-wider opacity-80">
-                      {syncStatus.status === 'syncing' ? 'Sync…'
-                        : syncStatus.status === 'error' ? 'Erreur'
-                        : syncStatus.status === 'synced' ? 'Sync OK'
-                        : 'Sync'}
-                    </span>
+                    {syncStatus.status === 'syncing' ? 'Sync…'
+                      : syncStatus.status === 'error' ? 'Sync KO'
+                      : syncStatus.status === 'synced' ? 'Sync OK'
+                      : 'Sync'}
                   </button>
                 )}
               </div>
             </div>
             <div className="flex items-center gap-3 flex-shrink-0">
-              {/* DESKTOP : bouton cloud sync à droite (sur mobile, version sous le titre).
-                  Couleur selon syncStatus (gris/jaune/vert/rouge).
-                  Click → push manuel rapide (raccourci de Réglages → Sync).
-                  Long press / clic-droit → ouvre Réglages. */}
+              {/* DESKTOP : badge sync texte (vert OK / jaune en cours / rouge clignotant si erreur).
+                  Click = push manuel. Clic-droit = ouvre Réglages. */}
               {(settings.gh?.enabled && settings.gh?.token) && (
                 <button
                   type="button"
@@ -9702,23 +9715,19 @@
                     syncStatus.status === 'syncing' ? 'Sync en cours…'
                     : syncStatus.status === 'error' ? 'Erreur sync — clique pour réessayer'
                     : syncStatus.status === 'synced' ? `Sync OK — clique pour pousser`
-                    : 'Cloud sync — clique pour pousser maintenant'
+                    : 'Sync — clique pour pousser maintenant'
                   }
-                  className={`hidden sm:inline-flex items-center justify-center leading-none p-1.5 rounded-md transition-all hover:scale-110 ${syncStatus.status === 'syncing' ? 'animate-spin' : ''}`}
+                  className={`hidden sm:inline-flex items-center text-xs font-bold uppercase tracking-wider px-2 py-1 rounded-md transition-all hover:scale-105 ${syncStatus.status === 'error' ? 'anim-slow-blink' : ''}`}
                   style={{
                     color: syncStatus.status === 'syncing' ? 'var(--warn)'
                          : syncStatus.status === 'error'   ? 'var(--err)'
                          : syncStatus.status === 'synced'  ? 'var(--ok)'
                          : 'var(--text-dim)',
-                    filter: syncStatus.status === 'syncing' ? 'none' : 'drop-shadow(0 0 4px currentColor)',
                   }}>
-                  {syncStatus.status === 'syncing'
-                    ? <LucideIcon name="refreshCw" size={20} strokeWidth={2.25} />
-                    : syncStatus.status === 'error'
-                      ? <LucideIcon name="alertTriangle" size={20} strokeWidth={2.25} />
-                      : syncStatus.status === 'synced'
-                        ? <LucideIcon name="cloudCheck" size={22} strokeWidth={2.25} />
-                        : <LucideIcon name="cloud" size={22} strokeWidth={2.25} />}
+                  {syncStatus.status === 'syncing' ? 'Sync…'
+                    : syncStatus.status === 'error' ? 'Sync KO'
+                    : syncStatus.status === 'synced' ? 'Sync OK'
+                    : 'Sync'}
                 </button>
               )}
               {/* Sélecteur de langue : drapeau rond cliquable qui bascule FR ↔ EN.
