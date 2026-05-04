@@ -2405,6 +2405,11 @@
                 entries={f.oilEntries||[]}
                 onChange={(arr)=>set('oilEntries', arr)}
                 defaultUnit={settings.defaultOilUnit||'qt'}
+                isMonomotor={(() => {
+                  const ac = aircraft.find(a => a.id === f.aircraftId);
+                  // Default = monomoteur si engineCount non renseigné (cas le plus courant)
+                  return !ac || !ac.engineCount || ac.engineCount <= 1;
+                })()}
               />
 
               {/* ---- Documents joints au vol (W&B / FPL / OFPL) ---- */}
@@ -6814,8 +6819,11 @@
     // Bloc huile simplifié (v4) : pas de montant, pas de scan facture (déportés vers
     // l'onglet Dépenses). On garde quantité, unité, et cases à cocher Moteur Gauche /
     // Moteur Droit pour avions multi-moteurs.
-    function OilEntryRow({ entry, index, onChange, onRemove }) {
+    function OilEntryRow({ entry, index, onChange, onRemove, isMonomotor=false }) {
       function set(k,v){ onChange({...entry, [k]: v}); }
+      // Pour un monomoteur, on n'expose qu'une seule case "Moteur" qui pilote
+      // engineLeft (le champ engineRight reste à false). On garde engineLeft comme
+      // unique champ pour cohérence avec les vols multi-moteurs et l'historique.
       return (
         <div className="bg-[var(--bg-elev)] p-3 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
@@ -6835,26 +6843,40 @@
               </select>
             </div>
           </div>
-          <div className="flex flex-wrap gap-3">
-            <label className="flex items-center gap-2 select-none cursor-pointer">
-              <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
-                checked={!!entry.engineLeft}
-                onChange={e=>set('engineLeft', e.target.checked)} />
-              <span>Moteur gauche</span>
-            </label>
-            <label className="flex items-center gap-2 select-none cursor-pointer">
-              <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
-                checked={!!entry.engineRight}
-                onChange={e=>set('engineRight', e.target.checked)} />
-              <span>Moteur droit</span>
-            </label>
-          </div>
+          {isMonomotor ? (
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 select-none cursor-pointer">
+                <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
+                  checked={!!entry.engineLeft}
+                  onChange={e=>{
+                    const v = e.target.checked;
+                    onChange({ ...entry, engineLeft: v, engineRight: false });
+                  }} />
+                <span>Moteur</span>
+              </label>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              <label className="flex items-center gap-2 select-none cursor-pointer">
+                <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
+                  checked={!!entry.engineLeft}
+                  onChange={e=>set('engineLeft', e.target.checked)} />
+                <span>Moteur gauche</span>
+              </label>
+              <label className="flex items-center gap-2 select-none cursor-pointer">
+                <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
+                  checked={!!entry.engineRight}
+                  onChange={e=>set('engineRight', e.target.checked)} />
+                <span>Moteur droit</span>
+              </label>
+            </div>
+          )}
           {entry.notes && <div className="text-xs text-[var(--text-dim)] italic">{entry.notes}</div>}
         </div>
       );
     }
 
-    function OilEntriesEditor({ entries, onChange, defaultUnit='qt' }) {
+    function OilEntriesEditor({ entries, onChange, defaultUnit='qt', isMonomotor=false }) {
       function addEntry() {
         const next = [...(entries||[]), {
           id: 'oe_'+Date.now(),
@@ -6892,7 +6914,8 @@
           <div className="space-y-2 mt-2">
             {(entries||[]).map((e, i) => (
               <OilEntryRow key={e.id||i} entry={e} index={i}
-                onChange={(ne)=>updateEntry(i, ne)} onRemove={()=>removeEntry(i)} />
+                onChange={(ne)=>updateEntry(i, ne)} onRemove={()=>removeEntry(i)}
+                isMonomotor={isMonomotor} />
             ))}
           </div>
           {(entries||[]).length > 0 && (
