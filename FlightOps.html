@@ -363,9 +363,10 @@
        garanti large (75px : couvre Dynamic Island, encoche iPhone 12 mini, etc.)
        au cas où env(safe-area-inset-top) renverrait 0 (PWA / Safari standalone).
        Puis +18px de respiration pour que le titre AeroDeck et l'heure UTC ne
-       chevauchent jamais la status bar iOS, même avec Wifi/batterie/cell. */
-    .safe-top    { padding-top: calc(max(env(safe-area-inset-top), 75px) + 18px); }
-    .safe-bottom { padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 8px); }
+       chevauchent jamais la status bar iOS, même avec Wifi/batterie/cell.
+       !important pour gagner la spécificité face aux utilities Tailwind (py-* sur le header). */
+    .safe-top    { padding-top: calc(max(env(safe-area-inset-top), 75px) + 18px) !important; }
+    .safe-bottom { padding-bottom: calc(max(env(safe-area-inset-bottom), 0px) + 8px) !important; }
 
     /* === Animations === */
     @keyframes pop  { from { opacity:0; transform: translateY(8px) scale(0.98);} to {opacity:1; transform:none;} }
