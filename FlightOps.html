@@ -7702,6 +7702,27 @@
           ? flight
           : { ...flight, fuelEntries: updatedFuelEntries };
         upsert(setFlights)(flightToSave);
+        // === DEBUG TEMPORAIRE — à retirer une fois validé ===
+        // Aide à comprendre pourquoi les dépenses fuel ne sont pas créées.
+        try {
+          const fuelCount = (flight.fuelEntries || []).length;
+          const skipped = (flight.fuelEntries || []).map(e => {
+            const amt = parseFloat(e.amount);
+            const inv = (e.invoiceNumber || '').trim();
+            const reasons = [];
+            if (!(amt > 0)) reasons.push('montant manquant');
+            if (!inv) reasons.push('N° facture manquant');
+            if (e.invoiceDocId) reasons.push('déjà liée à dépense');
+            return reasons.length ? `Ligne fuel ${e.id || '?'} : ${reasons.join(', ')}` : null;
+          }).filter(Boolean);
+          alert(
+            `🔍 DEBUG sauvegarde vol\n\n` +
+            `Lignes fuel : ${fuelCount}\n` +
+            `Dépenses créées : ${justAdded.length}\n` +
+            (skipped.length ? `\nIgnorées :\n• ` + skipped.join('\n• ') : '') +
+            `\n\n(Cette alerte sera retirée après diagnostic.)`
+          );
+        } catch (_) {}
       }, [addExpense]);
 
       function exportJSON() {
