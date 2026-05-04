@@ -8696,7 +8696,10 @@
         const flightsLite = (flights || []).map(f => ({
           ...f,
           fuelEntries: (f.fuelEntries || []).map(stripBinary),
-          // documentsByCategory : 4 volets W&B/FPL/OFPL/Autres avec docs[]
+          // documents : tableau plat des W&B/FPL/OFPL/Autres avec dataUrl à stripper
+          // pour rester sous la limite Gist + ne pas écraser les flags archived locaux
+          documents: (f.documents || []).map(stripBinary),
+          // documentsByCategory : ancien format multi-volets (rétrocompat)
           documentsByCategory: f.documentsByCategory
             ? Object.fromEntries(Object.entries(f.documentsByCategory).map(([k, list]) => [
                 k, (list || []).map(stripBinary)
@@ -8748,6 +8751,28 @@
           return merged;
         });
       }
+      // Fusion docs vol : prend le remote, mais préserve le flag archived local + le
+      // binaire local s'il existe. Évite qu'un pull écrase un état "archived" local
+      // (le push n'a pas encore propagé) ou qu'un dataUrl local fraîchement scanné soit
+      // remplacé par une version stripée du remote.
+      function mergeDocsKeepLocalArchive(remoteList, localList) {
+        if (!Array.isArray(remoteList)) return remoteList;
+        const localById = new Map((localList || []).map(x => [x.id, x]));
+        return remoteList.map(r => {
+          const local = localById.get(r.id);
+          if (!local) return r;
+          const merged = { ...r };
+          // Restaure dataUrl local s'il existe (binaire jamais transmis par le gist)
+          if (local.dataUrl) merged.dataUrl = local.dataUrl;
+          // Préserve flag archived : si local est archivé, on garde l'état archivé
+          if (local.archived) {
+            merged.archived = true;
+            merged.archivedAt = local.archivedAt || merged.archivedAt;
+            merged.dataUrl = ''; // archivé = pas de binaire local
+          }
+          return merged;
+        });
+      }
       // Fusion union par id : prend le remote + ajoute les items locaux qui n'existent
       // pas en remote (typiquement des créations récentes pas encore poussées).
       // Évite que le pull écrase une création locale toute fraîche pendant la fenêtre
@@ -8770,8 +8795,14 @@
         const remoteFlights = (m.flights || []).map(rf => {
           const local = (flights || []).find(f => f.id === rf.id);
           if (!local) return rf;
+          // Merge intelligent : on prend le remote, mais on restaure les binaires
+          // (dataUrl) du local SI ils existent encore (pas archivés). Si le local
+          // est archivé (archived=true), on garde ce flag même si le remote ne l'a
+          // pas — sinon un push antérieur écraserait l'état archive.
+          const mergedDocs = mergeDocsKeepLocalArchive(rf.documents, local.documents);
           return {
             ...rf,
+            documents: mergedDocs,
             fuelEntries: mergeKeepLocalBinaries(rf.fuelEntries, local.fuelEntries),
             documentsByCategory: rf.documentsByCategory
               ? Object.fromEntries(Object.entries(rf.documentsByCategory).map(([k, list]) => [
