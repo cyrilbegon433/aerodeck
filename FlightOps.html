@@ -8790,7 +8790,7 @@
         const t = setTimeout(() => { syncPush(); }, 5000);
         return () => clearTimeout(t);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [flights, aircraft, documents, categories, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods]);
+      }, [flights, aircraft, documents, categories, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods]);
 
       // Pull au retour de focus de la fenêtre / onglet (catch les modifs faites
       // sur l'autre appareil pendant que cet appareil était en arrière-plan).
