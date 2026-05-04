@@ -5839,10 +5839,29 @@
       return { triggerCamera, triggerFiles, busy, inputs };
     }
 
-    // Composant rangée d'aperçu de facture rattachée
+    // Composant rangée d'aperçu de facture rattachée.
+    // Trois états visuels :
+    //  - Aucune facture (invoiceDocId vide) : ne rien afficher.
+    //  - Facture présente avec aperçu (dataUrl ou nom de fichier) : aperçu + ✓.
+    //  - Facture archivée (invoiceDocId existe mais dataUrl ET fileName vides,
+    //    ce qui arrive quand l'utilisateur a archivé en ZIP et purgé le cache) :
+    //    mention "Facture sauvegardée (archivée hors app)".
     function InvoicePreview({ entry }) {
       if (!entry?.invoiceDocId) return null;
       const isPdf = entry.invoiceMime === 'application/pdf';
+      const hasPreview = !!(entry.invoiceDataUrl || entry.invoiceFileName);
+      // Cas archivé : la dépense existe toujours mais le binaire a été purgé
+      if (!hasPreview) {
+        return (
+          <div className="flex items-center gap-2 mt-2 text-xs bg-[var(--bg-card)] p-2 rounded border border-[var(--border-soft)]">
+            <span className="text-xl">💾</span>
+            <div className="flex-1 min-w-0">
+              <div className="text-[var(--accent)] font-medium">Facture sauvegardée (archivée)</div>
+              <div className="text-[var(--text-dim)]">Le fichier original a été archivé en ZIP. La dépense reste dans l'onglet Dépenses · Carburant Avion.</div>
+            </div>
+          </div>
+        );
+      }
       return (
         <div className="flex items-center gap-2 mt-2 text-xs bg-[var(--bg-card)] p-2 rounded">
           {isPdf ? <span className="text-xl">📄</span> : (entry.invoiceDataUrl ? <img src={entry.invoiceDataUrl} alt="" className="w-8 h-8 object-cover rounded" /> : <span className="text-xl">🧾</span>)}
@@ -5864,6 +5883,26 @@
       const [menuOpen, setMenuOpen] = useState(false);
       const [viewingInvoice, setViewingInvoice] = useState(false);
 
+      // Critère "rempli" : qty > 0 ET montant > 0 (les deux infos minimales utiles).
+      // Si rempli on replie automatiquement la ligne en pastille verte ; si la ligne
+      // est encore vide on l'affiche dépliée pour saisir.
+      const qtyN = parseFloat(entry.qty) || 0;
+      const amtN = parseFloat(entry.amount) || 0;
+      const isFilled = qtyN > 0 && amtN > 0;
+      // collapsed : initialisé à isFilled au montage. Modifiable par l'utilisateur.
+      const [collapsed, setCollapsed] = useState(isFilled);
+      // Si la ligne devient remplie pendant la saisie (passage vide → rempli), on
+      // re-replie automatiquement. Si l'utilisateur a explicitement déplié, on
+      // respecte son choix tant qu'il continue à éditer (on évite le repli sauvage
+      // pendant la frappe en exigeant un cycle vide → rempli).
+      const wasFilledRef = useRef(isFilled);
+      useEffect(() => {
+        if (isFilled && !wasFilledRef.current) {
+          setCollapsed(true);
+        }
+        wasFilledRef.current = isFilled;
+      }, [isFilled]);
+
       const { triggerCamera, triggerFiles, busy, inputs } = useScanToExpense({
         categoryId, addExpense, aircraftId, flightDate,
         getEntry: () => entry,
@@ -5872,13 +5911,64 @@
 
       function set(k,v){ onChange({...entry, [k]: v}); }
 
+      // Mode replié : pastille verte récapitulative + bouton Modifier + Retirer.
+      // L'utilisateur ne peut pas perdre les données : seules les actions explicites
+      // (Modifier puis modifier les champs, ou Retirer) modifient l'entrée.
+      if (collapsed && isFilled) {
+        const summary = [
+          `${qtyN} ${entry.unit || 'L'}`,
+          `${amtN.toFixed(2)} ${entry.currency || 'EUR'}`,
+          entry.supplier && entry.supplier.trim(),
+          entry.invoiceNumber && `N° ${entry.invoiceNumber}`,
+        ].filter(Boolean).join(' · ');
+        return (
+          <div
+            className="bg-[var(--ok)]/10 p-3 rounded-lg border border-[var(--ok)]/40 flex items-center gap-3 transition-colors hover:bg-[var(--ok)]/15">
+            <div className="grid place-items-center w-9 h-9 rounded-full bg-[var(--ok)]/25 text-[var(--ok)] font-bold text-base flex-shrink-0">
+              ✓
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-[var(--ok)]">
+                {isFuel ? '⛽' : '🛢️'} Fuel {index+1} validé
+              </div>
+              <div className="text-xs text-[var(--text-dim)] truncate">{summary}</div>
+              {entry.invoiceDocId && (
+                <div className="text-[10px] text-[var(--ok)]/80 mt-0.5">
+                  {entry.invoiceDataUrl || entry.invoiceFileName ? '📄 Facture rattachée' : '💾 Facture sauvegardée (archivée)'}
+                </div>
+              )}
+            </div>
+            <button type="button"
+              className="btn btn-secondary !py-1 !px-2 text-xs flex-shrink-0"
+              onClick={()=>setCollapsed(false)}>
+              ✏️ Modifier
+            </button>
+            <button type="button"
+              className="btn btn-danger !py-1 !px-2 text-xs flex-shrink-0"
+              onClick={onRemove}>
+              🗑
+            </button>
+          </div>
+        );
+      }
+
       return (
         <div className="bg-[var(--bg-elev)] p-3 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">
               {isFuel ? '⛽ Plein' : '🛢️ Ajout d\'huile'} #{index+1}
+              {isFilled && (
+                <span className="ml-2 text-xs text-[var(--ok)] font-normal">— rempli, sera replié auto</span>
+              )}
             </div>
-            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}>Retirer</button>
+            <div className="flex items-center gap-1">
+              {isFilled && (
+                <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" onClick={()=>setCollapsed(true)}>
+                  ⬆ Replier
+                </button>
+              )}
+              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}>Retirer</button>
+            </div>
           </div>
           {/* Date du plein puis N° facture en dessous (évite l'empiètement quand
               le numéro est long ou sur écran étroit). */}
@@ -7340,6 +7430,28 @@
       // eslint-disable-next-line react-hooks/exhaustive-deps
       }, [flights, aircraft, documents, categories, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods]);
 
+      // Pull au retour de focus de la fenêtre / onglet (catch les modifs faites
+      // sur l'autre appareil pendant que cet appareil était en arrière-plan).
+      // Important pour le scénario : tu modifies sur mobile, tu reviens sur
+      // desktop → on doit tirer immédiatement, sans attendre le polling 30s.
+      useEffect(() => {
+        const gh = settings.gh || {};
+        if (!gh.enabled || !gh.token || !gh.gistId) return;
+        function onVisible() {
+          if (document.visibilityState === 'visible') {
+            syncPull();
+          }
+        }
+        function onFocus() { syncPull(); }
+        document.addEventListener('visibilitychange', onVisible);
+        window.addEventListener('focus', onFocus);
+        return () => {
+          document.removeEventListener('visibilitychange', onVisible);
+          window.removeEventListener('focus', onFocus);
+        };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [settings.gh?.enabled, settings.gh?.token, settings.gh?.gistId]);
+
       // Polling : check toutes les 30 sec si le distant a changé
       useEffect(() => {
         const gh = settings.gh || {};
@@ -7379,6 +7491,75 @@
       const addExpense = useCallback((doc) => {
         setDocuments(prev => [...prev, doc]);
       }, []);
+
+      // Ref vers documents pour éviter de recréer le wrapper upsertFlight à
+      // chaque modif. La détection de doublons lit toujours la valeur la plus récente.
+      const documentsRef = useRef(documents);
+      useEffect(() => { documentsRef.current = documents; }, [documents]);
+
+      // Wrapper d'upsert vol qui crée automatiquement les dépenses Carburant Avion
+      // pour chaque ligne de fuel ayant un montant + un N° de facture, sans dépense déjà liée.
+      // Détection doublons : si une dépense (catégorie fuel_aircraft) existe déjà avec
+      // le même N° invoice + même montant + même date, demande confirmation. Si l'utilisateur
+      // refuse, on lie la ligne à la dépense existante (évite de re-prompter au prochain save).
+      const upsertFlightWithFuelExpenses = useCallback((flight) => {
+        const docsNow = documentsRef.current || [];
+        const justAdded = []; // dépenses créées dans ce save (pour détecter doublons intra-save)
+        const updatedFuelEntries = (flight.fuelEntries || []).map(e => {
+          const amt = parseFloat(e.amount);
+          const inv = (e.invoiceNumber || '').trim();
+          const hasNoExpense = !e.invoiceDocId;
+          if (!(amt > 0 && inv && hasNoExpense)) return e;
+
+          const entryDate = e.date || flight.date;
+          const sameKey = (d) =>
+            d.categoryId === 'fuel_aircraft' &&
+            (d.invoiceNumber || '').trim() === inv &&
+            Math.abs((parseFloat(d.amount) || 0) - amt) < 0.005 &&
+            d.date === entryDate;
+
+          const dup = docsNow.find(sameKey) || justAdded.find(sameKey);
+          if (dup) {
+            const ok = confirm(
+              `Une dépense Carburant Avion existe déjà :\n` +
+              `  N° ${dup.invoiceNumber} · ${dup.amount} ${dup.currency || ''} · ${dup.date}\n\n` +
+              `OK : ajouter quand même comme nouvelle dépense.\n` +
+              `Annuler : lier cette ligne à la dépense existante (recommandé).`
+            );
+            if (!ok) {
+              return { ...e, invoiceDocId: dup.id };
+            }
+          }
+
+          const expenseId = 'doc_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+          const expense = {
+            id: expenseId,
+            date: entryDate || todayZuluDate(),
+            supplier: e.supplier || '',
+            amount: e.amount,
+            currency: e.currency || 'EUR',
+            categoryId: 'fuel_aircraft',
+            aircraftId: flight.aircraftId || '',
+            thumbnail: '',
+            ocrText: '',
+            fileName: '',
+            mime: '',
+            dataUrl: '',
+            invoiceNumber: inv,
+            notes: 'Créé automatiquement depuis le carnet (vol) — pas de facture jointe.',
+            sourceFlightEntryId: e.id || '',
+            addedAt: Date.now(),
+          };
+          justAdded.push(expense);
+          addExpense(expense);
+          return { ...e, invoiceDocId: expenseId };
+        });
+
+        const flightToSave = updatedFuelEntries === flight.fuelEntries
+          ? flight
+          : { ...flight, fuelEntries: updatedFuelEntries };
+        upsert(setFlights)(flightToSave);
+      }, [addExpense]);
 
       function exportJSON() {
         const data = { exportedAt: new Date().toISOString(), flights, aircraft, documents, categories, settings, maintenance, companyDocs, pilots, pilotStatuses, dutyPeriods };
@@ -7668,13 +7849,13 @@
                 {(settings.gh?.enabled && settings.gh?.token) && (
                   <button
                     type="button"
-                    onClick={() => syncPush()}
+                    onClick={() => syncPull()}
                     onContextMenu={(e) => { e.preventDefault(); setTab('settings'); }}
                     title={
                       syncStatus.status === 'syncing' ? 'Sync en cours…'
                       : syncStatus.status === 'error' ? 'Erreur sync — clique pour réessayer'
-                      : syncStatus.status === 'synced' ? `Sync OK — clique pour pousser`
-                      : 'Cloud sync — clique pour pousser maintenant'
+                      : syncStatus.status === 'synced' ? `Sync OK — clique pour resynchroniser (pull + push)`
+                      : 'Cloud sync — clique pour synchroniser maintenant'
                     }
                     className="sm:hidden inline-flex items-center gap-1 mt-0.5 text-[11px] leading-none px-1.5 py-0.5 rounded-md transition-all hover:scale-105"
                     style={{
@@ -7760,15 +7941,15 @@
             {tab==='logbook' && <LogbookScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               settings={settings}
-              onAddOrUpdate={upsert(setFlights)} onDelete={remove(setFlights)} />}
+              onAddOrUpdate={upsertFlightWithFuelExpenses} onDelete={remove(setFlights)} />}
             {tab==='staff' && <StaffScreen
               flights={flights} aircraft={aircraft} pilots={pilots}
               addExpense={addExpense}
-              onUpsertFlight={upsert(setFlights)} onDeleteFlight={remove(setFlights)} />}
+              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={remove(setFlights)} />}
             {tab==='calendar' && <CalendarScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               onAddFlights={addFlights}
-              onUpsertFlight={upsert(setFlights)} onDeleteFlight={remove(setFlights)}
+              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={remove(setFlights)}
               pilotStatuses={pilotStatuses} setPilotStatuses={setPilotStatuses} />}
             {tab==='aircraft' && <AircraftScreen
               aircraft={aircraft} flights={flights}
