@@ -1530,7 +1530,8 @@
     // Lucide icons (SVG inline) — set propre et moderne pour la navigation
     // ------------------------------------------------------------------
     const LUCIDE_ICONS = {
-      plane:      'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z',
+      // Avion vue de dessus (plus reconnaissable que le paper-plane Lucide d'origine)
+      plane:      'M12 2 L13.4 9 L21.5 12 L13.4 13 L13 18.5 L14.8 21 L14.8 21.8 L12 20.6 L9.2 21.8 L9.2 21 L11 18.5 L10.6 13 L2.5 12 L10.6 9 Z',
       calendar:   'M8 2v4 M16 2v4 M3 10h18 M5 4h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z',
       planeTakeoff: 'M2 22h20 M6.36 17.4 4 17l-2-4 1.1-.55a2 2 0 0 1 1.8 0l.17.1a2 2 0 0 0 1.8 0L8 12 5 6l.9-.45a2 2 0 0 1 2.09.2l4.02 3a2 2 0 0 0 2.1.2l4.59-2.83c.55-.34 1.21-.45 1.84-.32a2 2 0 0 1 1.49 1.2L23 9.5',
       user:       'M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2 M16 7a4 4 0 1 1-8 0 4 4 0 0 1 8 0z',
@@ -1573,6 +1574,45 @@
              fill="none" stroke="currentColor" strokeWidth={strokeWidth}
              strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           {subs.map((d, i) => <path key={i} d={d} />)}
+        </svg>
+      );
+    }
+    // ------------------------------------------------------------------
+    // FlagIcon : drapeau rond (FR ou EN/UK), rendu en SVG inline.
+    // Utilisé dans le sélecteur de langue du header pour identifier
+    // visuellement la langue active. Aucun emoji (rendu inégal selon OS).
+    // ------------------------------------------------------------------
+    function FlagIcon({ code, size = 22 }) {
+      const id = 'flag-clip-' + code + '-' + size;
+      if (code === 'fr') {
+        return (
+          <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+            <defs><clipPath id={id}><circle cx="12" cy="12" r="11"/></clipPath></defs>
+            <g clipPath={`url(#${id})`}>
+              <rect x="0"  y="0" width="8"  height="24" fill="#0055A4"/>
+              <rect x="8"  y="0" width="8"  height="24" fill="#FFFFFF"/>
+              <rect x="16" y="0" width="8"  height="24" fill="#EF4135"/>
+            </g>
+            <circle cx="12" cy="12" r="11" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1"/>
+          </svg>
+        );
+      }
+      // EN → drapeau du Royaume-Uni (Union Jack simplifié)
+      return (
+        <svg viewBox="0 0 24 24" width={size} height={size} aria-hidden="true">
+          <defs><clipPath id={id}><circle cx="12" cy="12" r="11"/></clipPath></defs>
+          <g clipPath={`url(#${id})`}>
+            <rect x="0" y="0" width="24" height="24" fill="#012169"/>
+            {/* diagonales blanches */}
+            <path d="M-2,-2 L26,26 M26,-2 L-2,26" stroke="#FFFFFF" strokeWidth="3.5"/>
+            {/* diagonales rouges (St Patrick) */}
+            <path d="M-2,-2 L26,26 M26,-2 L-2,26" stroke="#C8102E" strokeWidth="1.5"/>
+            {/* croix blanche */}
+            <path d="M12,-2 L12,26 M-2,12 L26,12" stroke="#FFFFFF" strokeWidth="5.5"/>
+            {/* croix rouge (St Georges) */}
+            <path d="M12,-2 L12,26 M-2,12 L26,12" stroke="#C8102E" strokeWidth="3"/>
+          </g>
+          <circle cx="12" cy="12" r="11" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1"/>
         </svg>
       );
     }
@@ -3698,7 +3738,10 @@
           {filterCat === 'all' && visibleCats.length > 0 && (
             <div>
               <div className="flex items-center justify-between mb-2">
-                <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">📊 Catégories</div>
+                <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold inline-flex items-center gap-1.5">
+                  <span style={{ color: 'var(--accent)' }}><LucideIcon name="barChart3" size={12} strokeWidth={2.5} /></span>
+                  Catégories
+                </div>
                 <button type="button"
                   className="text-xs text-[var(--accent)] hover:underline"
                   onClick={()=>setShowAllCats(s=>!s)}>
@@ -4613,7 +4656,10 @@
           {/* Graphes hebdo / mensuel — indépendants du filtre période, suivent le filtre pilote */}
           <div className="card p-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
-              <div className="label !mb-0">📈 Heures par semaine — 12 dernières semaines{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}</div>
+              <div className="label !mb-0 inline-flex items-center gap-1.5">
+                <span style={{ color: 'var(--accent)' }}><LucideIcon name="barChart3" size={14} strokeWidth={2.5} /></span>
+                Heures par semaine — 12 dernières semaines{pilotFilter !== 'all' && pilots.find(p=>p.id===pilotFilter) ? ` · ${pilotDisplayName(pilots.find(p=>p.id===pilotFilter))}` : ' · global'}
+              </div>
               <div className="text-xs text-[var(--text-dim)]">{seriesWeekly.length} semaine(s) au total</div>
             </div>
             <div className="mt-2 -mx-1">
@@ -9528,19 +9574,23 @@
                   {syncStatus.status === 'syncing' ? '⏳' : syncStatus.status === 'error' ? '⚠️' : '☁'}
                 </button>
               )}
-              {/* Sélecteur de langue rapide — accessible depuis tous les onglets */}
-              <div className="flex items-center gap-1">
-                <select
-                  className="bg-[var(--bg-elev)] border border-[var(--border)] rounded-md text-xs px-1.5 py-1"
-                  value={lang}
-                  onChange={e=>setLang(e.target.value)}
-                  title="Langue / Language"
-                >
-                  {LANGUAGES.map(l => (
-                    <option key={l.code} value={l.code}>{l.code.toUpperCase()}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Sélecteur de langue : drapeau rond cliquable qui bascule FR ↔ EN.
+                  mt-3 sur mobile pour le descendre un peu sous l'encoche.
+                  Le drapeau affiché = langue ACTIVE (claire visuellement). */}
+              <button
+                type="button"
+                onClick={() => setLang(lang === 'fr' ? 'en' : 'fr')}
+                title={lang === 'fr' ? 'Langue : Français — cliquer pour passer en anglais' : 'Language: English — click to switch to French'}
+                aria-label={lang === 'fr' ? 'Changer la langue : passer en anglais' : 'Change language: switch to French'}
+                className="rounded-full p-0.5 transition-transform hover:scale-110 active:scale-95 translate-y-2 sm:translate-y-0"
+                style={{
+                  boxShadow: '0 0 0 1.5px var(--border), 0 4px 10px -2px rgba(0,0,0,0.4)',
+                  background: 'var(--bg-elev)',
+                  lineHeight: 0,
+                }}
+              >
+                <FlagIcon code={lang} size={26} />
+              </button>
               <div className="text-right">
                 <div className="text-xs text-[var(--text-dim)]">{tT('app.zulu')}</div>
                 <div className="text-base"><ZuluClock /></div>
