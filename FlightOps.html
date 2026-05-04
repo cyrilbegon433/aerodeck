@@ -5187,12 +5187,28 @@
       );
     }
 
-    function MaintenanceScreen({ maintenance, aircraft, flights, onAddOrUpdate, onDelete }) {
+    function MaintenanceScreen({ maintenance, aircraft, flights, onAddOrUpdate, onDelete, onAircraftUpdate }) {
       const t = useT();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
       const [filterAc, setFilterAc] = useState('all');
       const [filterStatus, setFilterStatus] = useState('all');
+
+      // TTSN actuel d'un avion = ttsnAfter du dernier vol enregistré pour cet avion,
+      // sinon valeur initiale ttsn / airframeStartHours. Sert au calcul Hours left.
+      function currentTtsnFor(ac) {
+        const candidates = (flights || [])
+          .filter(f => f.aircraftId === ac.id && f.ttsnAfter && !isNaN(parseFloat(f.ttsnAfter)))
+          .sort((x, y) => (y.date || '').localeCompare(x.date || ''));
+        if (candidates.length > 0) return parseFloat(candidates[0].ttsnAfter);
+        if (ac.ttsn != null && ac.ttsn !== '') return parseFloat(ac.ttsn) || 0;
+        return parseFloat(ac.airframeStartHours) || 0;
+      }
+      // Met à jour les champs maint100hLast / maint100hNext sur l'avion via le setter racine.
+      function updateMaint100h(ac, key, value) {
+        if (!onAircraftUpdate) return;
+        onAircraftUpdate({ ...ac, [key]: value });
+      }
 
       const filtered = useMemo(() => {
         let arr = [...maintenance];
@@ -5216,6 +5232,74 @@
             </div>
             <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>{t('mx.new')}</button>
           </div>
+
+          {/* Suivi 100h — un bloc par avion réel.
+              - Last update (flight hours) : heures auxquelles la dernière 100h a été faite (saisie manuelle)
+              - Next due (flight hours)    : heures auxquelles la prochaine 100h est due (saisie manuelle, par défaut Last + 100)
+              - Hours left                 : heures restantes = Next due - TTSN actuel (auto). Code couleur :
+                                              rouge si ≤ 0, orange si ≤ 10, vert sinon.
+              Les valeurs sont stockées sur l'avion (maint100hLast / maint100hNext). */}
+          {aircraft.filter(a => (a.kind||'real')==='real').length > 0 && (
+            <div className="card p-3 space-y-3">
+              <div className="flex items-center gap-2">
+                <LucideIcon name="wrench" size={18} strokeWidth={2.25} />
+                <div className="font-semibold">Suivi 100h</div>
+              </div>
+              {aircraft.filter(a => (a.kind||'real')==='real').map(ac => {
+                const ttsnNow = currentTtsnFor(ac);
+                const last = ac.maint100hLast != null && ac.maint100hLast !== '' ? parseFloat(ac.maint100hLast) : null;
+                const next = ac.maint100hNext != null && ac.maint100hNext !== '' ? parseFloat(ac.maint100hNext) : null;
+                const hoursLeft = (next != null && !isNaN(next)) ? (next - ttsnNow) : null;
+                const leftColor = hoursLeft == null ? 'var(--text-dim)'
+                  : hoursLeft <= 0 ? 'var(--err)'
+                  : hoursLeft <= 10 ? 'var(--warn)'
+                  : 'var(--ok)';
+                const leftLabel = hoursLeft == null ? '—'
+                  : hoursLeft <= 0 ? `${Math.abs(hoursLeft).toFixed(1)} h en dépassement`
+                  : `${hoursLeft.toFixed(1)} h restantes`;
+                return (
+                  <div key={ac.id} className="bg-[var(--bg-elev)] p-3 rounded-lg space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <span className="font-mono text-[var(--accent)]">{ac.registration}</span>
+                      <span className="text-[var(--text-dim)]">·</span>
+                      <span className="text-[var(--text-dim)]">{ac.type}</span>
+                      <span className="ml-auto text-xs font-mono text-[var(--text-dim)]">TTSN actuel : {ttsnNow.toFixed(1)} h</span>
+                    </div>
+                    <div className="space-y-2">
+                      <div>
+                        <div className="label whitespace-nowrap">Last update (flight hours)</div>
+                        <input type="number" step="0.1" className="input font-mono"
+                          placeholder="ex: 4500"
+                          value={ac.maint100hLast || ''}
+                          onChange={e=>{
+                            const v = e.target.value;
+                            updateMaint100h(ac, 'maint100hLast', v);
+                            // Si Next vide, pré-remplir = Last + 100
+                            if (v && (ac.maint100hNext == null || ac.maint100hNext === '')) {
+                              const n = parseFloat(v);
+                              if (!isNaN(n)) updateMaint100h({ ...ac, maint100hLast: v }, 'maint100hNext', String(n + 100));
+                            }
+                          }} />
+                      </div>
+                      <div>
+                        <div className="label whitespace-nowrap">Next due (flight hours)</div>
+                        <input type="number" step="0.1" className="input font-mono"
+                          placeholder={last != null ? `ex: ${(last+100).toFixed(1)}` : 'ex: 4600'}
+                          value={ac.maint100hNext || ''}
+                          onChange={e=>updateMaint100h(ac, 'maint100hNext', e.target.value)} />
+                      </div>
+                      <div>
+                        <div className="label whitespace-nowrap">Hours left (auto)</div>
+                        <div className="input font-mono tabular-nums flex items-center" style={{ color: leftColor, borderColor: leftColor }}>
+                          {leftLabel}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-2">
             <select className="select" value={filterAc} onChange={e=>setFilterAc(e.target.value)}>
@@ -5574,10 +5658,12 @@
         ratings: '',           // ex: "ME, IR, B777, C172"
         email: '',
         phone: '',
+        address: '',           // adresse postale (multi-ligne)
         baseAirport: '',       // OACI base
         // v13 : identifiants administratifs (sensibles, stockés UNIQUEMENT en local)
         driversLicense: '',    // numéro de permis de conduire
         nas: '',               // numéro NAS (Canada) / SSN / équivalent
+        passportId: '',        // numéro de passeport ou pièce d'identité
         notes: '',
       };
       const [p, setP] = useState({ ...blank, ...(initial||{}) });
@@ -5706,6 +5792,14 @@
             </div>
           </div>
 
+          <div>
+            <div className="label">Adresse</div>
+            <textarea className="textarea" rows={2}
+              placeholder="ex : 12 rue de Paris&#10;75001 Paris&#10;France"
+              value={p.address || ''}
+              onChange={e=>set('address', e.target.value)} />
+          </div>
+
           <div className="card p-3">
             <div className="label">Identifiants administratifs</div>
             <div className="grid grid-cols-2 gap-3">
@@ -5717,6 +5811,10 @@
                 <div className="label whitespace-nowrap">N° NAS</div>
                 <input className="input" value={p.nas} onChange={e=>set('nas', e.target.value)} placeholder="ex: 123 456 789" />
               </div>
+            </div>
+            <div className="mt-2">
+              <div className="label whitespace-nowrap">N° passeport / pièce d'identité</div>
+              <input className="input" value={p.passportId || ''} onChange={e=>set('passportId', e.target.value)} placeholder="ex: 12AB34567" />
             </div>
             <div className="mt-2">
               <Hint title="Données sensibles — sécurité">
@@ -8196,7 +8294,8 @@
               onAddOrUpdate={upsert(setDutyPeriods)} onDelete={remove(setDutyPeriods)} />}
             {tab==='maintenance' && <MaintenanceScreen
               maintenance={maintenance} aircraft={aircraft} flights={flights}
-              onAddOrUpdate={upsert(setMaintenance)} onDelete={remove(setMaintenance)} />}
+              onAddOrUpdate={upsert(setMaintenance)} onDelete={remove(setMaintenance)}
+              onAircraftUpdate={upsert(setAircraft)} />}
             {tab==='documents' && <DocumentsScreen
               documents={documents} aircraft={aircraft} categories={categories} pilots={pilots}
               flights={flights}
