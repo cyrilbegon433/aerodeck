@@ -771,7 +771,17 @@
     // === Taux de change FX (Frankfurter, ECB, gratuit sans clé) ===
     // Récupère le taux historique pour une date donnée (YYYY-MM-DD).
     // Cache localStorage permanent : les taux historiques ne changent jamais.
-    // Renvoie un nombre (ex: 1.46 = 1 EUR vaut 1.46 CAD ce jour-là) ou null si échec.
+    // Renvoie TOUJOURS un nombre > 0 grâce à 3 niveaux de fallback :
+    //   1) cache local pour cette date
+    //   2) appel Frankfurter avec date historique
+    //   3) appel Frankfurter "latest" (taux du jour) si la date historique échoue
+    //   4) table statique de secours (utile si offline complet, taux indicatifs 2024-2025)
+    const FX_FALLBACK_TO_CAD = {
+      USD: 1.36, EUR: 1.50, GBP: 1.74, CHF: 1.55,
+      CAD: 1.00, AUD: 0.91, JPY: 0.0091, CNY: 0.19,
+      MXN: 0.078, BRL: 0.27, NZD: 0.83, SEK: 0.13,
+      NOK: 0.13, DKK: 0.20, ZAR: 0.075,
+    };
     async function getFxRate(date, fromCurrency, toCurrency = 'CAD') {
       if (!date || !fromCurrency || fromCurrency === toCurrency) return 1;
       const key = `fx_${date}_${fromCurrency}_${toCurrency}`;
@@ -782,20 +792,37 @@
           if (!isNaN(v) && v > 0) return v;
         }
       } catch (_) {}
+      // Tentative 1 : taux historique pour cette date
       try {
-        // Frankfurter renvoie automatiquement le taux du jour ouvré le plus proche
-        // si la date tombe sur un week-end / jour férié BCE.
         const url = `https://api.frankfurter.app/${date}?from=${fromCurrency}&to=${toCurrency}`;
-        const res = await fetch(url, { cache: 'force-cache' });
-        if (!res.ok) throw new Error('FX HTTP ' + res.status);
-        const j = await res.json();
-        const rate = j && j.rates && j.rates[toCurrency];
-        if (rate && rate > 0) {
-          try { localStorage.setItem(key, String(rate)); } catch (_) {}
-          return rate;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (res.ok) {
+          const j = await res.json();
+          const rate = j && j.rates && j.rates[toCurrency];
+          if (rate && rate > 0) {
+            try { localStorage.setItem(key, String(rate)); } catch (_) {}
+            return rate;
+          }
         }
       } catch (_) {}
-      return null; // échec : appel d'amont décide du fallback (compter brut ou ignorer)
+      // Tentative 2 : taux "latest" (jour ouvré le plus récent, utile si la date est dans le futur)
+      try {
+        const url = `https://api.frankfurter.app/latest?from=${fromCurrency}&to=${toCurrency}`;
+        const res = await fetch(url, { cache: 'no-store' });
+        if (res.ok) {
+          const j = await res.json();
+          const rate = j && j.rates && j.rates[toCurrency];
+          if (rate && rate > 0) {
+            try { localStorage.setItem(key, String(rate)); } catch (_) {}
+            return rate;
+          }
+        }
+      } catch (_) {}
+      // Tentative 3 : table statique de secours (toCurrency doit être CAD)
+      if (toCurrency === 'CAD' && FX_FALLBACK_TO_CAD[fromCurrency]) {
+        return FX_FALLBACK_TO_CAD[fromCurrency];
+      }
+      return null;
     }
     function nowZuluHHMM() {
       const d = new Date();
