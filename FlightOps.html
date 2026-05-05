@@ -6912,9 +6912,9 @@
               <div className="label">{tx('Base (OACI)','Base (ICAO)')}</div>
               <input className="input uppercase" maxLength={4} placeholder="LFPB" value={p.baseAirport} onChange={e=>set('baseAirport', e.target.value.toUpperCase())} />
             </div>
-            <div>
-              <div className="label whitespace-nowrap">{tx('Date de naissance','Date of birth')}</div>
-              <input type="date" className="input" value={p.dateOfBirth} onChange={e=>set('dateOfBirth', e.target.value)} />
+            <div className="min-w-0">
+              <div className="label">{tx('Date de naissance','Date of birth')}</div>
+              <input type="date" className="input w-full" value={p.dateOfBirth} onChange={e=>set('dateOfBirth', e.target.value)} />
               {currentAge != null && (
                 <div className="text-xs text-[var(--text-dim)] mt-1">{tx('Âge actuel','Current age')} : {currentAge} {tx('ans','years')}</div>
               )}
@@ -7029,7 +7029,9 @@
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Mobile : Email puis Téléphone empilés (sinon les valeurs longues sont tronquées).
+              Desktop : 2 colonnes côte à côte. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <div className="label">Email</div>
               <input type="email" className="input" value={p.email} onChange={e=>set('email', e.target.value)} />
@@ -7050,13 +7052,15 @@
 
           <div className="card p-3">
             <div className="label">{tx('Identifiants administratifs','Administrative IDs')}</div>
-            <div className="grid grid-cols-2 gap-3">
+            {/* Mobile : Driver license puis SSN/SIN empilés (sinon valeurs longues tronquées).
+                Desktop : 2 colonnes côte à côte. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <div className="label whitespace-nowrap">{tx('N° permis','Driver license #')}</div>
+                <div className="label">{tx('N° permis','Driver license #')}</div>
                 <input className="input" value={p.driversLicense} onChange={e=>set('driversLicense', e.target.value)} placeholder="ex: A1234-567890" />
               </div>
               <div>
-                <div className="label whitespace-nowrap">{tx('N° NAS','SSN / SIN')}</div>
+                <div className="label">{tx('N° NAS','SSN / SIN')}</div>
                 <input className="input" value={p.nas} onChange={e=>set('nas', e.target.value)} placeholder="ex: 123 456 789" />
               </div>
             </div>
