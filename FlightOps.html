@@ -2497,7 +2497,7 @@
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div className="min-w-0">
               <div className="label whitespace-nowrap">Date (Zulu)</div>
-              <input type="date" className="input" value={f.date} onChange={e=>set('date', e.target.value)} />
+              <input type="date" className="input" value={f.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
             </div>
             <div className="min-w-0">
               <div className="label whitespace-nowrap">{tx('Avion','Aircraft')}</div>
@@ -3388,7 +3388,7 @@
             </div>
             <div className="mt-3 grid grid-cols-3 gap-2">
               <input className="input col-span-3 sm:col-span-1" placeholder="Libellé (ex: Visite annuelle)" value={newDeadline.label} onChange={e=>setNewDeadline({...newDeadline,label:e.target.value})} />
-              <input type="date" className="input" value={newDeadline.date} onChange={e=>setNewDeadline({...newDeadline,date:e.target.value})} />
+              <input type="date" className="input" value={newDeadline.date} onChange={e=>{ if (e.target.value) setNewDeadline({...newDeadline,date:e.target.value}); }} />
               <input type="number" className="input" placeholder="ou heures cellule" value={newDeadline.hours} onChange={e=>setNewDeadline({...newDeadline,hours:e.target.value})} />
             </div>
             <div className="flex justify-end mt-2">
@@ -3718,7 +3718,7 @@
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <div className="label whitespace-nowrap">Date</div>
-              <input type="date" className="input" value={d.date} onChange={e=>set('date', e.target.value)} />
+              <input type="date" className="input" value={d.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
             </div>
             <div>
               <div className="label whitespace-nowrap">Fournisseur</div>
@@ -6419,7 +6419,7 @@
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="label">Date d'ouverture</div>
-              <input type="date" className="input" value={m.openedAt} onChange={e=>set('openedAt', e.target.value)} />
+              <input type="date" className="input" value={m.openedAt} onChange={e=>{ if (e.target.value) set('openedAt', e.target.value); }} />
             </div>
             <div>
               <div className="label">Avion</div>
@@ -6486,7 +6486,7 @@
             <div className="card p-3 space-y-2">
               <div>
                 <div className="label">Date de résolution</div>
-                <input type="date" className="input" value={m.resolvedAt} onChange={e=>set('resolvedAt', e.target.value)} />
+                <input type="date" className="input" value={m.resolvedAt} onChange={e=>{ if (e.target.value) set('resolvedAt', e.target.value); }} />
               </div>
               <div>
                 <div className="label">Notes de résolution</div>
@@ -6810,7 +6810,7 @@
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="label whitespace-nowrap">Date</div>
-              <input type="date" className="input" value={v.date} onChange={e=>set('date', e.target.value)} />
+              <input type="date" className="input" value={v.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
             </div>
             <div>
               <div className="label whitespace-nowrap">Mécanicien <span className="normal-case tracking-normal opacity-70">(opt.)</span></div>
@@ -6958,7 +6958,7 @@
             </div>
             <div>
               <div className="label">Date d'application</div>
-              <input type="date" className="input" value={d.effectiveDate} onChange={e=>set('effectiveDate', e.target.value)} />
+              <input type="date" className="input" value={d.effectiveDate} onChange={e=>{ if (e.target.value) set('effectiveDate', e.target.value); }} />
             </div>
           </div>
           <div className="card p-3">
@@ -7307,7 +7307,7 @@
             </div>
             <div className="min-w-0">
               <div className="label">{tx('Date de naissance','Date of birth')}</div>
-              <input type="date" className="input w-full" value={p.dateOfBirth} onChange={e=>set('dateOfBirth', e.target.value)} />
+              <input type="date" className="input w-full" value={p.dateOfBirth} onChange={e=>{ if (e.target.value) set('dateOfBirth', e.target.value); }} />
               {currentAge != null && (
                 <div className="text-xs text-[var(--text-dim)] mt-1">{tx('Âge actuel','Current age')} : {currentAge} {tx('ans','years')}</div>
               )}
@@ -7374,7 +7374,7 @@
                     </div>
                     <div>
                       <div className="label whitespace-nowrap">{tx('Expiration licence','License expiry')}</div>
-                      <input type="date" className="input" value={lic.expiry} onChange={e=>setLicense(idx, 'expiry', e.target.value)} />
+                      <input type="date" className="input" value={lic.expiry} onChange={e=>{ if (e.target.value) setLicense(idx, 'expiry', e.target.value); }} />
                     </div>
                     <div>
                       <div className="label whitespace-nowrap">{tx('Qualifications','Ratings')}</div>
@@ -7395,12 +7395,12 @@
                         </div>
                         <div>
                           <div className="label whitespace-nowrap">{tx('Date d\'examen','Exam date')}</div>
-                          <input type="date" className="input" value={lic.medicalDate} onChange={e=>setLicense(idx, 'medicalDate', e.target.value)} />
+                          <input type="date" className="input" value={lic.medicalDate} onChange={e=>{ if (e.target.value) setLicense(idx, 'medicalDate', e.target.value); }} />
                         </div>
                       </div>
                       <div className="mt-2">
                         <div className="label whitespace-nowrap">{tx('Date de renouvellement','Renewal date')}</div>
-                        <input type="date" className="input" value={lic.medicalExpiry} onChange={e=>setLicense(idx, 'medicalExpiry', e.target.value)} />
+                        <input type="date" className="input" value={lic.medicalExpiry} onChange={e=>{ if (e.target.value) setLicense(idx, 'medicalExpiry', e.target.value); }} />
                         {ruleApplied && (
                           <div className="text-xs text-[var(--accent)] mt-1">
                             <span className="font-semibold">{tx('Règle','Rule')} :</span> {ruleApplied}
@@ -7808,7 +7808,7 @@
               le numéro est long ou sur écran étroit). */}
           <div>
             <div className="label whitespace-nowrap">Date du plein</div>
-            <input type="date" className="input" value={entry.date || flightDate || ''} onChange={e=>set('date', e.target.value)} />
+            <input type="date" className="input" value={entry.date || flightDate || ''} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
           </div>
           {/* Localisation du plein : avant ou après le vol — utile pour suivi conso. */}
           {isFuel && (
@@ -8364,7 +8364,7 @@
             </div>
             <div>
               <div className="label">{tx('Date d\'arrêt','Cutoff date')}</div>
-              <input type="date" className="input" value={d.date} onChange={e=>set('date', e.target.value)} />
+              <input type="date" className="input" value={d.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -8507,7 +8507,7 @@
                 </div>
                 <div className="md:col-span-3">
                   <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold mb-1">{tx('Date d\'arrêt','Cutoff date')}</div>
-                  <input type="date" className={inputCls + " font-mono"} value={d.date} onChange={e=>set('date', e.target.value)} />
+                  <input type="date" className={inputCls + " font-mono"} value={d.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
                 </div>
                 <div className="md:col-span-6">
                   <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold mb-1">Notes</div>
@@ -8586,6 +8586,169 @@
       );
     }
 
+    // Formulaire pour saisir une "ligne externe" — c'est-à-dire une ligne de vol
+    // tirée d'un autre logbook (papier ou électronique). Cette ligne ne crée AUCUN
+    // vol dans l'application : elle apparaît uniquement dans le tableau Staff,
+    // marquée d'un badge orange "Externe" dans une colonne dédiée.
+    function ExternalFlightForm({ pilot, initial, onSave, onCancel, onDelete }) {
+      const tx = useTx();
+      const m2h = (m) => (m && m > 0) ? (m / 60).toFixed(2) : '';
+      const h2m = (h) => {
+        const v = parseFloat(h);
+        return (!isNaN(v) && v > 0) ? Math.round(v * 60) : 0;
+      };
+      const isEdit = !!(initial && initial.id);
+      const [d, setD] = useState({
+        id: initial?.id || null,
+        date: initial?.date || '',
+        aircraft: initial?.aircraft || '',
+        from: initial?.from || '',
+        to: initial?.to || '',
+        pic: initial?.pic || (pilot ? pilotDisplayName(pilot) : ''),
+        sic: initial?.sic || '',
+        flightType: initial?.flightType || '',
+        rules: initial?.rules || 'VFR',
+        ft: m2h(initial?.ft),
+        se: m2h(initial?.se),
+        me: m2h(initial?.me),
+        ir: m2h(initial?.ir),
+        nav: m2h(initial?.nav),
+        night: m2h(initial?.night),
+        takeoffs: initial?.takeoffs || '',
+        landings: initial?.landings || '',
+        notes: initial?.notes || '',
+      });
+      function set(k, v) { setD(p => ({ ...p, [k]: v })); }
+      function save() {
+        onSave({
+          id: d.id || ('ext_' + Date.now()),
+          date: d.date || '',
+          aircraft: (d.aircraft || '').trim(),
+          from: (d.from || '').trim().toUpperCase(),
+          to: (d.to || '').trim().toUpperCase(),
+          pic: (d.pic || '').trim(),
+          sic: (d.sic || '').trim(),
+          flightType: (d.flightType || '').trim(),
+          rules: d.rules || 'VFR',
+          ft: h2m(d.ft),
+          se: h2m(d.se),
+          me: h2m(d.me),
+          ir: h2m(d.ir),
+          nav: h2m(d.nav),
+          night: h2m(d.night),
+          takeoffs: parseInt(d.takeoffs) || 0,
+          landings: parseInt(d.landings) || 0,
+          notes: (d.notes || '').trim(),
+        });
+      }
+      return (
+        <div className="space-y-3">
+          <div className="text-sm text-[var(--text-dim)] leading-relaxed">
+            {tx(
+              'Saisis ici une ligne de vol issue d\'un autre logbook (papier ou électronique). Cette ligne apparaîtra dans le tableau Staff avec un badge orange « Externe » mais ne créera aucun vol dans l\'application.',
+              'Enter a flight row from another (paper or electronic) logbook. This row will appear in the Staff table with an orange "External" badge but will not create any flight in the app.'
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="label">Date</div>
+              <input type="date" className="input" value={d.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
+            </div>
+            <div className="sm:col-span-2">
+              <div className="label">{tx('Avion (immat · type)','Aircraft (reg · type)')}</div>
+              <input className="input" placeholder="F-GXYZ · C172" value={d.aircraft} onChange={e=>set('aircraft', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="label">PIC</div>
+              <input className="input" value={d.pic} onChange={e=>set('pic', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">SIC</div>
+              <input className="input" placeholder={tx('Optionnel','Optional')} value={d.sic} onChange={e=>set('sic', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Type de vol','Flight type')}</div>
+              <input className="input" placeholder={tx('Solo, Multi, Charter…','Solo, Multi, Charter…')} value={d.flightType} onChange={e=>set('flightType', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <div className="label">{tx('Départ','Dep')}</div>
+              <input className="input uppercase" maxLength={4} placeholder="LFPB" value={d.from} onChange={e=>set('from', e.target.value.toUpperCase())} />
+            </div>
+            <div>
+              <div className="label">{tx('Arrivée','Arr')}</div>
+              <input className="input uppercase" maxLength={4} placeholder="EGLL" value={d.to} onChange={e=>set('to', e.target.value.toUpperCase())} />
+            </div>
+            <div>
+              <div className="label">{tx('Régime','Rules')}</div>
+              <select className="select" value={d.rules} onChange={e=>set('rules', e.target.value)}>
+                <option value="VFR">VFR</option>
+                <option value="IFR">IFR</option>
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="label">FT (h)</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0" value={d.ft} onChange={e=>set('ft', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Mono (h)','SE (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0" value={d.se} onChange={e=>set('se', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Multi (h)','ME (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0" value={d.me} onChange={e=>set('me', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Heures IR (h)','IR (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0" value={d.ir} onChange={e=>set('ir', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">Nav (h)</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0" value={d.nav} onChange={e=>set('nav', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Nuit (h)','Night (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0" value={d.night} onChange={e=>set('night', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Décollages','Take-offs')}</div>
+              <input type="number" min="0" className="input font-mono" value={d.takeoffs} onChange={e=>set('takeoffs', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Atterrissages','Landings')}</div>
+              <input type="number" min="0" className="input font-mono" value={d.landings} onChange={e=>set('landings', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <div className="label">{tx('Notes (optionnel)','Notes (optional)')}</div>
+            <textarea className="textarea" rows={2} value={d.notes} onChange={e=>set('notes', e.target.value)} />
+          </div>
+          <div className="flex justify-between items-center gap-2 pt-2">
+            {isEdit && onDelete ? (
+              <button type="button"
+                onClick={()=>{
+                  if (confirm(tx('Supprimer cette ligne externe ?','Delete this external row?'))) onDelete(d.id);
+                }}
+                className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors text-sm"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={14} strokeWidth={2.5} />
+                {tx('Supprimer','Delete')}
+              </button>
+            ) : <span />}
+            <div className="flex gap-2">
+              <button className="btn btn-secondary" onClick={onCancel}>{tx('Annuler','Cancel')}</button>
+              <button className="btn btn-primary" onClick={save}>{tx('Enregistrer','Save')}</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     function StaffScreen({ flights, aircraft, pilots=[], addExpense, onUpsertFlight, onDeleteFlight, onUpsertPilot }) {
       const tx = useTx();
       const { lang } = React.useContext(I18nContext);
@@ -8604,6 +8767,35 @@
         setShowImportLogbook(false);
       }
 
+      // Modal pour saisir une ligne externe (vol issu d'un autre logbook).
+      // editingExternal = null → pas d'édition, sinon entrée externe en cours d'édition.
+      const [editingExternal, setEditingExternal] = useState(null);
+      const [showExternalForm, setShowExternalForm] = useState(false);
+      function openNewExternal() {
+        setEditingExternal(null);
+        setShowExternalForm(true);
+      }
+      function openEditExternal(entry) {
+        setEditingExternal(entry);
+        setShowExternalForm(true);
+      }
+      function saveExternal(entry) {
+        if (!onUpsertPilot || !selectedPilot) return;
+        const list = [...(selectedPilot.externalFlights || [])];
+        const idx = list.findIndex(e => e.id === entry.id);
+        if (idx >= 0) list[idx] = entry; else list.push(entry);
+        onUpsertPilot({ ...selectedPilot, externalFlights: list });
+        setShowExternalForm(false);
+        setEditingExternal(null);
+      }
+      function deleteExternal(id) {
+        if (!onUpsertPilot || !selectedPilot) return;
+        const list = (selectedPilot.externalFlights || []).filter(e => e.id !== id);
+        onUpsertPilot({ ...selectedPilot, externalFlights: list });
+        setShowExternalForm(false);
+        setEditingExternal(null);
+      }
+
       const selectedPilot = pilotFilter !== 'all' ? pilots.find(p => p.id === pilotFilter) : null;
       const prevLog = selectedPilot?.previousLogbook;
       const hasPrevLog = !!prevLog && (
@@ -8617,9 +8809,17 @@
           if (pilotFilter === 'all') return true;
           return f.pilotId === pilotFilter || f.copilotId === pilotFilter;
         });
+        // On marque les vols réguliers (non externes) pour la suite.
+        arr = arr.map(f => ({ ...f, _kind: 'flight' }));
+        // Lignes externes du pilote sélectionné (mélangées au tri par date).
+        if (pilotFilter !== 'all') {
+          const selPilot = pilots.find(p => p.id === pilotFilter);
+          const ext = (selPilot?.externalFlights || []).map(e => ({ ...e, _kind: 'external' }));
+          arr = [...arr, ...ext];
+        }
         arr.sort((a,b) => (a.date||'').localeCompare(b.date||'') || (a.id||'').localeCompare(b.id||''));
         return arr;
-      }, [flights, pilotFilter]);
+      }, [flights, pilotFilter, pilots]);
 
       // Génère un PDF du logbook via window.print() sur une fenêtre dédiée :
       // l'utilisateur clique "Save as PDF" dans le dialog d'impression du navigateur.
@@ -8808,20 +9008,32 @@
       const limit = showAll ? sorted.length : Math.min(sorted.length, 200);
       const visible = sorted.slice(0, limit);
 
-      // Totaux par colonne (basés sur les vols visibles)
+      // Totaux par colonne (basés sur les vols visibles + lignes externes)
       const totals = useMemo(() => {
         let ft=0, se=0, me=0, ir=0, nav=0, night=0, to=0, ldg=0;
         for (const f of visible) {
-          const ac = aircraft.find(a => a.id === f.aircraftId);
-          const ec = ac?.engineCount || 1;
-          const fft = f.flightTime || 0;
-          ft += fft;
-          if (ec <= 1) se += fft; else me += fft;
-          if (f.rules === 'IFR') ir += fft;
-          if (f.isNavigation) nav += fft;
-          night += (f.nightTime || 0);
-          to  += ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
-          ldg += ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
+          if (f._kind === 'external') {
+            // Ligne externe : les minutes sont déjà pré-calculées.
+            ft    += f.ft    || 0;
+            se    += f.se    || 0;
+            me    += f.me    || 0;
+            ir    += f.ir    || 0;
+            nav   += f.nav   || 0;
+            night += f.night || 0;
+            to    += f.takeoffs || 0;
+            ldg   += f.landings || 0;
+          } else {
+            const ac = aircraft.find(a => a.id === f.aircraftId);
+            const ec = ac?.engineCount || 1;
+            const fft = f.flightTime || 0;
+            ft += fft;
+            if (ec <= 1) se += fft; else me += fft;
+            if (f.rules === 'IFR') ir += fft;
+            if (f.isNavigation) nav += fft;
+            night += (f.nightTime || 0);
+            to  += ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
+            ldg += ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
+          }
         }
         return { ft, se, me, ir, nav, night, to, ldg, count: visible.length };
       }, [visible, aircraft]);
@@ -8833,7 +9045,7 @@
             <div className="flex items-center gap-2 flex-wrap">
               <button className="btn btn-secondary" onClick={exportTableCSV}
                 title={tx('Télécharger un fichier CSV (Excel, Numbers, Sheets)','Download a CSV file (Excel, Numbers, Sheets)')}>
-                <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Export CSV</span>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />Export CSV</span>
               </button>
               <button className="btn btn-secondary" onClick={exportTablePDF}
                 title={tx('Imprimer ou sauvegarder en PDF (paysage A4)','Print or save as PDF (A4 landscape)')}>
@@ -8849,24 +9061,41 @@
               {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
             </select>
 
-            {/* Bouton moderne : importer / modifier le logbook précédent.
-                Visible uniquement quand un pilote précis est sélectionné. */}
+            {/* Boutons modernes : importer logbook reporté + ajouter ligne externe.
+                Visibles uniquement quand un pilote précis est sélectionné. */}
             {pilotFilter !== 'all' && selectedPilot && (
-              <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
-                <button type="button"
-                  onClick={openImport}
-                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full border-2 border-[var(--accent)] text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/10 transition-all hover:scale-105 active:scale-95 self-start"
-                  style={{ background: 'transparent' }}>
-                  <LucideIcon name={hasPrevLog ? 'clipboard' : 'plus'} size={16} strokeWidth={2.5} />
-                  <span>{hasPrevLog
-                    ? tx('Modifier le logbook reporté','Edit carried-over logbook')
-                    : tx('+ Importer logbook précédent','+ Import previous logbook')}</span>
-                </button>
+              <div className="mt-3 flex flex-col gap-2">
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 flex-wrap">
+                  <button type="button"
+                    onClick={openImport}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full border-2 border-[var(--accent)] text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/10 transition-all hover:scale-105 active:scale-95 self-start"
+                    style={{ background: 'transparent' }}>
+                    <LucideIcon name={hasPrevLog ? 'clipboard' : 'plus'} size={16} strokeWidth={2.5} />
+                    <span>{hasPrevLog
+                      ? tx('Modifier le logbook reporté','Edit carried-over logbook')
+                      : tx('+ Importer logbook précédent','+ Import previous logbook')}</span>
+                  </button>
+                  {/* Bouton orange : ajouter une ligne externe (vol issu d'un autre logbook) */}
+                  <button type="button"
+                    onClick={openNewExternal}
+                    className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full border-2 font-semibold transition-all hover:scale-105 active:scale-95 self-start"
+                    style={{ borderColor: '#f59e0b', color: '#f59e0b', background: 'transparent' }}
+                    onMouseEnter={e=>e.currentTarget.style.background='rgba(245,158,11,0.1)'}
+                    onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                    <LucideIcon name="plus" size={16} strokeWidth={2.5} />
+                    <span>{tx('+ Ligne externe','+ External row')}</span>
+                  </button>
+                </div>
                 {hasPrevLog && (
                   <span className="text-xs text-[var(--text-dim)]">
                     {prevLog.source ? prevLog.source : tx('Reporté','Carried-over')}
                     {prevLog.date ? ` · ${tx('arrêté au','as of')} ${prevLog.date}` : ''}
                     {(prevLog.ft||0) > 0 ? ` · ${fmtDuration(prevLog.ft)} FT` : ''}
+                  </span>
+                )}
+                {(selectedPilot.externalFlights || []).length > 0 && (
+                  <span className="text-xs" style={{ color: '#f59e0b' }}>
+                    {selectedPilot.externalFlights.length} {tx('ligne(s) externe(s) dans le logbook','external row(s) in the logbook')}
                   </span>
                 )}
               </div>
@@ -8887,6 +9116,22 @@
             )}
           </Modal>
 
+          {/* Modal pour saisir / modifier une ligne externe (vol issu d'un autre logbook) */}
+          <Modal open={showExternalForm} onClose={()=>{ setShowExternalForm(false); setEditingExternal(null); }}
+            title={editingExternal
+              ? tx('Modifier ligne externe','Edit external row')
+              : tx('Nouvelle ligne externe','New external row')}>
+            {selectedPilot && (
+              <ExternalFlightForm
+                pilot={selectedPilot}
+                initial={editingExternal}
+                onSave={saveExternal}
+                onDelete={deleteExternal}
+                onCancel={()=>{ setShowExternalForm(false); setEditingExternal(null); }}
+              />
+            )}
+          </Modal>
+
           {visible.length === 0 && (
             <div className="card p-6 text-center text-[var(--text-dim)]">
               {pilotFilter==='all' ? 'Aucun vol enregistré.' : 'Aucun vol pour ce pilote.'}
@@ -8902,6 +9147,7 @@
               <table className="w-full text-[11px]">
                 <thead className="text-[var(--text-dim)] sticky top-0 bg-[var(--bg-card)] z-10">
                   <tr className="text-left uppercase tracking-wide">
+                    <th className="px-1.5 py-2 text-center" title={tx('Source : App ou Externe','Source: App or External')}>{tx('Src','Src')}</th>
                     <th className="px-1.5 py-2">Date</th>
                     <th className="px-1.5 py-2">{tx('Avion','Aircraft')}</th>
                     <th className="px-1.5 py-2">PIC</th>
@@ -8922,6 +9168,54 @@
                 </thead>
                 <tbody>
                   {visible.map(f => {
+                    // Ligne externe (issue d'un autre logbook) : rendu spécial avec
+                    // chip orange dans la colonne Src + bordure gauche orange.
+                    if (f._kind === 'external') {
+                      return (
+                        <tr key={f.id}
+                            className="border-t border-[var(--border)] hover:bg-[var(--bg-elev)] cursor-pointer"
+                            style={{ borderLeft: '3px solid #f59e0b', background: 'rgba(245,158,11,0.04)' }}
+                            onClick={()=>openEditExternal(f)}>
+                          <td className="px-1.5 py-1.5 text-center">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full font-bold uppercase text-[9px] tracking-wider"
+                              style={{ background: 'rgba(245,158,11,0.18)', color: '#f59e0b', border: '1px solid rgba(245,158,11,0.4)' }}
+                              title={tx('Ligne externe (hors logiciel)','External row (outside the app)')}>
+                              <LucideIcon name="upload" size={10} strokeWidth={3} />
+                              {tx('Ext','Ext')}
+                            </span>
+                          </td>
+                          <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.date || '—'}</td>
+                          <td className="px-1.5 py-1.5 truncate max-w-[140px]" title={f.aircraft||''}>{f.aircraft || '—'}</td>
+                          <td className="px-1.5 py-1.5 truncate max-w-[110px]">{f.pic || '—'}</td>
+                          <td className="px-1.5 py-1.5 truncate max-w-[110px]">{f.sic || '—'}</td>
+                          <td className="px-1.5 py-1.5 whitespace-nowrap text-[10px]">{f.flightType || '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center font-mono font-semibold" style={{ color: '#f59e0b' }}>{(f.ft||0) > 0 ? fmtDuration(f.ft) : '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center whitespace-nowrap">{f.rules || '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center font-mono">{(f.se||0) > 0 ? fmtDuration(f.se) : '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center font-mono">{(f.me||0) > 0 ? fmtDuration(f.me) : '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center font-mono">{(f.ir||0) > 0 ? fmtDuration(f.ir) : '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center font-mono whitespace-nowrap">
+                            {(f.takeoffs||0)}/{(f.landings||0)}
+                          </td>
+                          <td className="px-1.5 py-1.5 text-center font-mono">{(f.nav||0) > 0 ? fmtDuration(f.nav) : '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center font-mono">{(f.night||0) > 0 ? fmtDuration(f.night) : '—'}</td>
+                          <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.from || '—'}</td>
+                          <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.to || '—'}</td>
+                          <td className="px-1.5 py-1.5 text-center">
+                            <button type="button"
+                              className="text-[var(--err)] hover:opacity-80"
+                              title={tx('Supprimer cette ligne externe','Delete this external row')}
+                              onClick={(e)=>{
+                                e.stopPropagation();
+                                if (confirm(tx('Supprimer cette ligne externe ?','Delete this external row?'))) {
+                                  deleteExternal(f.id);
+                                }
+                              }}><LucideIcon name="trash2" size={16} strokeWidth={2.25} /></button>
+                          </td>
+                        </tr>
+                      );
+                    }
+                    // Ligne régulière (vol enregistré dans l'application)
                     const ac = aircraft.find(a => a.id === f.aircraftId);
                     const pic = pilots.find(p => p.id === f.pilotId);
                     const sic = pilots.find(p => p.id === f.copilotId);
@@ -8937,6 +9231,7 @@
                     return (
                       <tr key={f.id} className="border-t border-[var(--border)] hover:bg-[var(--bg-elev)] cursor-pointer"
                           onClick={()=>{ setEditing(f); setShowForm(true); }}>
+                        <td className="px-1.5 py-1.5 text-center text-[var(--text-dim)]/40 text-[9px]">—</td>
                         <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.date}</td>
                         <td className="px-1.5 py-1.5 leading-tight">
                           <div className="font-mono whitespace-nowrap">{ac?.registration||'?'}</div>
@@ -8978,6 +9273,7 @@
                 {visible.length > 0 && (
                   <tfoot>
                     <tr className="border-t-2 border-[var(--accent)]/40 bg-[var(--bg-elev)] font-bold uppercase text-[10px] tracking-wide">
+                      <td className="px-1.5 py-2"></td>
                       <td className="px-1.5 py-2 whitespace-nowrap">{hasPrevLog ? tx('Sous-total','Subtotal') : tx('Total','Total')}</td>
                       <td className="px-1.5 py-2 text-[var(--text-dim)]">{totals.count} {tx('vol(s)','flight(s)')}</td>
                       <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
@@ -9001,6 +9297,7 @@
                         <tr className="bg-[var(--bg-elev)]/50 font-semibold uppercase text-[10px] tracking-wide italic group cursor-pointer hover:bg-[var(--bg-elev)]"
                             onClick={openImport}
                             title={tx('Cliquer pour modifier','Click to edit')}>
+                          <td className="px-1.5 py-2"></td>
                           <td className="px-1.5 py-2 whitespace-nowrap text-[var(--text-dim)]">{tx('Reporté','Carried-over')}{prevLog.date ? ' · '+prevLog.date : ''}</td>
                           <td className="px-1.5 py-2 text-[var(--text-dim)] truncate" title={prevLog.source||''}>{prevLog.source || tx('Logbook précédent','Previous logbook')}</td>
                           <td className="px-1.5 py-2 truncate max-w-[110px]" title={prevLog.pic||''}>{prevLog.pic || '—'}</td>
@@ -9020,6 +9317,7 @@
                         </tr>
                         {/* Ligne GRAND TOTAL = sous-total + reporté */}
                         <tr className="border-t-2 border-[var(--accent)] bg-[var(--accent)]/10 font-bold uppercase text-[10px] tracking-wide">
+                          <td className="px-1.5 py-2"></td>
                           <td className="px-1.5 py-2 whitespace-nowrap text-[var(--accent)]">{tx('Grand total','Grand total')}</td>
                           <td className="px-1.5 py-2 text-[var(--accent)]">—</td>
                           <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
@@ -9225,7 +9523,7 @@
             </div>
             <div>
               <div className="label">Date</div>
-              <input type="date" className="input" value={d.date} onChange={e=>set('date', e.target.value)} />
+              <input type="date" className="input" value={d.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
             </div>
           </div>
 
