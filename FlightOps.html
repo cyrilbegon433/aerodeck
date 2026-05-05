@@ -2518,22 +2518,22 @@
 
           {/* Type de mission : navigation par défaut. Le statut Duo est désormais dérivé
               du type de vol = "Duo/Training" (voir dropdown Type de vol ci-dessous). */}
-          <div className="flex flex-col items-center gap-3 pt-6 pb-2">
+          <div className="flex flex-col items-center gap-3 pt-6 pb-5">
             <button type="button"
               onClick={()=>set('isNavigation', !f.isNavigation)}
-              className={`relative inline-flex items-center gap-3 px-6 py-3 rounded-full border-2 font-semibold transition-all select-none ${
+              className={`relative inline-flex items-center gap-2.5 px-5 py-2 md:px-6 md:py-3 rounded-full border-2 font-semibold transition-all select-none ${
                 f.isNavigation
                   ? 'border-[#38bdf8] bg-[#38bdf8]/15 text-[#38bdf8] shadow-md shadow-[#38bdf8]/20 scale-105'
                   : 'border-[var(--border)] bg-transparent text-[var(--text-dim)] hover:border-[#38bdf8]/50'
               }`}>
-              <LucideIcon name="compass" size={22} strokeWidth={2.5} />
-              <span className="text-base">{tx('Navigation / Ferry flight','Navigation / Ferry flight')}</span>
+              <LucideIcon name="compass" size={18} strokeWidth={2.5} />
+              <span className="text-sm md:text-base">{tx('Navigation / Ferry flight','Navigation / Ferry flight')}</span>
               {f.isNavigation ? (
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500 text-white shadow-md">
-                  <LucideIcon name="check" size={16} strokeWidth={3.5} />
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-emerald-500 text-white shadow-md">
+                  <LucideIcon name="check" size={13} strokeWidth={3.5} />
                 </span>
               ) : (
-                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-[var(--border)] bg-transparent" />
+                <span className="inline-flex items-center justify-center w-6 h-6 rounded-full border-2 border-[var(--border)] bg-transparent" />
               )}
             </button>
             <div className="w-full">
