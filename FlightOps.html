@@ -2540,14 +2540,15 @@
               </div>
             ) : (
               <div className="mt-1 px-1 py-1 space-y-2 sm:space-y-4 overflow-hidden">
-                {/* Ligne du haut : taxi out | FT (= air time) | taxi in */}
+                {/* Ligne du haut : taxi out | AT (= air time) | taxi in
+                    AT est aligné horizontalement avec FT du bas (les deux sont centrés). */}
                 <div className="flex items-stretch gap-2">
                   <TimeBracket minutes={taxiOut || 0} compact />
-                  <TimeBracket label="FT" minutes={airTime || 0} highlight />
+                  <TimeBracket label="AT" minutes={airTime || 0} highlight />
                   <TimeBracket minutes={taxiIn || 0} compact />
                 </div>
-                {/* Ligne du bas : BT (block time = total) */}
-                <div className="flex"><TimeBracket label="BT" minutes={flightTime || 0} fullWidth /></div>
+                {/* Ligne du bas : FT (flight time / block time = total) */}
+                <div className="flex"><TimeBracket label="FT" minutes={flightTime || 0} fullWidth /></div>
               </div>
             )}
             {/* TTSN avion (Total Time Since New) — TTSN après = TTSN avant + Air Time.
