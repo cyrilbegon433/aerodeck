@@ -2218,6 +2218,45 @@
     // 9b) ÉCRAN — CARNET DE VOL
     // ------------------------------------------------------------------
 
+    // Afficheur Zulu live pour la fiche de vol desktop — style sobre comme le header,
+    // un peu plus grand. Tap pour basculer 2s sur l'heure locale puis revient en Zulu.
+    function FlightZuluClock() {
+      const [now, setNow] = useState(new Date());
+      const [showLocal, setShowLocal] = useState(false);
+      useEffect(() => {
+        const id = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(id);
+      }, []);
+      useEffect(() => {
+        if (!showLocal) return;
+        const id = setTimeout(() => setShowLocal(false), 2000);
+        return () => clearTimeout(id);
+      }, [showLocal]);
+      const pad = n => String(n).padStart(2,'0');
+      const time = showLocal
+        ? `${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+        : `${pad(now.getUTCHours())}:${pad(now.getUTCMinutes())}:${pad(now.getUTCSeconds())}`;
+      return (
+        <button type="button"
+          onClick={() => setShowLocal(true)}
+          title={showLocal ? 'Heure locale (revient en Zulu dans 2s)' : 'Cliquer pour voir l\'heure locale'}
+          className="text-center cursor-pointer select-none transition-colors">
+          <div className="text-sm font-bold tracking-[0.3em]"
+            style={{ color: showLocal ? 'var(--accent)' : 'var(--text-dim)' }}>
+            {showLocal ? 'LOCAL' : 'ZULU'}
+          </div>
+          <div className="font-mono text-4xl font-bold tabular-nums leading-none mt-2"
+            style={{ color: showLocal ? 'var(--accent)' : 'inherit' }}>
+            {time}
+          </div>
+          <div className="text-[11px] italic mt-2 opacity-60"
+            style={{ color: 'var(--text-dim)' }}>
+            {showLocal ? 'retour Zulu…' : 'clic = local'}
+          </div>
+        </button>
+      );
+    }
+
     // Segment visuel "▶— LABEL X.X —◀" pour le diagramme temps de vol.
     // Pas de flex-grow proportionnel : tous les segments ont la même taille minimum
     // pour éviter chevauchement/troncature du texte sur mobile et desktop.
@@ -2479,16 +2518,27 @@
 
           {/* Type de mission : navigation par défaut. Le statut Duo est désormais dérivé
               du type de vol = "Duo/Training" (voir dropdown Type de vol ci-dessous). */}
-          <div className="card p-3 bg-[var(--bg-elev)] flex flex-wrap gap-4">
-            <label className="flex items-center gap-2 select-none cursor-pointer">
-              <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
-                checked={!!f.isNavigation}
-                onChange={e=>set('isNavigation', e.target.checked)} />
-              <span>🧭 {tx('Navigation','Navigation')}</span>
-            </label>
-            <div className="basis-full">
-              <Hint title={tx('À quoi sert Navigation ?','What is Navigation for?')}>
-                {tx('Compte automatiquement les heures de navigation dans Stats.','Automatically counts navigation hours in Stats.')}
+          <div className="flex flex-col items-center gap-3 pt-6 pb-2">
+            <button type="button"
+              onClick={()=>set('isNavigation', !f.isNavigation)}
+              className={`relative inline-flex items-center gap-3 px-6 py-3 rounded-full border-2 font-semibold transition-all select-none ${
+                f.isNavigation
+                  ? 'border-[#38bdf8] bg-[#38bdf8]/15 text-[#38bdf8] shadow-md shadow-[#38bdf8]/20 scale-105'
+                  : 'border-[var(--border)] bg-transparent text-[var(--text-dim)] hover:border-[#38bdf8]/50'
+              }`}>
+              <LucideIcon name="compass" size={22} strokeWidth={2.5} />
+              <span className="text-base">{tx('Navigation / Ferry flight','Navigation / Ferry flight')}</span>
+              {f.isNavigation ? (
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full bg-emerald-500 text-white shadow-md">
+                  <LucideIcon name="check" size={16} strokeWidth={3.5} />
+                </span>
+              ) : (
+                <span className="inline-flex items-center justify-center w-7 h-7 rounded-full border-2 border-[var(--border)] bg-transparent" />
+              )}
+            </button>
+            <div className="w-full">
+              <Hint title={tx('À quoi sert Navigation / Ferry flight ?','What is Navigation / Ferry flight for?')}>
+                {tx('Compte automatiquement les heures de navigation dans Stats et dans le logbook.','Automatically counts navigation hours in Stats and in the logbook.')}
               </Hint>
             </div>
           </div>
@@ -2499,9 +2549,8 @@
                 {tx('Heures Zulu (format HHMM). Flèches J / J+1 si le vol s\'étend sur plusieurs jours.','Zulu times (HHMM format). D / D+1 arrows if the flight spans several days.')}
               </Hint>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              {/* En simu, on n'a pas de roulage : on ne montre que Take Off et Landing.
-                  En vol réel, on garde les 4 (Block Out / TO / LDG / Block In). */}
+            {/* === LAYOUT MOBILE : grille 2 colonnes (label+date au-dessus, input+Now Z dessous) === */}
+            <div className="grid grid-cols-2 gap-3 md:hidden">
               {(isSim
                 ? [
                     ['takeOff', 'Take Off', 'takeOffDateOffset'],
@@ -2518,7 +2567,6 @@
                 const resolvedDate = addDaysISO(f.date, off);
                 return (
                   <div key={k}>
-                    {/* Libellé + mini-bandeau date — date positionnée juste à droite du libellé */}
                     <div className="flex items-center gap-2 mb-1 flex-wrap">
                       <div className="label !mb-0">{label}</div>
                       <div className="flex items-center gap-1 text-[11px] text-[var(--text-dim)]">
@@ -2542,6 +2590,67 @@
                   </div>
                 );
               })}
+            </div>
+
+            {/* === LAYOUT DESKTOP : Zulu clock à gauche (centré verticalement avec la grille),
+                 grille 2×2 légèrement décalée à gauche pour mieux s'aligner avec AT en dessous.
+                 Cellules de gauche → justify-end, cellules de droite → justify-start. === */}
+            <div className="hidden md:block relative">
+              {/* Afficheur Zulu — décalé encore un peu plus à droite, vertical centré sur la grille */}
+              <div className="absolute left-20 top-1/2 -translate-y-1/2">
+                <FlightZuluClock />
+              </div>
+              {/* Grille 2×2 — légèrement décalée à gauche (-translate-x-4) pour aligner avec AT,
+                  taille augmentée (gap + dimensions des inputs) */}
+              <div className="grid grid-cols-2 gap-x-24 gap-y-7 max-w-3xl mx-auto -translate-x-4">
+                {(isSim
+                  ? [
+                      ['takeOff', 'Take Off', 'takeOffDateOffset'],
+                      ['landing', 'Landing',  'landingDateOffset'],
+                    ]
+                  : [
+                      ['blockOut','Block Out','blockOutDateOffset'],
+                      ['takeOff', 'Take Off', 'takeOffDateOffset'],
+                      ['landing', 'Landing',  'landingDateOffset'],
+                      ['blockIn', 'Block In', 'blockInDateOffset'],
+                    ]
+                ).map(([k,label,offsetKey], idx) => {
+                  const off = f[offsetKey] || 0;
+                  const resolvedDate = addDaysISO(f.date, off);
+                  const isLeftCol = idx % 2 === 0;
+                  const isTopRow = idx < 2;
+                  return (
+                    <div key={k} className={`flex items-center gap-4 ${isLeftCol ? 'justify-end' : 'justify-start'} ${isTopRow ? '-mt-3' : ''}`}>
+                      {/* Nom de l'heure à gauche — taille un peu plus grande */}
+                      <div className="text-xl font-bold tracking-wide flex-shrink-0 whitespace-nowrap">{label}</div>
+                      {/* Bloc droit : date centrée pile au-dessus de l'input, Now Z en dessous */}
+                      <div className="flex flex-col items-center gap-1.5">
+                        {/* Date centrée pile au-dessus de l'input */}
+                        <div className="flex items-center gap-1.5 text-base text-[var(--text-dim)]">
+                          <button type="button"
+                            className="w-7 h-7 grid place-items-center rounded bg-[var(--bg-card)] hover:bg-[var(--border)] leading-none text-lg"
+                            onClick={()=>shiftOffset(offsetKey, -1)} title={tx('Jour précédent','Previous day')}>‹</button>
+                          <span className="font-mono font-semibold text-[var(--text)]">{resolvedDate || '—'}</span>
+                          {off !== 0 && (
+                            <span className="text-[var(--accent)] font-semibold">({tx('J','D')}{off > 0 ? '+'+off : off})</span>
+                          )}
+                          <button type="button"
+                            className="w-7 h-7 grid place-items-center rounded bg-[var(--bg-card)] hover:bg-[var(--border)] leading-none text-lg"
+                            onClick={()=>shiftOffset(offsetKey, +1)} title={tx('Jour suivant','Next day')}>›</button>
+                        </div>
+                        {/* Input agrandi */}
+                        <input className="input font-mono text-3xl text-center tracking-widest font-bold py-2.5 w-[170px]"
+                          inputMode="numeric" maxLength={5} placeholder="0830"
+                          value={f[k]} onChange={e=>set(k, e.target.value.replace(/[^0-9:]/g,''))} />
+                        {/* Now Z compact sous l'input */}
+                        <button type="button"
+                          className="btn btn-secondary !px-3 !py-0.5 text-xs mt-0.5"
+                          onClick={()=>fillNow(k)}>Now Z</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
             {/* Diagramme visuel temps : 3 segments du haut (taxi out / FT / taxi in)
                 + 1 segment du bas (BT = block time = total). Les largeurs sont
@@ -7504,7 +7613,13 @@
                   ⬆ Replier
                 </button>
               )}
-              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
+              <button type="button"
+                onClick={onRemove}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-[var(--err)] text-[var(--err)] text-xs font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={12} strokeWidth={2.5} />
+                Retirer
+              </button>
             </div>
           </div>
           {/* Date du plein puis N° facture en dessous (évite l'empiètement quand
@@ -7868,7 +7983,13 @@
               <LucideIcon name="droplet" size={13} strokeWidth={2.5} />
               {tx('Ajout d\'huile','Oil entry')} #{index+1}
             </div>
-            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />{tx('Retirer','Remove')}</span></button>
+            <button type="button"
+              onClick={onRemove}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-[var(--err)] text-[var(--err)] text-xs font-semibold hover:bg-[var(--err)]/10 transition-colors"
+              style={{ background: 'transparent' }}>
+              <LucideIcon name="trash2" size={12} strokeWidth={2.5} />
+              {tx('Retirer','Remove')}
+            </button>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
