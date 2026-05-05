@@ -2077,7 +2077,11 @@
                   <LucideIcon name="check" size={12} strokeWidth={2.5} />
                   {tx('OK archivé','Archived OK')}
                 </div>
-                <div className="truncate text-[var(--text-dim)]">{lang === 'en' && t.labelEn ? t.labelEn : t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
+                {/* Mobile : titre seul (W&B / FPL / OFPL). Desktop : titre + nom fichier. */}
+                <div className="truncate text-[var(--text-dim)]">
+                  {lang === 'en' && t.labelEn ? t.labelEn : t.label}
+                  {d.fileName && <span className="hidden sm:inline"> · {d.fileName}</span>}
+                </div>
               </div>
               <button type="button"
                 title="Retirer ce document"
@@ -2435,8 +2439,8 @@
             </div>
           </div>
 
-          <div className="card p-3 bg-[var(--bg-elev)]">
-            <div className="mb-2">
+          <div className="space-y-3">
+            <div>
               <Hint title={tx('Format des heures','Time format')}>
                 {tx('Heures Zulu (format HHMM). Flèches J / J+1 si le vol s\'étend sur plusieurs jours.','Zulu times (HHMM format). D / D+1 arrows if the flight spans several days.')}
               </Hint>
@@ -3358,11 +3362,16 @@
             onClose={()=>setShowForm(false)}
             title={editing ? 'Modifier l\'avion' : 'Nouvel avion'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer cet avion ? Les vols associés ne seront pas effacés.')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <AircraftForm initial={editing} flights={flights} onCancel={()=>setShowForm(false)} onSave={(a)=>{ onAddOrUpdate(a); setShowForm(false); }} />
@@ -4218,11 +4227,16 @@
             onClose={()=>setShowForm(false)}
             title={editing ? 'Modifier la facture' : 'Nouvelle facture'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer cette facture ? (Préfère un export JSON avant.)')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <DocumentForm
@@ -5944,7 +5958,7 @@
             onClose={()=>setShowForm(false)}
             title={editing ? `Vol ${editing.date} ${editing.from}→${editing.to}` : 'Vol'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
                   onDeleteFlight && onDeleteFlight(editing.id);
                   setShowForm(false);
@@ -6369,11 +6383,16 @@
             onClose={()=>setShowForm(false)}
             title={editing ? 'Modifier la défaillance' : 'Nouvelle défaillance'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer cette entrée maintenance ? (Préfère un export JSON avant.)')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <MaintenanceForm
@@ -6390,12 +6409,17 @@
             onClose={()=>setShowMechVisitForm(false)}
             title={editingMechVisit ? 'Modifier la visite mécanicien' : 'Nouvelle visite mécanicien'}
             footer={editingMechVisit && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer cette visite mécanicien ?')) {
                   onMechanicVisitDelete && onMechanicVisitDelete(editingMechVisit.id);
                   setShowMechVisitForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <MechanicVisitForm
@@ -6712,11 +6736,16 @@
             onClose={()=>setShowForm(false)}
             title={editing ? 'Modifier le document' : 'Nouveau document compagnie'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer ce document ? (Préfère un export JSON avant.)')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <CompanyDocForm
@@ -7209,11 +7238,16 @@
             onClose={()=>setShowForm(false)}
             title={editing ? 'Modifier le pilote' : 'Nouveau pilote'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer ce pilote du roster ? Les vols existants gardent leur référence (id non résolu).')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <PilotForm initial={editing} onCancel={()=>setShowForm(false)} onSave={(p)=>{ onAddOrUpdate(p); setShowForm(false); }} />
@@ -7735,7 +7769,7 @@
 
       return (
         <div className="card p-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pr-3">
             <div className="label !mb-0 inline-flex items-center gap-1.5">
               <span style={{ color: 'var(--accent-2)' }}><LucideIcon name="fuel" size={14} strokeWidth={2.5} /></span>
               {tx('Carburant Avion','Aircraft Fuel')}
@@ -7852,7 +7886,7 @@
       }, { qt:0, L:0 });
       return (
         <div className="card p-3">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between pr-3">
             <div className="label !mb-0 inline-flex items-center gap-1.5">
               <span style={{ color: '#a16207' }}><LucideIcon name="droplet" size={14} strokeWidth={2.5} /></span>
               {tx('Huile moteur','Engine oil')}
@@ -8261,12 +8295,17 @@
             onClose={()=>setShowForm(false)}
             title={editing ? `Vol ${editing.date} ${editing.from}→${editing.to}` : 'Vol'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (confirm('Supprimer définitivement ce vol ? (Préfère un export JSON avant.)')) {
                   onDeleteFlight && onDeleteFlight(editing.id);
                   setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <FlightForm
@@ -8672,7 +8711,7 @@
               ? (editing.source === 'auto' ? 'Modifier la duty (depuis auto)' : 'Modifier la duty manuelle')
               : 'Nouvelle duty manuelle'}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
+              <button onClick={()=>{
                 if (editing.source === 'auto') {
                   alert("Cette duty est calculée automatiquement depuis les vols. Pour la retirer, supprime les vols correspondants dans le carnet.");
                   return;
@@ -8680,7 +8719,12 @@
                 if (confirm('Supprimer cette période duty manuelle ? La duty auto reprendra si des vols existent ce jour-là.')) {
                   handleDelete(editing.id); setShowForm(false);
                 }
-              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
+              }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                Supprimer
+              </button>
             )}
           >
             <DutyForm
