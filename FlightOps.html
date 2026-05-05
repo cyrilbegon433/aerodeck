@@ -7993,18 +7993,18 @@
                 <thead className="text-[var(--text-dim)] sticky top-0 bg-[var(--bg-card)] z-10">
                   <tr className="text-left uppercase tracking-wide">
                     <th className="px-1.5 py-2">Date</th>
-                    <th className="px-1.5 py-2">Trajet</th>
-                    <th className="px-1.5 py-2">Avion</th>
-                    <th className="px-1.5 py-2 text-center" title="Classe">Cl.</th>
-                    <th className="px-1.5 py-2 text-center">FT</th>
-                    <th className="px-1.5 py-2 text-center" title="IFR"><span className="inline-flex justify-center"><LucideIcon name="radio" size={14} strokeWidth={2.25} /></span></th>
-                    <th className="px-1.5 py-2 text-center" title="Navigation"><span className="inline-flex justify-center"><LucideIcon name="compass" size={14} strokeWidth={2.25} /></span></th>
-                    <th className="px-1.5 py-2 text-center" title="Duo"><span className="inline-flex justify-center"><LucideIcon name="users" size={14} strokeWidth={2.25} /></span></th>
-                    <th className="px-1.5 py-2 text-center" title="Nuit"><span className="inline-flex justify-center"><LucideIcon name="moon" size={14} strokeWidth={2.25} /></span></th>
+                    <th className="px-1.5 py-2">{tx('Avion','Aircraft')}</th>
                     <th className="px-1.5 py-2">PIC</th>
                     <th className="px-1.5 py-2">SIC</th>
-                    <th className="px-1.5 py-2 text-center" title="Décollages / Atterrissages">TO/LD</th>
-                    <th className="px-1.5 py-2">Type</th>
+                    <th className="px-1.5 py-2" title={tx('Type de vol','Flight type')}>{tx('Type','Type')}</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Régime de vol','Flight rules')}>{tx('Régime','Rules')}</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Monomoteur','Single-engine')}>{tx('Monomoteur','SE')}</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Multimoteur','Multi-engine')}>{tx('Multimoteur','ME')}</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Heure IR (instrument)','IR time (instrument)')}>IR</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Décollages / Atterrissages','Take-offs / Landings')}>T/LDG</th>
+                    <th className="px-1.5 py-2 text-center" title="Navigation">Nav</th>
+                    <th className="px-1.5 py-2">{tx('Départ','Dep')}</th>
+                    <th className="px-1.5 py-2">{tx('Arrivée','Arr')}</th>
                     <th className="px-1.5 py-2 text-center"></th>
                   </tr>
                 </thead>
@@ -8016,35 +8016,40 @@
                     const ft = f.flightTime || 0;
                     const ifrTime = f.rules === 'IFR' ? ft : 0;
                     const navTime = f.isNavigation ? ft : 0;
-                    const duoTime = isDuoFlight(f) ? ft : 0;
+                    // Heure cellule = mono ou multi selon nombre de moteurs de l'avion
+                    const ec = ac?.engineCount || 1;
+                    const seTime = ec <= 1 ? ft : 0;
+                    const meTime = ec >= 2 ? ft : 0;
+                    const totalTO  = ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
+                    const totalLDG = ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
                     return (
                       <tr key={f.id} className="border-t border-[var(--border)] hover:bg-[var(--bg-elev)] cursor-pointer"
                           onClick={()=>{ setEditing(f); setShowForm(true); }}>
                         <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.date}</td>
-                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.from}→{f.to}</td>
                         <td className="px-1.5 py-1.5 leading-tight">
                           <div className="font-mono whitespace-nowrap">{ac?.registration||'?'}</div>
                           <div className="text-[10px] text-[var(--text-dim)] truncate max-w-[100px]">{ac?.type || '—'}</div>
                         </td>
-                        <td className="px-1.5 py-1.5 text-center whitespace-nowrap">{aircraftClass(ac)}</td>
-                        <td className="px-1.5 py-1.5 text-center font-mono">{fmtDuration(f.flightTime)}</td>
-                        <td className="px-1.5 py-1.5 text-center font-mono">{ifrTime > 0 ? fmtDuration(ifrTime) : '—'}</td>
-                        <td className="px-1.5 py-1.5 text-center font-mono">{navTime > 0 ? fmtDuration(navTime) : '—'}</td>
-                        <td className="px-1.5 py-1.5 text-center font-mono">{duoTime > 0 ? fmtDuration(duoTime) : '—'}</td>
-                        <td className="px-1.5 py-1.5 text-center font-mono">{(f.nightTime||0)>0 ? fmtDuration(f.nightTime) : '—'}</td>
                         <td className="px-1.5 py-1.5 truncate max-w-[110px]">{pic ? pilotDisplayName(pic) : '—'}</td>
                         <td className="px-1.5 py-1.5 truncate max-w-[110px]">{sic ? pilotDisplayName(sic) : '—'}</td>
-                        <td className="px-1.5 py-1.5 text-center font-mono whitespace-nowrap">
-                          {((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0)}/{((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0)}
-                        </td>
                         <td className="px-1.5 py-1.5 whitespace-nowrap text-[10px]">{flightTypeLabel(f.flightType, lang)}</td>
+                        <td className="px-1.5 py-1.5 text-center whitespace-nowrap">{f.rules || '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{seTime > 0 ? fmtDuration(seTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{meTime > 0 ? fmtDuration(meTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{ifrTime > 0 ? fmtDuration(ifrTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono whitespace-nowrap">
+                          {totalTO}/{totalLDG}
+                        </td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{navTime > 0 ? fmtDuration(navTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.from || '—'}</td>
+                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.to || '—'}</td>
                         <td className="px-1.5 py-1.5 text-center">
                           <button type="button"
                             className="text-[var(--err)] hover:opacity-80"
-                            title="Supprimer ce vol"
+                            title={tx('Supprimer ce vol','Delete this flight')}
                             onClick={(e)=>{
                               e.stopPropagation();
-                              if (confirm(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`)) {
+                              if (confirm(tx(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`,`Permanently delete the flight on ${f.date} (${f.from}→${f.to})? Export JSON first as backup.`))) {
                                 onDeleteFlight && onDeleteFlight(f.id);
                               }
                             }}><LucideIcon name="trash2" size={16} strokeWidth={2.25} /></button>
