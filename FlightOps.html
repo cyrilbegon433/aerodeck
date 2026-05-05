@@ -517,7 +517,7 @@
         'aircraft.airframeHours':'Airframe hours (initial)','aircraft.engineHours':'Engine hours (initial)',
         'aircraft.deadlines':'Deadlines (insurance, ARC, inspections…)','aircraft.empty':'Add an aircraft first.',
         'pilot.title':'Pilots','pilot.new':'+ New pilot','pilot.edit':'Edit pilot','pilot.empty':'No pilots yet.',
-        'cal.title':'Calendar','cal.exportIcs':'Export .ics','cal.importIcs':'Import .ics (Ops)',
+        'cal.title':'Calendar','cal.exportIcs':'Upload .ics','cal.importIcs':'Download .ics (Ops)',
         'cal.upcoming':'Upcoming flights (10)','cal.noUpcoming':'No upcoming flights.',
         'mx.title':'Maintenance','mx.new':'+ New defect','mx.empty':'No defects recorded.',
         'exp.title':'Documents / Invoices','exp.new':'+ New invoice','exp.empty':'No invoices yet.',
@@ -3807,6 +3807,7 @@
 
     function DocumentsScreen({ documents, aircraft, categories, pilots = [], flights = [], mechanicVisits = [], onAddOrUpdate, onDelete, onOpenMaintenanceTab }) {
       const t = useT();
+      const tx = useTx();
       const [showForm, setShowForm] = useState(false);
       const [editing, setEditing] = useState(null);
       const [filterCat, setFilterCat] = useState('all');
@@ -3814,6 +3815,28 @@
       const [sort, setSort] = useState('date_desc'); // date_desc | date_asc | amount_desc | supplier
       // Mobile-only : repli des filtres date + grille factures pour focus sur breakdown
       const [showCardsAndDates, setShowCardsAndDates] = useState(true);
+      // Menu déroulant pour l'export (ZIP / CSV / etc.)
+      const [exportMenuOpen, setExportMenuOpen] = useState(false);
+      const exportMenuRef = useRef(null);
+      useEffect(() => {
+        if (!exportMenuOpen) return;
+        function handler(e) {
+          if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+            setExportMenuOpen(false);
+          }
+        }
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+      }, [exportMenuOpen]);
+      // Date de la dernière export (stockée en localStorage). Sert à n'inclure que
+      // les nouveaux documents lors d'une export incrémentale.
+      function getLastExportDate() {
+        try { return localStorage.getItem('expenseExportLastDate') || ''; } catch { return ''; }
+      }
+      function setLastExportDate(iso) {
+        try { localStorage.setItem('expenseExportLastDate', iso); } catch {}
+      }
+      const lastExportDate = getLastExportDate();
       // Filtres avancés (apparaissent quand une catégorie est sélectionnée)
       const now = new Date();
       const [filterYear, setFilterYear] = useState(0);   // 0 = toutes années
@@ -4083,6 +4106,155 @@
         ? sortedCats
         : (usedCats.length > 0 ? usedCats : initialCatsIfEmpty);
 
+      // ---- Helpers d'export ----
+      function safeName(s) { return String(s||'').replace(/[\/\\?%*:|"<>]/g, '-').slice(0, 60); }
+      function extFor(mime, fallback) {
+        if (mime === 'application/pdf') return 'pdf';
+        if (mime?.startsWith('image/')) return mime.split('/')[1].replace('jpeg','jpg');
+        return fallback || 'bin';
+      }
+      function dataUrlToBytes(dataUrl) {
+        const base64 = (dataUrl||'').split(',')[1] || '';
+        const binary = atob(base64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        return bytes;
+      }
+      // Filtre les documents selon la stratégie : 'incremental' (depuis dernière
+      // export) ou 'all' (tout). Retourne un tableau filtré.
+      function filterDocsForExport(strategy) {
+        const lastTs = (strategy === 'incremental' && lastExportDate) ? Date.parse(lastExportDate) : 0;
+        return documents.filter(d => {
+          if (lastTs && (d.addedAt || 0) <= lastTs) return false;
+          return true;
+        });
+      }
+      // Export ZIP : un dossier "Dépenses_<date>" avec un sous-dossier par catégorie
+      // qui CONTIENT au moins une facture. Les catégories vides ne créent aucun dossier.
+      async function exportZipExpenses(strategy) {
+        if (typeof JSZip === 'undefined') { alert('JSZip non disponible.'); return; }
+        const docs = filterDocsForExport(strategy).filter(d => d.dataUrl); // uniquement avec facture
+        if (docs.length === 0) {
+          alert(strategy === 'incremental'
+            ? tx('Aucune nouvelle facture depuis la dernière export.','No new invoice since last export.')
+            : tx('Aucune facture à exporter.','No invoice to export.'));
+          return;
+        }
+        // Regroupement par catégorie (uniquement celles avec au moins 1 facture)
+        const byCat = {};
+        for (const d of docs) {
+          const k = d.categoryId || 'other';
+          if (!byCat[k]) byCat[k] = [];
+          byCat[k].push(d);
+        }
+        const today = new Date().toISOString().slice(0,10);
+        const root = `Dépenses_${today}`;
+        const zip = new JSZip();
+        for (const [catId, list] of Object.entries(byCat)) {
+          const cat = categories.find(c => c.id === catId);
+          const catName = safeName(cat?.name || catId);
+          for (const d of list) {
+            const ext = extFor(d.mime, (d.fileName||'').split('.').pop() || 'bin');
+            const supplier = safeName(d.supplier || 'sans-fournisseur');
+            const dateStr = d.date || 'sans-date';
+            const amt = d.amount ? `_${parseFloat(d.amount).toFixed(2)}${d.currency||'EUR'}` : '';
+            const fname = `${dateStr}_${supplier}${amt}.${ext}`;
+            try {
+              zip.file(`${root}/${catName}/${fname}`, dataUrlToBytes(d.dataUrl));
+            } catch (e) {
+              console.error('Failed to add file', d.id, e);
+            }
+          }
+        }
+        const blob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${root}.zip`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setLastExportDate(new Date().toISOString());
+        setExportMenuOpen(false);
+        alert(tx(`Export terminé : ${docs.length} facture(s) dans ${Object.keys(byCat).length} catégorie(s).`,
+                 `Export complete: ${docs.length} invoice(s) in ${Object.keys(byCat).length} categor${Object.keys(byCat).length>1?'ies':'y'}.`));
+      }
+      // Export CSV : récap des dépenses (avec ou sans facture) — métadonnées seules
+      function exportCsvExpenses(strategy) {
+        const docs = filterDocsForExport(strategy);
+        if (docs.length === 0) {
+          alert(strategy === 'incremental'
+            ? tx('Aucune nouvelle dépense depuis la dernière export.','No new expense since last export.')
+            : tx('Aucune dépense à exporter.','No expense to export.'));
+          return;
+        }
+        const headers = ['date','fournisseur','categorie','HT','taxe','TTC','devise','avion','pilote','fichier','notes'];
+        const rows = docs.map(d => {
+          const cat = categories.find(c => c.id === d.categoryId);
+          const ac = aircraft.find(a => a.id === d.aircraftId);
+          const pic = pilots.find(p => p.id === d.pilotId);
+          return [
+            d.date || '',
+            d.supplier || '',
+            cat?.name || d.categoryId || '',
+            d.amountHT || '',
+            d.amountTax || '',
+            d.amount || '',
+            d.currency || 'EUR',
+            ac?.registration || '',
+            pic ? pilotDisplayName(pic) : '',
+            d.fileName || '',
+            (d.notes||'').replace(/[\n\r]+/g, ' '),
+          ];
+        });
+        const esc = (v) => {
+          const s = String(v??'');
+          if (/[",;\n]/.test(s)) return '"' + s.replace(/"/g,'""') + '"';
+          return s;
+        };
+        const out = [headers.join(';'), ...rows.map(r => r.map(esc).join(';'))].join('\n');
+        const blob = new Blob(['\ufeff' + out], { type: 'text/csv;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const today = new Date().toISOString().slice(0,10);
+        a.href = url;
+        a.download = `Dépenses_${today}.csv`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setLastExportDate(new Date().toISOString());
+        setExportMenuOpen(false);
+      }
+      // Export JSON : dump complet des dépenses (incluant tous les champs)
+      function exportJsonExpenses(strategy) {
+        const docs = filterDocsForExport(strategy);
+        if (docs.length === 0) {
+          alert(strategy === 'incremental'
+            ? tx('Aucune nouvelle dépense depuis la dernière export.','No new expense since last export.')
+            : tx('Aucune dépense à exporter.','No expense to export.'));
+          return;
+        }
+        // On retire les dataUrl (binaires) pour rester léger
+        const lite = docs.map(({ dataUrl, thumbnail, ocrText, ...rest }) => rest);
+        const out = JSON.stringify({ exportedAt: new Date().toISOString(), count: lite.length, expenses: lite }, null, 2);
+        const blob = new Blob([out], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        const today = new Date().toISOString().slice(0,10);
+        a.href = url;
+        a.download = `Dépenses_${today}.json`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        setLastExportDate(new Date().toISOString());
+        setExportMenuOpen(false);
+      }
+      function resetLastExport() {
+        if (confirm(tx('Réinitialiser la date de dernière export ? La prochaine export incrémentale inclura toutes les dépenses.','Reset last export date? Next incremental export will include all expenses.'))) {
+          setLastExportDate('');
+          setExportMenuOpen(false);
+          // Force re-render
+          setShowAllCats(s => s);
+        }
+      }
+
       return (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -4095,8 +4267,10 @@
             )}
           </div>
 
-          {/* === HERO : Total + nb factures, design type "carte bancaire" === */}
-          <div className="card p-4 relative overflow-hidden"
+          {/* === HERO : Total + nb factures, design type "carte bancaire" ===
+              Pas de overflow-hidden sur le conteneur : le menu déroulant
+              "Exporter" doit pouvoir s'étendre sous l'encadré. */}
+          <div className="card p-4 relative"
                style={{
                  background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-2) 60%, rgba(56,189,248,0.08) 100%)',
                  borderColor: 'rgba(56,189,248,0.25)',
@@ -4124,7 +4298,83 @@
                   {totalCount} facture{totalCount>1?'s':''} · {usedCats.length} catégorie{usedCats.length>1?'s':''} active{usedCats.length>1?'s':''}
                 </div>
               </div>
-              <div className="text-5xl opacity-20 select-none" style={{ filter: 'drop-shadow(0 4px 12px rgba(56,189,248,.3))' }}>✈</div>
+              {/* Bouton export avec menu déroulant : ZIP (factures organisées par catégorie) /
+                  CSV (récap métadonnées) / JSON (dump complet). Incrémental par défaut
+                  (depuis la dernière export) ou tout. */}
+              <div className="relative" ref={exportMenuRef}>
+                <button className="btn btn-secondary"
+                  onClick={()=>setExportMenuOpen(o=>!o)}
+                  title={tx('Exporter les dépenses','Upload expenses')}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <LucideIcon name="upload" size={14} strokeWidth={2.25} />
+                    {tx('Exporter','Upload')}
+                  </span>
+                </button>
+                {exportMenuOpen && (
+                  <div className="absolute right-0 mt-2 z-30 w-72 rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden"
+                    style={{ background: 'var(--bg-card)' }}>
+                    <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-elev)]">
+                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-bold">
+                        {tx('Format d\'export','Upload format')}
+                      </div>
+                      <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
+                        {lastExportDate
+                          ? tx('Dernière export :','Last upload:')+' '+new Date(lastExportDate).toLocaleString(t('lang.code')==='en'?'en-US':'fr-FR')
+                          : tx('Aucune export précédente','No previous upload')}
+                      </div>
+                    </div>
+                    {/* ZIP — incrémental */}
+                    <button type="button"
+                      onClick={()=>exportZipExpenses('incremental')}
+                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                      <LucideIcon name="folder" size={18} strokeWidth={2.25} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold">{tx('ZIP — depuis dernière export','ZIP — since last upload')}</div>
+                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Dossier par catégorie · factures uniquement','Folder per category · invoices only')}</div>
+                      </div>
+                    </button>
+                    {/* ZIP — tout */}
+                    <button type="button"
+                      onClick={()=>exportZipExpenses('all')}
+                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                      <LucideIcon name="folder" size={18} strokeWidth={2.25} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold">{tx('ZIP — toutes les factures','ZIP — all invoices')}</div>
+                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Export complet, ignore l\'historique','Full upload, ignores history')}</div>
+                      </div>
+                    </button>
+                    {/* CSV */}
+                    <button type="button"
+                      onClick={()=>exportCsvExpenses('incremental')}
+                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                      <LucideIcon name="file" size={18} strokeWidth={2.25} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold">{tx('CSV — récap métadonnées','CSV — metadata summary')}</div>
+                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Tableur (Excel, Numbers, Sheets)','Spreadsheet (Excel, Numbers, Sheets)')}</div>
+                      </div>
+                    </button>
+                    {/* JSON */}
+                    <button type="button"
+                      onClick={()=>exportJsonExpenses('incremental')}
+                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                      <LucideIcon name="database" size={18} strokeWidth={2.25} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold">JSON</div>
+                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Dump structuré (sans les fichiers)','Structured dump (no files)')}</div>
+                      </div>
+                    </button>
+                    {/* Reset */}
+                    {lastExportDate && (
+                      <button type="button"
+                        onClick={resetLastExport}
+                        className="w-full text-left px-3 py-2 hover:bg-[var(--err)]/10 text-[var(--err)] text-xs flex items-center gap-2">
+                        <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
+                        {tx('Réinitialiser l\'historique d\'export','Reset upload history')}
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
             {/* Mini barre stacked des catégories proportionnelles */}
             {totalAmount > 0 && (
@@ -5592,9 +5842,9 @@
           <div className="card p-3 space-y-2">
             <div className="label">Sauvegarde / Restauration</div>
             <div className="flex flex-wrap gap-2">
-              <button className="btn btn-primary" onClick={onExportJSON}><span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Exporter sauvegarde JSON</span></button>
+              <button className="btn btn-primary" onClick={onExportJSON}><span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />{tx('Exporter sauvegarde JSON','Upload JSON backup')}</span></button>
               <label className="btn btn-secondary cursor-pointer">
-                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />Importer sauvegarde JSON</span>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />{tx('Importer sauvegarde JSON','Download JSON backup')}</span>
                 <input type="file" accept="application/json" className="hidden"
                   onChange={(e)=>{
                     const file = e.target.files?.[0];
@@ -9044,12 +9294,12 @@
             <h2 className="text-xl font-semibold">Staff — Logbook</h2>
             <div className="flex items-center gap-2 flex-wrap">
               <button className="btn btn-secondary" onClick={exportTableCSV}
-                title={tx('Télécharger un fichier CSV (Excel, Numbers, Sheets)','Download a CSV file (Excel, Numbers, Sheets)')}>
-                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />Export CSV</span>
+                title={tx('Télécharger un fichier CSV (Excel, Numbers, Sheets)','Get a CSV file (Excel, Numbers, Sheets)')}>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />{tx('Export CSV','Upload CSV')}</span>
               </button>
               <button className="btn btn-secondary" onClick={exportTablePDF}
                 title={tx('Imprimer ou sauvegarder en PDF (paysage A4)','Print or save as PDF (A4 landscape)')}>
-                <span className="inline-flex items-center gap-1.5"><LucideIcon name="fileText" size={14} strokeWidth={2.25} />Export PDF</span>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />{tx('Export PDF','Upload PDF')}</span>
               </button>
             </div>
           </div>
@@ -10230,9 +10480,9 @@
                 title="Affiche la popup d'archivage automatique (test sans attendre que le stockage soit plein)">
                 🧪 Tester la popup d'archivage
               </button>
-              <button className="btn btn-primary" onClick={onExportJSON}><span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Exporter sauvegarde JSON</span></button>
+              <button className="btn btn-primary" onClick={onExportJSON}><span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />{tx('Exporter sauvegarde JSON','Upload JSON backup')}</span></button>
               <label className="btn btn-secondary cursor-pointer">
-                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />Importer sauvegarde JSON</span>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />{tx('Importer sauvegarde JSON','Download JSON backup')}</span>
                 <input type="file" accept="application/json" className="hidden"
                   onChange={(e)=>{
                     const file = e.target.files?.[0];
