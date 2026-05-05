@@ -148,8 +148,23 @@
       border-radius: 12px;
       padding: 10px 12px;
       width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
       font-size: 16px;          /* >= 16px évite le zoom auto iOS */
       transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
+    }
+    /* Sur iOS Safari, <input type="date"> a une largeur intrinsèque (calendrier
+       natif) qui peut dépasser son conteneur dans une grille. On force le
+       confinement : box-sizing + max-width évite tout débordement de la fiche. */
+    input[type="date"].input,
+    input[type="time"].input,
+    input[type="datetime-local"].input {
+      width: 100%;
+      max-width: 100%;
+      min-width: 0;
+      box-sizing: border-box;
+      -webkit-appearance: none;  /* aligne le rendu iOS sur le style standard */
     }
     .input:hover, .select:hover, .textarea:hover { border-color: color-mix(in oklab, var(--border) 60%, var(--accent) 40%); }
     .input:focus, .select:focus, .textarea:focus {
@@ -2636,7 +2651,7 @@
             const flightDone = !!f.landing;
             const showWarning = flightDone && allZero;
             return (
-              <div className="card p-3 bg-[var(--bg-elev)]">
+              <div className="space-y-2">
                 <div className="label">{tx('Décollages / Atterrissages par pilote','Take-offs / Landings per pilot')}</div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
