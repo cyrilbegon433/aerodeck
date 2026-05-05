@@ -3554,7 +3554,9 @@
         id: null,
         date: todayZuluDate(),
         supplier: '',
-        amount: '',
+        amount: '',            // TTC (toujours présent — anciennes dépenses : amount = TTC)
+        amountHT: '',          // HT (optionnel ; vide pour les dépenses legacy)
+        amountTax: '',         // Taxe(s) (optionnel ; vide pour les dépenses legacy)
         currency: 'EUR',
         categoryId: 'other',
         aircraftId: '',
@@ -3716,10 +3718,41 @@
               <input className="input" placeholder="ex: Total Energies" value={d.supplier} onChange={e=>set('supplier', e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="col-span-2">
-              <div className="label">Montant</div>
-              <input type="number" step="0.01" className="input" value={d.amount} onChange={e=>set('amount', e.target.value)} />
+          {/* HT + Taxe + TTC : si HT ou Taxe est saisi, TTC se calcule automatiquement
+              (TTC = HT + Taxe). TTC reste éditable manuellement (rétrocompat avec
+              les anciennes dépenses qui n'avaient qu'un seul champ Montant). */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div>
+              <div className="label">HT</div>
+              <input type="number" step="0.01" className="input" placeholder="0.00" value={d.amountHT}
+                onChange={e=>{
+                  const ht = e.target.value;
+                  setD(p => {
+                    const tax = parseFloat(p.amountTax) || 0;
+                    const htNum = parseFloat(ht) || 0;
+                    const ttc = ht === '' && !p.amountTax ? p.amount : (htNum + tax).toFixed(2);
+                    return { ...p, amountHT: ht, amount: ttc };
+                  });
+                }} />
+            </div>
+            <div>
+              <div className="label">Taxe(s)</div>
+              <input type="number" step="0.01" className="input" placeholder="0.00" value={d.amountTax}
+                onChange={e=>{
+                  const tax = e.target.value;
+                  setD(p => {
+                    const ht = parseFloat(p.amountHT) || 0;
+                    const taxNum = parseFloat(tax) || 0;
+                    const ttc = tax === '' && !p.amountHT ? p.amount : (ht + taxNum).toFixed(2);
+                    return { ...p, amountTax: tax, amount: ttc };
+                  });
+                }} />
+            </div>
+            <div>
+              <div className="label">TTC</div>
+              <input type="number" step="0.01" className="input font-semibold" placeholder="0.00"
+                value={d.amount}
+                onChange={e=>set('amount', e.target.value)} />
             </div>
             <div>
               <div className="label">Devise</div>
@@ -3941,6 +3974,23 @@
         return m;
       }, [documentsAll]);
 
+      // Totaux HT et Taxe par catégorie. Si la dépense n'a pas d'amountHT/amountTax
+      // saisis (legacy), on incrémente juste le TTC sans gonfler HT ou Taxe — la
+      // colonne reste vide pour ces dépenses. Les visites mécanicien virtuelles
+      // n'ont pas de breakdown : on les exclut de HT/Tax (TTC seul).
+      const htTaxByCat = useMemo(() => {
+        const m = {};
+        for (const d of documents) {
+          const k = d.categoryId || 'other';
+          if (!m[k]) m[k] = { ht: 0, tax: 0, anyHT: false };
+          const ht = parseFloat(d.amountHT);
+          const tax = parseFloat(d.amountTax);
+          if (!isNaN(ht)) { m[k].ht += ht; m[k].anyHT = true; }
+          if (!isNaN(tax)) { m[k].tax += tax; }
+        }
+        return m;
+      }, [documents]);
+
       // Carburant avion supplémentaire saisi dans les fiches vol mais sans
       // facture rattachée (les pleins avec invoiceDocId sont déjà comptés dans
       // documents). Évite le double comptage.
@@ -4002,17 +4052,26 @@
         return Object.entries(m).sort((a,b) => b[1]-a[1])[0]?.[0] || 'EUR';
       }, [documents]);
 
-      // Catégories triées : celles avec dépenses d'abord, par montant décroissant
+      // Catégories triées : celles avec dépenses d'abord, par montant décroissant.
+      // Ajout des breakdowns HT et Tax (somme des dépenses de la catégorie).
       const sortedCats = useMemo(() => {
         return [...categories]
-          .map(c => ({ ...c, total: totalsByCat[c.id]||0, count: countsByCat[c.id]||0 }))
+          .map(c => ({
+            ...c,
+            total: totalsByCat[c.id]||0,
+            count: countsByCat[c.id]||0,
+            ht: htTaxByCat[c.id]?.ht || 0,
+            tax: htTaxByCat[c.id]?.tax || 0,
+            hasHT: !!htTaxByCat[c.id]?.anyHT,
+          }))
           .sort((a,b) => b.total - a.total);
-      }, [categories, totalsByCat, countsByCat]);
+      }, [categories, totalsByCat, countsByCat, htTaxByCat]);
       const usedCats = sortedCats.filter(c => c.total > 0 || c.count > 0);
       // Si aucune dépense saisie, on affiche par défaut les catégories des groupes
       // Aéronef + Transport sol pour montrer la structure (sinon l'écran serait vide).
       const initialCatsIfEmpty = sortedCats.filter(c => c.group === 'Aéronef' || c.group === 'Transport sol');
-      const [showAllCats, setShowAllCats] = useState(false);
+      // Par défaut : toutes les catégories visibles (mobile + desktop).
+      const [showAllCats, setShowAllCats] = useState(true);
       const visibleCats = showAllCats
         ? sortedCats
         : (usedCats.length > 0 ? usedCats : initialCatsIfEmpty);
@@ -4089,7 +4148,8 @@
                   {showAllCats ? 'Masquer les vides' : `+ Voir toutes (${categories.length})`}
                 </button>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {/* === MOBILE : grille de tuiles (inchangé, conservé pour les petits écrans) === */}
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 md:hidden">
                 {/* Tuile "Toutes" */}
                 <button type="button"
                   onClick={()=>setFilterCat('all')}
@@ -4131,6 +4191,70 @@
                         {c.total.toFixed(0)} <span className="text-[10px] opacity-70">{mainCurrency}</span>
                       </div>
                       <div className="text-[10px] text-[var(--text-dim)]">{c.count} facture{c.count>1?'s':''}</div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* === DESKTOP : lignes pleine largeur avec colonnes HT / Taxe(s) / TTC à droite ===
+                   Même design (couleurs + icônes Lucide) mais en lignes pour exploiter la largeur. */}
+              <div className="hidden md:block space-y-1.5">
+                {/* En-tête colonnes */}
+                <div className="grid items-center px-3 text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold"
+                  style={{ gridTemplateColumns: '44px 1fr 80px 1fr 1fr 1fr' }}>
+                  <div></div>
+                  <div>Catégorie</div>
+                  <div className="text-right">Factures</div>
+                  <div className="text-right">HT</div>
+                  <div className="text-right">Taxe(s)</div>
+                  <div className="text-right">TTC</div>
+                </div>
+                {/* Ligne "Toutes" */}
+                <button type="button"
+                  onClick={()=>setFilterCat('all')}
+                  className={`card grid items-center w-full px-3 py-2.5 text-left transition-all hover:bg-[var(--bg-elev)] ${filterCat==='all' ? 'ring-2 ring-[var(--accent)]' : ''}`}
+                  style={{ gridTemplateColumns: '44px 1fr 80px 1fr 1fr 1fr', background: filterCat==='all' ? 'rgba(56,189,248,0.10)' : undefined }}>
+                  <div className="grid place-items-center w-9 h-9 rounded-xl"
+                    style={{ background: 'rgba(56,189,248,0.18)', color: 'var(--accent)' }}>
+                    <LucideIcon name="globe" size={18} strokeWidth={2.25} />
+                  </div>
+                  <div className="font-semibold">Toutes</div>
+                  <div className="text-right text-xs text-[var(--text-dim)] font-mono tabular-nums">{totalCount}</div>
+                  <div className="text-right text-[var(--text-dim)] font-mono tabular-nums">—</div>
+                  <div className="text-right text-[var(--text-dim)] font-mono tabular-nums">—</div>
+                  <div className="text-right font-mono tabular-nums font-bold text-[var(--accent)]">
+                    {totalAmount.toFixed(2)} <span className="text-[10px] opacity-70">{mainCurrency}</span>
+                  </div>
+                </button>
+                {/* Lignes catégories */}
+                {visibleCats.map(c => {
+                  const isActive = filterCat === c.id;
+                  const lucideName = CATEGORY_LUCIDE[c.id];
+                  const showBreakdown = c.hasHT || c.tax > 0;
+                  return (
+                    <button key={c.id} type="button"
+                      onClick={()=>setFilterCat(isActive ? 'all' : c.id)}
+                      className={`card grid items-center w-full px-3 py-2.5 text-left transition-all hover:bg-[var(--bg-elev)] ${isActive ? 'ring-2' : ''}`}
+                      style={{
+                        gridTemplateColumns: '44px 1fr 80px 1fr 1fr 1fr',
+                        background: isActive ? c.color + '18' : c.color + '08',
+                        borderColor: isActive ? c.color : c.color + '40',
+                        ...(isActive ? { '--tw-ring-color': c.color } : {}),
+                      }}>
+                      {lucideName
+                        ? <CategoryIconChip name={lucideName} color={c.color} size={36} iconSize={18} />
+                        : <div className="grid place-items-center w-9 h-9 rounded-xl text-xl" style={{ background: c.color + '22' }}>{c.icon}</div>}
+                      <div className="font-semibold truncate" title={c.name}>{c.name}</div>
+                      <div className="text-right text-xs text-[var(--text-dim)] font-mono tabular-nums">{c.count}</div>
+                      <div className="text-right font-mono tabular-nums" style={{ color: showBreakdown ? c.color : 'var(--text-dim)' }}>
+                        {showBreakdown && c.ht > 0 ? c.ht.toFixed(2) : '—'}
+                      </div>
+                      <div className="text-right font-mono tabular-nums" style={{ color: showBreakdown && c.tax > 0 ? c.color : 'var(--text-dim)' }}>
+                        {showBreakdown && c.tax > 0 ? c.tax.toFixed(2) : '—'}
+                      </div>
+                      <div className="text-right font-mono tabular-nums font-bold" style={{ color: c.color }}>
+                        {c.total.toFixed(2)} <span className="text-[10px] opacity-70">{mainCurrency}</span>
+                      </div>
                     </button>
                   );
                 })}
@@ -4996,7 +5120,8 @@
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {/* === MOBILE : tuiles 2×n (inchangé) === */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 md:hidden">
             {[
               ['Vols', stats.flights],
               ['Flight Time', fmtDuration(stats.flightTime)],
@@ -5012,6 +5137,27 @@
               <div key={k} className="card p-3 text-center">
                 <div className="label">{k}</div>
                 <div className="text-xl font-mono tabular-nums">{v}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* === DESKTOP : lignes pleine largeur (2 colonnes pour densifier l'espace) === */}
+          <div className="hidden md:grid md:grid-cols-2 md:gap-x-3 md:gap-y-1.5">
+            {[
+              ['Vols', stats.flights],
+              ['Flight Time', fmtDuration(stats.flightTime)],
+              ['Air Time', fmtDuration(stats.airTime)],
+              ['Décol./Atter.', `${stats.takeoffs} / ${stats.landings}`],
+              ['PIC', fmtDuration(stats.pic)],
+              ['SIC', fmtDuration(stats.sic)],
+              ['IFR', fmtDuration(stats.ifr)],
+              ['Nuit', fmtDuration(stats.night)],
+              ['Navigation', fmtDuration(stats.navigation)],
+              ['Duo', fmtDuration(stats.duo)],
+            ].map(([k,v]) => (
+              <div key={k} className="card flex items-center justify-between px-4 py-2.5">
+                <div className="text-sm font-semibold text-[var(--text-dim)] uppercase tracking-wider">{k}</div>
+                <div className="text-2xl font-mono tabular-nums font-bold">{v}</div>
               </div>
             ))}
           </div>
@@ -5634,11 +5780,13 @@
       const [showForm, setShowForm] = useState(false);
       // Statut pilote : sélecteur du pilote dont on visualise/édite les statuts journaliers
       const [statusPilot, setStatusPilot] = useState('');
-      // Multi-sélection : ensemble de dates ISO sélectionnées par clic
+      // Multi-sélection : ensemble de dates ISO sélectionnées par clic.
       const [selectedDays, setSelectedDays] = useState(() => new Set());
       const [statusColor, setStatusColor] = useState(PILOT_STATUS_DEFAULTS.on.color);
       const calendarRootRef = useRef(null);
-      // Panneau "détail du jour" : ouvert quand on clique sur une case (hors mode statut)
+      // Panneau "détail du jour" : ouvert quand on clique sur une case (hors mode statut).
+      // Pas pré-ouvert sur aujourd'hui : le calendrier suffit à indiquer la date du jour
+      // (case visuellement marquée), inutile d'afficher un modal vide « Aucun vol ce jour ».
       const [dayDetailDate, setDayDetailDate] = useState(null);
 
       // Clic en dehors du calendrier : on annule la sélection en cours.
@@ -6038,8 +6186,27 @@
               const dayFlights = flights
                 .filter(f => f.date === dayDetailDate)
                 .sort((a,b) => (a.blockOut||'').localeCompare(b.blockOut||''));
+              // Bouton moderne "+ Ajouter un vol" : pré-remplit la date du vol
+              // avec le jour sélectionné, puis ouvre la fiche vol.
+              const addFlightBtn = (
+                <button type="button"
+                  onClick={()=>{
+                    setEditing({ date: dayDetailDate });
+                    setShowForm(true);
+                    setDayDetailDate(null);
+                  }}
+                  className="inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-full border-2 border-[var(--accent)] text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/10 transition-all hover:scale-105 active:scale-95"
+                  style={{ background: 'transparent' }}>
+                  <LucideIcon name="plus" size={18} strokeWidth={2.75} />
+                  <span>{tx('Ajouter un vol','Add a flight')}</span>
+                </button>
+              );
               if (dayFlights.length === 0) {
-                return <div className="text-center text-[var(--text-dim)] py-6">Aucun vol enregistré ce jour.</div>;
+                return (
+                  <div className="flex justify-center py-6">
+                    {addFlightBtn}
+                  </div>
+                );
               }
               return (
                 <div className="space-y-2">
@@ -6113,6 +6280,10 @@
                   <div className="text-xs text-[var(--text-dim)] text-center mt-2">
                     Clique sur un vol pour ouvrir sa fiche complète.
                   </div>
+                  {/* Bouton "+ Ajouter un vol" pour créer un vol supplémentaire ce jour-là */}
+                  <div className="flex justify-center pt-2">
+                    {addFlightBtn}
+                  </div>
                 </div>
               );
             })()}
@@ -6121,8 +6292,12 @@
           <Modal
             open={showForm}
             onClose={()=>setShowForm(false)}
-            title={editing ? `Vol ${editing.date} ${editing.from}→${editing.to}` : 'Vol'}
-            footer={editing && (
+            title={editing && editing.id
+              ? `Vol ${editing.date} ${editing.from||''}${editing.from?'→':''}${editing.to||''}`.trim()
+              : (editing && editing.date
+                  ? `${tx('Nouveau vol','New flight')} · ${editing.date}`
+                  : tx('Nouveau vol','New flight'))}
+            footer={editing && editing.id && (
               <button onClick={()=>{
                 if (confirm(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
                   onDeleteFlight && onDeleteFlight(editing.id);
@@ -9378,7 +9553,16 @@
 
     function App() {
       const initial = migrateState(loadState());
-      const [tab, setTab] = useState('logbook');
+      // Onglet par défaut : Calendrier sur mobile (avec date du jour sélectionnée),
+      // Vol (logbook) sur desktop. Détecté au montage uniquement (pas de re-évaluation au resize).
+      const [tab, setTab] = useState(() => {
+        try {
+          if (typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches) {
+            return 'calendar';
+          }
+        } catch {}
+        return 'logbook';
+      });
       const [flights, setFlights]     = useState(initial?.flights     || []);
       const [aircraft, setAircraft]   = useState(initial?.aircraft    || []);
       const [documents, setDocuments] = useState(initial?.documents   || []);
@@ -10265,7 +10449,19 @@
 
         <div className="min-h-full flex flex-col">
           {/* Header */}
-          <header className="glass safe-top sticky top-0 z-40 px-4 py-2.5 flex items-center justify-between">
+          <header className="glass safe-top sticky top-0 z-40 px-4 py-2.5 flex items-center justify-between relative">
+            {/* DESKTOP : date du jour centrée (absolute pour ne pas pousser left/right) */}
+            <div className="hidden md:block absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none">
+              <div className="text-center">
+                <div className="text-[10px] font-bold tracking-[0.3em] text-[var(--text-dim)]">AUJOURD'HUI</div>
+                <div className="text-base font-semibold mt-0.5 capitalize"
+                  style={{ color: 'var(--text)' }}>
+                  {new Date().toLocaleDateString(lang === 'en' ? 'en-US' : 'fr-FR', {
+                    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+                  })}
+                </div>
+              </div>
+            </div>
             <div className="flex items-center gap-3 min-w-0">
               <div className="brand-logo">
                 {/* Logo simple : silhouette d'avion vue de dessus, monochromatique cyan */}
@@ -10366,7 +10562,7 @@
           </nav>
 
           {/* Contenu — Staff/Stats utilisent toute la largeur pour leurs gros tableaux. */}
-          <main className={`flex-1 px-3 sm:px-6 py-3 w-full mx-auto pb-28 sm:pb-10 ${(tab==='staff' || tab==='stats') ? 'max-w-7xl' : 'max-w-4xl'}`}>
+          <main className={`flex-1 px-3 sm:px-6 py-3 w-full mx-auto pb-28 sm:pb-10 ${tab==='expenses' ? 'max-w-none' : ((tab==='staff' || tab==='stats') ? 'max-w-7xl' : 'max-w-4xl')}`}>
             {tab==='logbook' && <LogbookScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               settings={settings}
