@@ -179,6 +179,35 @@
       border-color: var(--accent);
       box-shadow: var(--ring);
     }
+    /* === Modernisation des menus déroulants <select> ===
+       Cache la flèche native (peu lisible et différente sur chaque OS),
+       ajoute une icône Lucide chevron-down en SVG inline + un padding-right
+       qui laisse la place. Hover : léger fond cyan. Focus : chevron passe
+       en cyan accent. Animation douce sur les transitions. */
+    .select {
+      -webkit-appearance: none;
+      -moz-appearance: none;
+      appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 12px center;
+      background-size: 16px 16px;
+      padding-right: 38px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .select:hover {
+      background-color: color-mix(in oklab, var(--bg-elev) 88%, var(--accent) 12%);
+    }
+    .select:focus {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2338bdf8' stroke-width='2.75' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+    }
+    /* Style des <option> dans le dropdown ouvert (Firefox/Chrome desktop) */
+    .select option {
+      background: var(--bg-card);
+      color: var(--text);
+      padding: 8px;
+    }
 
     .label {
       font-size: 11px;
@@ -994,12 +1023,16 @@
       // transport + temps repas/hygiène. En pratique → ~10 h de période de repos
       // entre fin de duty et début de la suivante (8h sommeil + ~2h transport/hygiène/repas).
       minRestAfterDutyAwayFromBase: 10 * 60,
-      // CAR 700.19 — Time-free from duty (jours de repos)
-      // « 36 consecutive hours free from duty in any 7 consecutive days » +
-      // « 3 consecutive days off in any 17 consecutive days » +
-      // « 13 days off in any 30 consecutive days »
-      timeFree36hIn7Days: 36 * 60,  // 36h consécutives libres dans toute fenêtre 7 jours
-      timeFreeDaysIn30:   13,        // 13 jours OFF dans toute fenêtre 30 jours
+      // CAR 702.91-702.98 — Time-free from duty (jours de repos)
+      // Règles :
+      //   - 14h max de duty consécutif sur 24h (déjà couvert par dailyDuty plus haut)
+      //   - 24h consécutives off : 13 fois sur toute fenêtre de 90 jours
+      //   - 24h consécutives off : 3 fois sur toute fenêtre de 30 jours
+      //   - On-call : 36h consécutives off dans 7 jours, OU 3 jours consécutifs dans 17 jours
+      timeFree24hIn90Days: 13,       // 13 × 24h consécutives off dans 90 jours
+      timeFree24hIn30Days:  3,       // 3  × 24h consécutives off dans 30 jours
+      onCall36hIn7Days:    36 * 60,  // 36h consécutives off dans 7 jours (mode on-call)
+      onCall3DaysIn17Days:  3,       // OU 3 jours consécutifs off dans 17 jours
     };
 
     // Calcule une duty AUTO pour un pilote donné un jour donné, à partir des vols.
@@ -1152,6 +1185,78 @@
       return daysWindow - dutiedDays.size;
     }
 
+    // CAR 702 : compte les occurrences de "24h consécutives off" (sans duty)
+    // dans une fenêtre glissante. On scanne par tranches de 30 minutes et on
+    // compte les périodes contigües de ≥48 slots libres (= 24h). Approche
+    // équivalente à longestFreeStretch mais avec comptage multiple.
+    function count24hOffInWindow(effectiveDuties, refDateISO, daysWindow) {
+      if (!refDateISO) return 0;
+      const ref = new Date(refDateISO + 'T00:00:00Z');
+      if (isNaN(ref.getTime())) return 0;
+      const SLOT = 30; // minutes
+      const totalSlots = (daysWindow * 24 * 60) / SLOT;
+      const busy = new Array(totalSlots).fill(false);
+      const windowStartMs = ref.getTime() - (daysWindow * 86400000) + 86400000;
+      for (const p of effectiveDuties) {
+        if (!p.date) continue;
+        const sMin = parseHHMM(p.startTime);
+        const eMin = parseHHMM(p.endTime);
+        if (sMin == null || eMin == null) continue;
+        const baseMs = new Date(p.date + 'T00:00:00Z').getTime();
+        if (isNaN(baseMs)) continue;
+        let dutyStart = baseMs + sMin * 60 * 1000;
+        let dutyEnd   = baseMs + eMin * 60 * 1000;
+        if (dutyEnd <= dutyStart) dutyEnd += 24 * 60 * 60 * 1000;
+        for (let t = dutyStart; t < dutyEnd; t += SLOT * 60 * 1000) {
+          if (t < windowStartMs) continue;
+          if (t > ref.getTime() + 86400000) break;
+          const idx = Math.floor((t - windowStartMs) / (SLOT * 60 * 1000));
+          if (idx >= 0 && idx < totalSlots) busy[idx] = true;
+        }
+      }
+      // Comptage : à chaque série continue de free slots, on compte combien de
+      // périodes 24h non-chevauchantes elle contient (consommation = 48 slots).
+      const SLOTS_PER_24H = 24 * 60 / SLOT; // 48
+      let count = 0;
+      let current = 0;
+      for (let i = 0; i < totalSlots; i++) {
+        if (!busy[i]) {
+          current++;
+        } else {
+          count += Math.floor(current / SLOTS_PER_24H);
+          current = 0;
+        }
+      }
+      count += Math.floor(current / SLOTS_PER_24H);
+      return count;
+    }
+
+    // CAR 702 on-call : compte la plus longue série de jours CALENDAIRES
+    // consécutifs sans aucune duty dans une fenêtre glissante. Sert à vérifier
+    // « 3 jours consécutifs off dans 17 jours ».
+    function longestConsecutiveOffDays(effectiveDuties, refDateISO, daysWindow) {
+      if (!refDateISO) return daysWindow;
+      const ref = new Date(refDateISO + 'T00:00:00Z');
+      if (isNaN(ref.getTime())) return 0;
+      const dutiedDays = new Set();
+      const startMs = ref.getTime() - (daysWindow - 1) * 86400000;
+      for (const p of effectiveDuties) {
+        if (!p.date) continue;
+        const d = new Date(p.date + 'T00:00:00Z');
+        if (isNaN(d.getTime())) continue;
+        const t = d.getTime();
+        if (t >= startMs && t <= ref.getTime()) dutiedDays.add(p.date);
+      }
+      let longest = 0, current = 0;
+      const oneDay = 86400000;
+      for (let t = startMs; t <= ref.getTime(); t += oneDay) {
+        const iso = new Date(t).toISOString().slice(0,10);
+        if (dutiedDays.has(iso)) { current = 0; }
+        else { current++; if (current > longest) longest = current; }
+      }
+      return longest;
+    }
+
     // Calcule la plus longue période continue SANS duty (en minutes) sur une
     // fenêtre glissante. Sert à vérifier la règle « 36h consécutives free dans 7 jours »
     // (CAR 700.19). Approche : scanne les minutes par tranche d'1h.
@@ -1233,7 +1338,27 @@
           awayFromBase = !!lastTo && lastTo !== baseAp;
         }
       }
-      return { restMin, awayFromBase, lastDutyDate: latestDuty?.date || null };
+      return {
+        restMin,
+        awayFromBase,
+        lastDutyDate: latestDuty?.date || null,
+        lastDutyEndMs: latestEnd,        // timestamp ms (UTC) de la fin de la dernière duty
+        nowMs,                            // référence "maintenant" utilisée
+      };
+    }
+
+    // Calcule la prochaine prise de service possible (date + heure UTC)
+    // = fin de la dernière duty + repos minimum requis (8h base / 10h hors base).
+    // Renvoie un Date object UTC, ou null si pas d'historique.
+    function nextDutyStartAt(effectiveDuties, refDateISO, flights, pilot) {
+      const r = minRestSinceLastDuty(effectiveDuties, refDateISO, flights, pilot);
+      if (!r || !r.lastDutyEndMs || r.lastDutyEndMs === -Infinity) return null;
+      const restMs = (r.awayFromBase ? CARS_702_LIMITS.minRestAfterDutyAwayFromBase
+                                     : CARS_702_LIMITS.minRestAfterDuty) * 60 * 1000;
+      return {
+        date: new Date(r.lastDutyEndMs + restMs),
+        awayFromBase: r.awayFromBase,
+      };
     }
 
     // Calcule la clé semaine ISO d'une date YYYY-MM-DD (format YYYY-Wnn)
@@ -1785,6 +1910,74 @@
         </div>
       );
     }
+    // FancySelect : dropdown moderne qui remplace les <select> natifs.
+    // Native HTML <select> n'est pas stylable côté liste ouverte (effet "Windows 95").
+    // Ce composant rend le trigger comme un .select classique mais ouvre un popover
+    // custom avec hover, état sélectionné, icônes optionnelles et clic-outside.
+    function FancySelect({ value, onChange, options, placeholder = '— sélectionner —', className = '' }) {
+      const [open, setOpen] = useState(false);
+      const ref = useRef(null);
+      useEffect(() => {
+        if (!open) return;
+        function handler(e) {
+          if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+      }, [open]);
+      const selected = options.find(o => o.value === value);
+      // Détecte si l'icône passée est un nom Lucide existant ou un emoji/texte.
+      // Si nom Lucide → rendu SVG moderne. Sinon → rendu texte (emoji).
+      function renderIcon(opt, size) {
+        if (!opt?.icon) return null;
+        const isLucide = (typeof LUCIDE_ICONS !== 'undefined') && LUCIDE_ICONS[opt.icon];
+        if (isLucide) {
+          return (
+            <span className="flex-shrink-0" style={{ color: opt.color || 'var(--text-dim)' }}>
+              <LucideIcon name={opt.icon} size={size} strokeWidth={2.25} />
+            </span>
+          );
+        }
+        return <span className="flex-shrink-0 text-base leading-none">{opt.icon}</span>;
+      }
+      return (
+        <div className={`relative ${className}`} ref={ref}>
+          <button type="button"
+            onClick={()=>setOpen(o=>!o)}
+            className="select w-full text-left flex items-center justify-between gap-2"
+            style={{ backgroundImage: 'none', paddingRight: '12px' }}>
+            <span className="flex items-center gap-2 min-w-0">
+              {renderIcon(selected, 16)}
+              <span className="truncate">{selected ? selected.label : placeholder}</span>
+            </span>
+            <span className="flex-shrink-0 text-[var(--text-dim)] transition-transform" style={{ transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+              <LucideIcon name="chevronRight" size={16} strokeWidth={2.5} />
+            </span>
+          </button>
+          {open && (
+            <div className="absolute left-0 right-0 mt-2 z-30 rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden"
+              style={{ background: 'var(--bg-card)', maxHeight: '60vh', overflowY: 'auto' }}>
+              {options.map(opt => {
+                const isSelected = opt.value === value;
+                return (
+                  <button key={opt.value} type="button"
+                    onClick={()=>{ onChange(opt.value); setOpen(false); }}
+                    className={`w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-center gap-2.5 transition-colors text-sm ${
+                      isSelected ? 'font-semibold' : ''
+                    }`}
+                    style={isSelected ? { background: 'rgba(56,189,248,0.10)', color: 'var(--accent)' } : {}}>
+                    {renderIcon(opt, 18)}
+                    <span className="flex-1 truncate">{opt.label}</span>
+                    {isSelected && <span className="flex-shrink-0 text-[var(--accent)]"><LucideIcon name="check" size={16} strokeWidth={3} /></span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // Mapping catégorie de dépense → nom d'icône Lucide.
     // Icônes choisies pour être distinctes les unes des autres et
     // immédiatement reconnaissables (style appli finance moderne).
@@ -4590,17 +4783,25 @@
               <div className={`${showCardsAndDates ? 'grid' : 'hidden sm:grid'} grid-cols-2 sm:grid-cols-3 gap-2 mb-2`}>
                 <div>
                   <div className="label whitespace-nowrap">Année</div>
-                  <select className="select" value={filterYear} onChange={e=>{ setFilterYear(parseInt(e.target.value,10)); setFilterDate(''); }}>
-                    <option value={0}>Toutes</option>
-                    {Array.from({length:10}, (_,i) => now.getUTCFullYear()-i).map(y => <option key={y} value={y}>{y}</option>)}
-                  </select>
+                  <FancySelect
+                    value={filterYear}
+                    onChange={v=>{ setFilterYear(parseInt(v,10)); setFilterDate(''); }}
+                    options={[
+                      { value: 0, label: 'Toutes', icon: 'globe', color: 'var(--accent)' },
+                      ...Array.from({length:10}, (_,i) => now.getUTCFullYear()-i).map(y => ({ value: y, label: String(y), icon: 'calendar' })),
+                    ]}
+                  />
                 </div>
                 <div>
                   <div className="label whitespace-nowrap">Mois</div>
-                  <select className="select" value={filterMonth} onChange={e=>{ setFilterMonth(parseInt(e.target.value,10)); setFilterDate(''); }}>
-                    <option value={0}>Tous</option>
-                    {['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'].map((m,i)=> <option key={i} value={i+1}>{m}</option>)}
-                  </select>
+                  <FancySelect
+                    value={filterMonth}
+                    onChange={v=>{ setFilterMonth(parseInt(v,10)); setFilterDate(''); }}
+                    options={[
+                      { value: 0, label: 'Tous', icon: 'globe', color: 'var(--accent)' },
+                      ...['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'].map((m,i)=> ({ value: i+1, label: m, icon: 'calendar' })),
+                    ]}
+                  />
                 </div>
                 <div className="col-span-2 sm:col-span-1">
                   <div className="label whitespace-nowrap">Date précise</div>
@@ -4612,20 +4813,38 @@
                 {isAircraftCategory && (
                   <div>
                     <div className="label whitespace-nowrap">Avion</div>
-                    <select className="select" value={filterAircraft} onChange={e=>setFilterAircraft(e.target.value)}>
-                      <option value="all">Tous</option>
-                      <option value="none">— sans avion —</option>
-                      {aircraft.map(a => <option key={a.id} value={a.id}>{a.kind==='simulator'?'🖥️ ':''}{a.registration}</option>)}
-                    </select>
+                    <FancySelect
+                      value={filterAircraft}
+                      onChange={setFilterAircraft}
+                      options={[
+                        { value: 'all', label: 'Tous', icon: 'globe', color: 'var(--accent)' },
+                        { value: 'none', label: '— sans avion —', icon: 'x', color: 'var(--text-dim)' },
+                        ...aircraft.map(a => ({
+                          value: a.id,
+                          label: a.registration,
+                          icon: a.kind === 'simulator' ? 'monitor' : 'plane',
+                          color: 'var(--text-dim)',
+                        })),
+                      ]}
+                    />
                   </div>
                 )}
                 <div>
                   <div className="label whitespace-nowrap">Pilote</div>
-                  <select className="select" value={filterPilot} onChange={e=>setFilterPilot(e.target.value)}>
-                    <option value="all">Tous</option>
-                    <option value="none">— sans pilote —</option>
-                    {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
-                  </select>
+                  <FancySelect
+                    value={filterPilot}
+                    onChange={setFilterPilot}
+                    options={[
+                      { value: 'all', label: 'Tous', icon: 'globe', color: 'var(--accent)' },
+                      { value: 'none', label: '— sans pilote —', icon: 'x', color: 'var(--text-dim)' },
+                      ...pilots.map(p => ({
+                        value: p.id,
+                        label: pilotDisplayName(p),
+                        icon: 'user',
+                        color: 'var(--text-dim)',
+                      })),
+                    ]}
+                  />
                 </div>
               </div>
             </div>
@@ -4637,12 +4856,16 @@
               modernes sont visibles ailleurs (cartes, en-têtes, badges). */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input className="input" placeholder="Filtrer par fournisseur…" value={filterSupplier} onChange={e=>setFilterSupplier(e.target.value)} />
-            <select className="select" value={sort} onChange={e=>setSort(e.target.value)}>
-              <option value="date_desc">Date (récent → ancien)</option>
-              <option value="date_asc">Date (ancien → récent)</option>
-              <option value="amount_desc">Montant (haut → bas)</option>
-              <option value="supplier">Fournisseur (A→Z)</option>
-            </select>
+            <FancySelect
+              value={sort}
+              onChange={setSort}
+              options={[
+                { value: 'date_desc',   label: 'Date (récent → ancien)',  icon: 'arrowDown' },
+                { value: 'date_asc',    label: 'Date (ancien → récent)',  icon: 'arrowUp' },
+                { value: 'amount_desc', label: 'Montant (haut → bas)',    icon: 'barChart3', color: 'var(--accent)' },
+                { value: 'supplier',    label: 'Fournisseur (A→Z)',       icon: 'briefcase' },
+              ]}
+            />
           </div>
 
           {/* Toggle mobile-only : replie/déplie le bloc dates + la liste des factures.
@@ -5365,23 +5588,33 @@
           <div className="card p-3 grid grid-cols-2 sm:grid-cols-3 gap-3">
             <div>
               <div className="label">Année</div>
-              <select className="select" value={year} onChange={e=>setYear(parseInt(e.target.value,10))}>
-                {Array.from({length:10}, (_,i) => now.getUTCFullYear()-i).map(y => <option key={y} value={y}>{y}</option>)}
-              </select>
+              <FancySelect
+                value={year}
+                onChange={v=>setYear(parseInt(v,10))}
+                options={Array.from({length:10}, (_,i) => now.getUTCFullYear()-i).map(y => ({ value: y, label: String(y), icon: 'calendar' }))}
+              />
             </div>
             <div>
               <div className="label">Mois</div>
-              <select className="select" value={month} onChange={e=>setMonth(parseInt(e.target.value,10))}>
-                <option value={0}>Toute l'année</option>
-                {['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'].map((m,i)=> <option key={i} value={i+1}>{m}</option>)}
-              </select>
+              <FancySelect
+                value={month}
+                onChange={v=>setMonth(parseInt(v,10))}
+                options={[
+                  { value: 0, label: tx('Toute l\'année','Whole year'), icon: 'globe', color: 'var(--accent)' },
+                  ...['Jan','Fév','Mar','Avr','Mai','Juin','Juil','Août','Sep','Oct','Nov','Déc'].map((m,i)=> ({ value: i+1, label: m, icon: 'calendar' })),
+                ]}
+              />
             </div>
             <div className="col-span-2 sm:col-span-1">
               <div className="label">Pilote</div>
-              <select className="select" value={pilotFilter} onChange={e=>setPilotFilter(e.target.value)}>
-                <option value="all">Tous (global)</option>
-                {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
-              </select>
+              <FancySelect
+                value={pilotFilter}
+                onChange={setPilotFilter}
+                options={[
+                  { value: 'all', label: tx('Tous (global)','All (global)'), icon: 'globe', color: 'var(--accent)' },
+                  ...pilots.map(p => ({ value: p.id, label: pilotDisplayName(p), icon: 'user' })),
+                ]}
+              />
             </div>
           </div>
 
@@ -7288,15 +7521,33 @@
           </div>
 
           <div className="grid grid-cols-2 gap-2">
-            <select className="select" value={filterType} onChange={e=>setFilterType(e.target.value)}>
-              <option value="all">Tous types</option>
-              {COMPANY_DOC_TYPES.map(t => <option key={t.id} value={t.id}>{t.icon} {t.label}</option>)}
-            </select>
-            <select className="select" value={filterAc} onChange={e=>setFilterAc(e.target.value)}>
-              <option value="all">Tous (global + flotte)</option>
-              <option value="global">Global compagnie</option>
-              {aircraft.map(a => <option key={a.id} value={a.id}>{a.registration}</option>)}
-            </select>
+            <FancySelect
+              value={filterType}
+              onChange={setFilterType}
+              options={[
+                { value: 'all', label: 'Tous types', icon: 'globe', color: 'var(--accent)' },
+                ...COMPANY_DOC_TYPES.map(td => ({
+                  value: td.id,
+                  label: td.label,
+                  icon: td.lucide || 'file',
+                  color: td.color,
+                })),
+              ]}
+            />
+            <FancySelect
+              value={filterAc}
+              onChange={setFilterAc}
+              options={[
+                { value: 'all', label: 'Tous (global + flotte)', icon: 'globe', color: 'var(--accent)' },
+                { value: 'global', label: 'Global compagnie', icon: 'briefcase', color: 'var(--text-dim)' },
+                ...aircraft.map(a => ({
+                  value: a.id,
+                  label: a.registration,
+                  icon: a.kind === 'simulator' ? 'monitor' : 'plane',
+                  color: 'var(--text-dim)',
+                })),
+              ]}
+            />
           </div>
 
           {filtered.length === 0 && (
@@ -9314,10 +9565,14 @@
 
           <div className="card p-3">
             <div className="label">Pilote</div>
-            <select className="select" value={pilotFilter} onChange={e=>setPilotFilter(e.target.value)}>
-              <option value="all">Tous les pilotes</option>
-              {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
-            </select>
+            <FancySelect
+              value={pilotFilter}
+              onChange={setPilotFilter}
+              options={[
+                { value: 'all', label: tx('Tous les pilotes','All pilots'), icon: 'users', color: 'var(--accent)' },
+                ...pilots.map(p => ({ value: p.id, label: pilotDisplayName(p), icon: 'user' })),
+              ]}
+            />
 
             {/* Boutons modernes : importer logbook reporté + ajouter ligne externe.
                 Visibles uniquement quand un pilote précis est sélectionné. */}
@@ -9882,15 +10137,32 @@
         return minRestSinceLastDuty(effectiveDuties, today, flights, pilot);
       }, [effectiveDuties, today, flights, pilots, pilotFilter]);
 
-      // Plus longue plage libre dans les 7 derniers jours (CAR 700.19)
+      // Prochaine prise de service possible (date + heure UTC)
+      // = fin de la dernière duty + 8h (base) ou 10h (hors base)
+      const nextDuty = useMemo(() => {
+        const pilot = pilotFilter !== 'all' ? pilots.find(p => p.id === pilotFilter) : null;
+        return nextDutyStartAt(effectiveDuties, today, flights, pilot);
+      }, [effectiveDuties, today, flights, pilots, pilotFilter]);
+
+      // ===== CAR 702.91-702.98 : Time-free from duty =====
+      // Plus longue plage libre dans les 7 derniers jours (mode on-call)
       const longestFree7 = useMemo(
         () => longestFreeStretch(effectiveDuties, today, 7),
         [effectiveDuties, today]
       );
-
-      // Jours OFF dans les 30 derniers jours (CAR 700.19)
-      const offDays30 = useMemo(
-        () => offDaysWindow(effectiveDuties, today, 30),
+      // Nombre de "24h consécutives off" dans les 90 derniers jours (≥ 13)
+      const off24hIn90 = useMemo(
+        () => count24hOffInWindow(effectiveDuties, today, 90),
+        [effectiveDuties, today]
+      );
+      // Nombre de "24h consécutives off" dans les 30 derniers jours (≥ 3)
+      const off24hIn30 = useMemo(
+        () => count24hOffInWindow(effectiveDuties, today, 30),
+        [effectiveDuties, today]
+      );
+      // Plus longue série de jours calendaires consécutifs off dans les 17 jours (mode on-call ≥ 3)
+      const longestOffStreak17 = useMemo(
+        () => longestConsecutiveOffDays(effectiveDuties, today, 17),
         [effectiveDuties, today]
       );
 
@@ -9949,10 +10221,14 @@
 
           <div className="card p-3">
             <div className="label">Pilote suivi</div>
-            <select className="select" value={pilotFilter} onChange={e=>setPilotFilter(e.target.value)}>
-              <option value="all">Tous (cumulé)</option>
-              {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
-            </select>
+            <FancySelect
+              value={pilotFilter}
+              onChange={setPilotFilter}
+              options={[
+                { value: 'all', label: 'Tous (cumulé)', icon: 'users', color: 'var(--accent)' },
+                ...pilots.map(p => ({ value: p.id, label: pilotDisplayName(p), icon: 'user' })),
+              ]}
+            />
           </div>
 
           {/* Cumuls flight time vs limites CARs 702 */}
@@ -10024,45 +10300,104 @@
             })() : (
               <div className="text-xs text-[var(--text-dim)] italic">Pas encore de duty terminée — repos non calculable.</div>
             )}
-            {/* Plus longue période free 7 jours (≥ 36h obligatoire) */}
+            {/* Prochaine prise de service possible (= fin dernière duty + repos minimum) */}
+            {nextDuty && nextDuty.date && (() => {
+              const d = nextDuty.date;
+              const pad = n => String(n).padStart(2,'0');
+              const iso = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+              const time = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}Z`;
+              const nowMs = Date.now();
+              const isPast = d.getTime() <= nowMs;
+              const restRequired = nextDuty.awayFromBase ? '10h' : '8h';
+              return (
+                <div className="card p-2.5 bg-[var(--bg-elev)]/40 border border-[var(--accent)]/30 flex items-start gap-2.5">
+                  <span style={{ color: 'var(--accent)' }} className="flex-shrink-0 mt-0.5">
+                    <LucideIcon name="clock" size={18} strokeWidth={2.5} />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[10px] uppercase tracking-wider font-bold text-[var(--text-dim)]">
+                      Prochaine prise de service possible
+                    </div>
+                    <div className="font-mono tabular-nums text-base font-bold mt-0.5" style={{ color: isPast ? 'var(--ok)' : 'var(--accent)' }}>
+                      {iso} · {time}
+                    </div>
+                    <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
+                      Fin dernière duty + {restRequired} ({nextDuty.awayFromBase ? 'hors base' : 'base'}).
+                      {isPast ? ' ✓ Pilote disponible.' : ''}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+            {/* CAR 702.91-702.98 : 24h consécutives off — 13 fois sur 90 jours */}
             <div>
               <div className="flex justify-between text-sm mb-1">
-                <span>Plus longue période libre (7 derniers jours)</span>
+                <span>Périodes 24h off — 90 derniers jours</span>
                 <span className="font-mono tabular-nums">
-                  <span style={{ color: longestFree7 >= CARS_702_LIMITS.timeFree36hIn7Days ? 'var(--ok)' : 'var(--err)' }}>
-                    {fmtDuration(longestFree7)}
+                  <span style={{ color: off24hIn90 >= CARS_702_LIMITS.timeFree24hIn90Days ? 'var(--ok)' : 'var(--err)' }}>
+                    {off24hIn90} ×
                   </span>
-                  <span className="text-[var(--text-dim)]"> / min {fmtDuration(CARS_702_LIMITS.timeFree36hIn7Days)}</span>
+                  <span className="text-[var(--text-dim)]"> / min {CARS_702_LIMITS.timeFree24hIn90Days} ×</span>
                 </span>
               </div>
-              {longestFree7 < CARS_702_LIMITS.timeFree36hIn7Days && (
-                <div className="text-xs text-[var(--err)]">⚠ 36h consécutives libres requis dans toute fenêtre 7 jours.</div>
+              {off24hIn90 < CARS_702_LIMITS.timeFree24hIn90Days && (
+                <div className="text-xs text-[var(--err)]">⚠ Au moins 13 périodes de 24h consécutives off requises sur toute fenêtre 90 jours.</div>
               )}
             </div>
-            {/* Jours OFF dans les 30 derniers jours (≥ 13 obligatoire) */}
+            {/* CAR 702.91-702.98 : 24h consécutives off — 3 fois sur 30 jours */}
             <div>
               <div className="flex justify-between text-sm mb-1">
-                <span>Jours OFF dans les 30 derniers jours</span>
+                <span>Périodes 24h off — 30 derniers jours</span>
                 <span className="font-mono tabular-nums">
-                  <span style={{ color: offDays30 >= CARS_702_LIMITS.timeFreeDaysIn30 ? 'var(--ok)' : 'var(--err)' }}>
-                    {offDays30} j
+                  <span style={{ color: off24hIn30 >= CARS_702_LIMITS.timeFree24hIn30Days ? 'var(--ok)' : 'var(--err)' }}>
+                    {off24hIn30} ×
                   </span>
-                  <span className="text-[var(--text-dim)]"> / min {CARS_702_LIMITS.timeFreeDaysIn30} j</span>
+                  <span className="text-[var(--text-dim)]"> / min {CARS_702_LIMITS.timeFree24hIn30Days} ×</span>
                 </span>
               </div>
-              {offDays30 < CARS_702_LIMITS.timeFreeDaysIn30 && (
-                <div className="text-xs text-[var(--err)]">⚠ Au moins 13 jours OFF (sans duty) requis sur toute fenêtre 30 jours.</div>
+              {off24hIn30 < CARS_702_LIMITS.timeFree24hIn30Days && (
+                <div className="text-xs text-[var(--err)]">⚠ Au moins 3 périodes de 24h consécutives off requises sur toute fenêtre 30 jours.</div>
               )}
+            </div>
+            {/* CAR 702 on-call : 36h libres dans 7j (existant) + 3 jours consécutifs off dans 17j (nouveau) */}
+            <div className="card p-2.5 bg-[var(--bg-elev)]/40 mt-1">
+              <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-bold mb-1.5">
+                Mode on-call (un des deux suffit)
+              </div>
+              <div className="space-y-1.5">
+                <div>
+                  <div className="flex justify-between text-sm">
+                    <span>36h consécutives off — 7 derniers jours</span>
+                    <span className="font-mono tabular-nums">
+                      <span style={{ color: longestFree7 >= CARS_702_LIMITS.onCall36hIn7Days ? 'var(--ok)' : 'var(--text-dim)' }}>
+                        {fmtDuration(longestFree7)}
+                      </span>
+                      <span className="text-[var(--text-dim)]"> / min {fmtDuration(CARS_702_LIMITS.onCall36hIn7Days)}</span>
+                    </span>
+                  </div>
+                </div>
+                <div>
+                  <div className="flex justify-between text-sm">
+                    <span>3 jours consécutifs off — 17 derniers jours</span>
+                    <span className="font-mono tabular-nums">
+                      <span style={{ color: longestOffStreak17 >= CARS_702_LIMITS.onCall3DaysIn17Days ? 'var(--ok)' : 'var(--text-dim)' }}>
+                        {longestOffStreak17} j
+                      </span>
+                      <span className="text-[var(--text-dim)]"> / min {CARS_702_LIMITS.onCall3DaysIn17Days} j</span>
+                    </span>
+                  </div>
+                </div>
+                {longestFree7 < CARS_702_LIMITS.onCall36hIn7Days && longestOffStreak17 < CARS_702_LIMITS.onCall3DaysIn17Days && (
+                  <div className="text-xs text-[var(--err)]">⚠ Si pilote on-call : 36h consécutives off dans 7j OU 3 jours consécutifs off dans 17j requis.</div>
+                )}
+              </div>
             </div>
             <div className="mt-1">
-              <Hint title="Règles 700.15 / 700.19">
-                700.15 — Période de repos = au moins 8 h de sommeil consécutif en hébergement
-                convenable + transport + temps repas/hygiène. À la base (pilote rentre chez lui),
-                on retient 8 h. Hors base, on compte 10 h car l'opérateur doit fournir
-                hébergement et transport. Détection hors base : dernière arrivée du jour ≠ baseAirport
-                du pilote.
-                {' '}700.19 — 36 h consécutives libres dans toute fenêtre de 7 jours +
-                13 jours OFF dans toute fenêtre de 30 jours.
+              <Hint title="Règles CAR 702.91-702.98 (Flight & Duty Time Limitations)">
+                <strong>Max Duty :</strong> 14h consécutives max sur 24h (déjà couvert ci-dessus).<br/>
+                <strong>Repos :</strong> au moins 24h consécutives off, <strong>13 fois sur 90 jours</strong> et <strong>3 fois sur 30 jours</strong>.<br/>
+                <strong>On-call :</strong> 36h consécutives off dans 7 jours, <em>OU</em> 3 jours consécutifs off dans 17 jours.<br/>
+                <em>Note 700.15 :</em> hors base, le repos minimum est 10h (sommeil 8h + hébergement/transport/repas) — détecté quand l'arrivée ≠ baseAirport du pilote.
               </Hint>
             </div>
           </div>
