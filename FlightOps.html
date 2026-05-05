@@ -1347,7 +1347,7 @@
       if (taxiOut > 4*60) errors.push(`Taxi out ${fmtDuration(taxiOut)} > 4h.`);
       if (taxiIn > 4*60) errors.push(`Taxi in ${fmtDuration(taxiIn)} > 4h.`);
       if (ft > 20*60) errors.push(`Flight Time ${fmtDuration(ft)} > 20h. Heures probablement incohérentes.`);
-      return { errors, allFilled, ftMin: ft, atMin: at };
+      return { errors, allFilled, ftMin: ft, atMin: at, taxiOutMin: taxiOut, taxiInMin: taxiIn };
     }
 
     // ------------------------------------------------------------------
@@ -2203,6 +2203,38 @@
     // 9b) ÉCRAN — CARNET DE VOL
     // ------------------------------------------------------------------
 
+    // Segment visuel "▶— LABEL X.X —◀" pour le diagramme temps de vol.
+    // - minutes : durée à afficher (en minutes)
+    // - label   : texte optionnel devant la valeur (ex "FT", "BT")
+    // - flex    : poids flex-grow proportionnel (le plus grand prend plus de place)
+    // - compact : version étroite (sans label, juste la valeur courte)
+    // - highlight : couleur accent (utilisé pour le segment principal FT)
+    // - fullWidth : occupe toute la ligne (utilisé pour BT en bas)
+    function TimeBracket({ minutes = 0, label = '', flex = 1, compact = false, highlight = false, fullWidth = false }) {
+      const hours = (minutes / 60).toFixed(1);
+      const color = highlight ? 'var(--accent)' : 'var(--text-dim)';
+      const textColor = highlight ? 'var(--accent)' : 'var(--text)';
+      return (
+        <div
+          className="flex items-center gap-1 select-none"
+          style={{
+            flex: fullWidth ? '1 1 100%' : `${flex} 1 0`,
+            color,
+            minWidth: 0,
+          }}>
+          <span className="text-base leading-none" style={{ marginRight: -2 }}>▶</span>
+          <span className="flex-1 h-px" style={{ background: 'currentColor', opacity: 0.5 }} />
+          <span className="font-mono tabular-nums whitespace-nowrap px-1.5"
+                style={{ color: textColor, fontWeight: highlight || label ? 600 : 500, fontSize: compact ? '0.7rem' : '0.85rem' }}>
+            {label && <span className="opacity-80 mr-1">{label}</span>}
+            {hours}
+          </span>
+          <span className="flex-1 h-px" style={{ background: 'currentColor', opacity: 0.5 }} />
+          <span className="text-base leading-none" style={{ marginLeft: -2 }}>◀</span>
+        </div>
+      );
+    }
+
     function FlightForm({ initial, aircraft, pilots=[], addExpense, onSave, onCancel, settings={}, flights=[] }) {
       const tx = useTx();
       const { lang } = React.useContext(I18nContext);
@@ -2283,6 +2315,8 @@
       );
       const flightTime = timeValidation.ftMin;
       const airTime    = timeValidation.atMin;
+      const taxiOut    = timeValidation.taxiOutMin;
+      const taxiIn     = timeValidation.taxiInMin;
 
       // Calcul auto du temps de nuit dès qu'on a sunset+sunrise+TO+LD
       const computedNight = useMemo(
@@ -2489,25 +2523,26 @@
                 );
               })}
             </div>
-            {/* En simu, BO=TO et BI=LDG donc Air Time = Flight Time : on n'affiche que FT.
-                En vol réel, on garde les 2 cartes côte à côte. */}
+            {/* Diagramme visuel temps : 3 segments du haut (taxi out / FT / taxi in)
+                + 1 segment du bas (BT = block time = total). Les largeurs sont
+                proportionnelles aux durées pour qu'on voie d'un coup d'œil
+                la part du roulage vs vol effectif.
+                FT = Flight Time aviation = TO→Landing (= notre airTime).
+                BT = Block Time = BO→BI (= notre flightTime). */}
             {isSim ? (
-              <div className="mt-3">
-                <div className="card p-2 text-center">
-                  <div className="label">Flight Time</div>
-                  <div className="text-2xl font-mono tabular-nums">{fmtDuration(flightTime)}</div>
-                </div>
+              <div className="mt-1 px-1 py-1">
+                <TimeBracket label="FT" minutes={flightTime} />
               </div>
             ) : (
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <div className="card p-2 text-center">
-                  <div className="label">Air Time</div>
-                  <div className="text-2xl font-mono tabular-nums">{fmtDuration(airTime)}</div>
+              <div className="mt-1 px-1 py-1 space-y-1.5">
+                {/* Ligne du haut : taxi out | FT (= air time) | taxi in */}
+                <div className="flex items-stretch gap-1">
+                  <TimeBracket minutes={taxiOut || 0} flex={Math.max((taxiOut||0), 1)} compact />
+                  <TimeBracket label="FT" minutes={airTime || 0} flex={Math.max((airTime||0)*2, 4)} highlight />
+                  <TimeBracket minutes={taxiIn || 0} flex={Math.max((taxiIn||0), 1)} compact />
                 </div>
-                <div className="card p-2 text-center">
-                  <div className="label">Flight Time</div>
-                  <div className="text-2xl font-mono tabular-nums">{fmtDuration(flightTime)}</div>
-                </div>
+                {/* Ligne du bas : BT (block time = total) */}
+                <TimeBracket label="BT" minutes={flightTime || 0} fullWidth />
               </div>
             )}
             {/* TTSN avion (Total Time Since New) — TTSN après = TTSN avant + Air Time.
