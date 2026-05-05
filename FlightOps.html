@@ -1516,13 +1516,58 @@
     // 7) HORLOGE ZULU GLOBALE
     // ------------------------------------------------------------------
 
-    function ZuluClock() {
+    // Horloge du header.
+    // - Affichage par défaut : heure Zulu (UTC) en HH:MM:SSZ.
+    // - Au clic : bascule en heure locale (HH:MM:SS) pendant 4 secondes,
+    //   puis revient automatiquement en Zulu. Label "LOCAL" affiché aussi.
+    // L'heure locale vient du device — aucune connexion réseau requise.
+    function ZuluClock({ onModeChange }) {
+      const [showLocal, setShowLocal] = useState(false);
       const [t, setT] = useState(nowZulu());
+      // Tick chaque seconde dans le mode courant
       useEffect(() => {
-        const id = setInterval(() => setT(nowZulu()), 1000);
+        function tick() {
+          if (showLocal) {
+            const d = new Date();
+            const hh = String(d.getHours()).padStart(2,'0');
+            const mm = String(d.getMinutes()).padStart(2,'0');
+            const ss = String(d.getSeconds()).padStart(2,'0');
+            setT(`${hh}:${mm}:${ss}`);
+          } else {
+            setT(nowZulu());
+          }
+        }
+        tick(); // immédiat (sinon transition affiche la valeur d'avant 1s)
+        const id = setInterval(tick, 1000);
         return () => clearInterval(id);
-      }, []);
-      return <span className="font-mono tabular-nums">{t}</span>;
+      }, [showLocal]);
+      // Notifie le parent du mode pour qu'il puisse changer le label "ZULU"/"LOCAL"
+      useEffect(() => { if (onModeChange) onModeChange(showLocal ? 'local' : 'zulu'); }, [showLocal, onModeChange]);
+      // Au clic : repasser en local 4 secondes puis revert
+      function flashLocal() {
+        setShowLocal(true);
+        setTimeout(() => setShowLocal(false), 4000);
+      }
+      return (
+        <button type="button" onClick={flashLocal}
+          title={showLocal ? 'Heure locale (revient à Zulu dans quelques secondes)' : 'Cliquer pour afficher l\'heure locale 4s'}
+          className="font-mono tabular-nums leading-none cursor-pointer transition-colors"
+          style={{ color: showLocal ? 'var(--accent)' : 'inherit' }}>
+          {t}
+        </button>
+      );
+    }
+    // Wrapper qui gère le label dynamique "ZULU" / "LOCAL"
+    function ClockBlock({ zuluLabel }) {
+      const [clockMode, setClockMode] = useState('zulu');
+      return (
+        <div className="text-right">
+          <div className="text-xs" style={{ color: clockMode === 'local' ? 'var(--accent)' : 'var(--text-dim)' }}>
+            {clockMode === 'local' ? 'LOCAL' : zuluLabel}
+          </div>
+          <div className="text-base"><ZuluClock onModeChange={setClockMode} /></div>
+        </div>
+      );
     }
 
     // ------------------------------------------------------------------
@@ -2010,7 +2055,12 @@
                 <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
                 <div className="truncate text-[var(--text-dim)]">{t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
               </div>
-              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
+              <button type="button"
+                title="Retirer ce document"
+                className="grid place-items-center w-9 h-9 rounded-lg text-[var(--err)] hover:bg-[var(--err)]/15 transition-colors flex-shrink-0"
+                onClick={()=>removeDoc(d.id)}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+              </button>
             </div>
           );
         }
@@ -2031,7 +2081,12 @@
               </div>
             </div>
             <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" onClick={()=>openDoc(d)}>Ouvrir</button>
-            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
+            <button type="button"
+              title="Retirer ce document"
+              className="grid place-items-center w-9 h-9 rounded-lg text-[var(--err)] hover:bg-[var(--err)]/15 transition-colors flex-shrink-0"
+              onClick={()=>removeDoc(d.id)}>
+              <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+            </button>
           </div>
         );
       }
@@ -2701,19 +2756,11 @@
             return (
               <div className="card p-3">
                 <div className="label">Statut de vérification (Ops)</div>
-                {/* Pastille de statut actuel (auto, lecture seule) */}
+                {/* Pastille de statut actuel — label seul, sans phrase d'explication
+                    (l'utilisateur connaît la sémantique des couleurs). */}
                 <div className="flex items-center gap-3 p-3 rounded-lg" style={{ background: def.color + '22', borderLeft: `5px solid ${def.color}` }}>
                   <span className="text-2xl" style={{ color: def.color }}>●</span>
-                  <div className="flex-1 min-w-0">
-                    <div className="font-semibold text-base" style={{ color: def.color }}>{def.label}</div>
-                    <div className="text-xs text-[var(--text-dim)]">
-                      {effectiveStatus === 'pending' && 'Vol planifié ou en cours — passera automatiquement en orange dès la saisie de Landing.'}
-                      {effectiveStatus === 'incomplete' && (canComplete
-                        ? 'Toutes les données sont là. Clique « Marquer Complet » ci-dessous quand tu valides la fiche.'
-                        : `Il manque ${completeErrors.length} élément(s) avant de pouvoir valider.`)}
-                      {effectiveStatus === 'complete' && '✓ Vol validé Complet par le pilote / dispatch.'}
-                    </div>
-                  </div>
+                  <div className="font-semibold text-base" style={{ color: def.color }}>{def.label}</div>
                 </div>
 
                 {/* Bouton de validation manuelle — vert seulement si tout est OK.
@@ -9765,10 +9812,7 @@
               >
                 <FlagIcon code={lang} size={20} />
               </button>
-              <div className="text-right">
-                <div className="text-xs text-[var(--text-dim)]">{tT('app.zulu')}</div>
-                <div className="text-base"><ZuluClock /></div>
-              </div>
+              <ClockBlock zuluLabel={tT('app.zulu')} />
             </div>
           </header>
 
