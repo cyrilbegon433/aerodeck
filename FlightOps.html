@@ -4010,16 +4010,43 @@
       const [showCardsAndDates, setShowCardsAndDates] = useState(true);
       // Menu déroulant pour l'export (ZIP / CSV / etc.)
       const [exportMenuOpen, setExportMenuOpen] = useState(false);
+      const [exportMenuPos, setExportMenuPos] = useState(null); // {top, left} fixed coords
       const exportMenuRef = useRef(null);
+      const exportButtonRef = useRef(null);
+      // Calcule la position du menu en fixed coords, bornée à l'écran.
+      function openExportMenu() {
+        if (exportButtonRef.current) {
+          const r = exportButtonRef.current.getBoundingClientRect();
+          const menuW = 288;     // 18rem cap
+          const margin = 8;
+          const screenW = window.innerWidth;
+          // Anchor right edge to button right by default
+          let left = r.right - menuW;
+          // Clamp à gauche
+          if (left < margin) left = margin;
+          // Clamp à droite (rare)
+          if (left + menuW > screenW - margin) left = screenW - menuW - margin;
+          setExportMenuPos({ top: r.bottom + 8, left });
+        }
+        setExportMenuOpen(true);
+      }
       useEffect(() => {
         if (!exportMenuOpen) return;
         function handler(e) {
-          if (exportMenuRef.current && !exportMenuRef.current.contains(e.target)) {
+          if (exportMenuRef.current && !exportMenuRef.current.contains(e.target) &&
+              exportButtonRef.current && !exportButtonRef.current.contains(e.target)) {
             setExportMenuOpen(false);
           }
         }
+        function onScrollOrResize() { setExportMenuOpen(false); }
         document.addEventListener('mousedown', handler);
-        return () => document.removeEventListener('mousedown', handler);
+        window.addEventListener('scroll', onScrollOrResize, true);
+        window.addEventListener('resize', onScrollOrResize);
+        return () => {
+          document.removeEventListener('mousedown', handler);
+          window.removeEventListener('scroll', onScrollOrResize, true);
+          window.removeEventListener('resize', onScrollOrResize);
+        };
       }, [exportMenuOpen]);
       // Date de la dernière export (stockée en localStorage). Sert à n'inclure que
       // les nouveaux documents lors d'une export incrémentale.
@@ -4496,20 +4523,24 @@
               {/* Bouton export avec menu déroulant : ZIP (factures organisées par catégorie) /
                   CSV (récap métadonnées) / JSON (dump complet). Incrémental par défaut
                   (depuis la dernière export) ou tout. */}
-              <div className="relative" ref={exportMenuRef}>
-                <button className="btn btn-secondary"
-                  onClick={()=>setExportMenuOpen(o=>!o)}
+              <div>
+                <button ref={exportButtonRef} className="btn btn-secondary"
+                  onClick={()=>{ if (exportMenuOpen) setExportMenuOpen(false); else openExportMenu(); }}
                   title={tx('Exporter les dépenses','Upload expenses')}>
                   <span className="inline-flex items-center gap-1.5">
                     <LucideIcon name="upload" size={14} strokeWidth={2.25} />
                     {tx('Exporter','Upload')}
                   </span>
                 </button>
-                {exportMenuOpen && (
-                  <div className="absolute right-0 mt-2 z-30 rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden"
+                {exportMenuOpen && exportMenuPos && (
+                  <div ref={exportMenuRef}
+                    className="z-50 rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden"
                     style={{
+                      position: 'fixed',
+                      top: exportMenuPos.top,
+                      left: exportMenuPos.left,
                       background: 'var(--bg-card)',
-                      width: 'min(18rem, calc(100vw - 2rem))',
+                      width: 'min(18rem, calc(100vw - 16px))',
                       maxHeight: '70vh',
                       overflowY: 'auto',
                     }}>
