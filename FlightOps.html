@@ -4862,6 +4862,7 @@
     }
 
     function StatsScreen({ flights, aircraft, documents, categories, pilots=[], mechanicVisits=[], onExportJSON, onImportJSON, onClearAll, settings, onUpdateSettings }) {
+      const tx = useTx();
       // période courante : par défaut année calendaire en cours
       const now = new Date();
       const [year, setYear]   = useState(now.getUTCFullYear());
@@ -10165,6 +10166,7 @@
     function SettingsScreen({ settings, onUpdateSettings, onExportJSON, onImportJSON, onClearAll, syncStatus = {}, onSyncPull, onSyncPush, onArchiveDocs, onTestStorageFullPopup }) {
       const { lang, setLang } = React.useContext(I18nContext);
       const t = useT();
+      const tx = useTx();
       function update(k, v) { onUpdateSettings({ ...settings, [k]: v }); }
 
       const usage = storageUsageMB();
