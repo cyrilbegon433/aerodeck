@@ -2221,11 +2221,14 @@
           <span className="text-sm leading-none flex-shrink-0">▶</span>
           <span className="flex-1 h-px mx-0.5" style={{ background: 'currentColor', opacity: 0.5 }} />
           <span
-            className="font-mono tabular-nums whitespace-nowrap px-1 flex-shrink-0"
+            className={`font-mono tabular-nums whitespace-nowrap px-1.5 flex-shrink-0 ${
+              compact
+                ? 'text-[0.78rem] sm:text-[0.9rem]'
+                : 'text-[0.95rem] sm:text-[1.1rem]'
+            }`}
             style={{
               color: textColor,
               fontWeight: highlight ? 700 : (label ? 600 : 500),
-              fontSize: compact ? '0.7rem' : '0.85rem',
               lineHeight: 1,
             }}>
             {label && <span className="opacity-80 mr-1">{label}</span>}
@@ -2536,7 +2539,7 @@
                 <div className="flex"><TimeBracket label="FT" minutes={flightTime} fullWidth /></div>
               </div>
             ) : (
-              <div className="mt-1 px-1 py-1 space-y-1.5 overflow-hidden">
+              <div className="mt-1 px-1 py-1 space-y-2 sm:space-y-4 overflow-hidden">
                 {/* Ligne du haut : taxi out | FT (= air time) | taxi in */}
                 <div className="flex items-stretch gap-2">
                   <TimeBracket minutes={taxiOut || 0} compact />
