@@ -1929,10 +1929,10 @@
     // `lucide` = nom d'icône Lucide à utiliser dans le JSX (icônes modernes).
     // `icon` reste pour fallback / migration legacy (utilisé si lucide absent).
     const FLIGHT_DOC_TYPES = [
-      { id: 'wb',    label: 'Weight & Balance', icon: '⚖️',  lucide: 'scale',     color: '#a78bfa' },
-      { id: 'fpl',   label: 'FPL',              icon: '📋',  lucide: 'fileText',  color: '#38bdf8' },
-      { id: 'ofpl',  label: 'OFPL',             icon: '🗺️', lucide: 'mapPinned', color: '#34d399' },
-      { id: 'other', label: 'Autre',            icon: '📄',  lucide: 'file',      color: '#94a3b8' },
+      { id: 'wb',    label: 'Weight & Balance', labelEn: 'Weight & Balance', icon: '⚖️',  lucide: 'scale',     color: '#a78bfa' },
+      { id: 'fpl',   label: 'FPL',              labelEn: 'FPL',              icon: '📋',  lucide: 'fileText',  color: '#38bdf8' },
+      { id: 'ofpl',  label: 'OFPL',             labelEn: 'OFPL',             icon: '🗺️', lucide: 'mapPinned', color: '#34d399' },
+      { id: 'other', label: 'Autre',            labelEn: 'Other',            icon: '📄',  lucide: 'file',      color: '#94a3b8' },
     ];
     // Libellés humains pour les anciens types (compatibilité ascendante).
     // Les documents existants importés sous ces types restent accessibles via la
@@ -1979,6 +1979,8 @@
     }
 
     function FlightDocumentsEditor({ docs, onChange }) {
+      const tx = useTx();
+      const { lang } = React.useContext(I18nContext);
       // 3 volets fixes — l'utilisateur voit uniquement W&B, FPL, OFPL.
       // Pour chaque volet, un bouton "+ Ajouter" ouvre un mini-menu avec deux choix :
       //   1) Scanner (déclenche l'appareil photo via capture="environment")
@@ -2037,7 +2039,7 @@
       }
 
       function removeDoc(id) {
-        if (!confirm('Retirer ce document ? (Pense à exporter en JSON avant si tu veux le conserver.)')) return;
+        if (!confirm(tx('Retirer ce document ? (Pense à exporter en JSON avant si tu veux le conserver.)','Remove this document? (Export JSON first if you want to keep it.)'))) return;
         onChange((docs||[]).filter(d => d.id !== id));
       }
       // Visionneuse interne (avec bouton ← Retour) au lieu d'ouvrir un nouvel
@@ -2060,7 +2062,7 @@
             <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
               <div className="flex-1 min-w-0 text-xs">
                 <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
-                <div className="truncate text-[var(--text-dim)]">{t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
+                <div className="truncate text-[var(--text-dim)]">{lang === 'en' && t.labelEn ? t.labelEn : t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
               </div>
               <button type="button"
                 title="Retirer ce document"
@@ -2084,7 +2086,7 @@
                 {t.lucide
                   ? <span style={{ color: t.color || 'var(--accent)' }}><LucideIcon name={t.lucide} size={11} strokeWidth={2.5} /></span>
                   : <span>{t.icon}</span>}
-                {t.label}
+                {lang === 'en' && t.labelEn ? t.labelEn : t.label}
               </div>
             </div>
             <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" onClick={()=>openDoc(d)}>Ouvrir</button>
@@ -2100,7 +2102,7 @@
 
       return (
         <div className="card p-3">
-          <div className="label">Documents joints au vol</div>
+          <div className="label">{tx('Documents joints au vol','Flight attachments')}</div>
 
           {/* Visionneuse interne — bouton "← Retour" pour revenir à l'app */}
           <DocViewer doc={viewingDoc} onClose={()=>setViewingDoc(null)} />
@@ -2116,13 +2118,13 @@
                       {v.lucide
                         ? <CategoryIconChip name={v.lucide} color={v.color} size={36} iconSize={18} shape="rounded-xl" />
                         : <span className="text-2xl">{v.icon}</span>}
-                      <span className="font-medium truncate">{v.label}</span>
+                      <span className="font-medium truncate">{lang === 'en' && v.labelEn ? v.labelEn : v.label}</span>
                       {list.length > 0 && <span className="badge">{list.length}</span>}
                     </div>
                     <div className="relative flex-shrink-0">
                       <button type="button" className="btn btn-primary" disabled={busy}
                         onClick={()=> setActiveMenu(menuOpen ? null : v.id)}>
-                        {busy && pendingType===v.id ? 'Import…' : '+ Ajouter'}
+                        {busy && pendingType===v.id ? tx('Import…','Import…') : tx('+ Ajouter','+ Add')}
                       </button>
                       {menuOpen && (
                         <>
@@ -7519,6 +7521,7 @@
     }
 
     function FuelEntriesEditor({ entries, onChange, addExpense, aircraftId, flightDate, flights=[], currentFlightId=null, defaultUnit='L', defaultCurrency='EUR' }) {
+      const tx = useTx();
       function addEntry() {
         const next = [...(entries||[]), {
           id: 'fe_'+Date.now(),
@@ -7539,8 +7542,8 @@
         const e = entries[i];
         const hasLinkedExpense = !!(e && e.invoiceDocId);
         const msg = hasLinkedExpense
-          ? 'Retirer ce plein ? La dépense Carburant Avion liée sera également supprimée à l\'enregistrement du vol.'
-          : 'Retirer ce plein ?';
+          ? tx('Retirer ce plein ? La dépense Carburant Avion liée sera également supprimée à l\'enregistrement du vol.','Remove this fuel uplift? The linked Aircraft Fuel expense will also be deleted when the flight is saved.')
+          : tx('Retirer ce plein ?','Remove this fuel uplift?');
         if (!confirm(msg)) return;
         const next = [...entries]; next.splice(i,1); onChange(next);
       }
@@ -7558,9 +7561,9 @@
           <div className="flex items-center justify-between">
             <div className="label !mb-0 inline-flex items-center gap-1.5">
               <span style={{ color: 'var(--accent-2)' }}><LucideIcon name="fuel" size={14} strokeWidth={2.5} /></span>
-              Carburant Avion
+              {tx('Carburant Avion','Aircraft Fuel')}
             </div>
-            <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" onClick={addEntry}>+ Ajouter un plein</button>
+            <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" onClick={addEntry}>{tx('+ Ajouter un plein','+ Add fuel uplift')}</button>
           </div>
           {(entries||[]).length === 0 && (
             <div className="text-xs text-[var(--text-dim)] mt-2">Aucun plein enregistré pour ce vol. Tu peux en ajouter plusieurs si tu fais escale.</div>
@@ -7575,7 +7578,7 @@
           </div>
           {(entries||[]).length > 0 && (
             <div className="text-xs text-[var(--text-dim)] mt-2">
-              Total : {totals.L>0 && `${totals.L.toFixed(1)} L `} {totals.kg>0 && `${totals.kg.toFixed(1)} kg `} {totals.USG>0 && `${totals.USG.toFixed(1)} USG`}
+              {tx('Total','Total')} : {totals.L>0 && `${totals.L.toFixed(1)} L `} {totals.kg>0 && `${totals.kg.toFixed(1)} kg `} {totals.USG>0 && `${totals.USG.toFixed(1)} USG`}
             </div>
           )}
         </div>
@@ -7586,6 +7589,7 @@
     // l'onglet Dépenses). On garde quantité, unité, et cases à cocher Moteur Gauche /
     // Moteur Droit pour avions multi-moteurs.
     function OilEntryRow({ entry, index, onChange, onRemove, isMonomotor=false }) {
+      const tx = useTx();
       function set(k,v){ onChange({...entry, [k]: v}); }
       // Pour un monomoteur, on n'expose qu'une seule case "Moteur" qui pilote
       // engineLeft (le champ engineRight reste à false). On garde engineLeft comme
@@ -7593,18 +7597,21 @@
       return (
         <div className="bg-[var(--bg-elev)] p-3 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
-            <div className="text-sm font-medium">🛢️ Ajout d'huile #{index+1}</div>
-            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
+            <div className="text-sm font-medium inline-flex items-center gap-1.5">
+              <LucideIcon name="droplet" size={13} strokeWidth={2.5} />
+              {tx('Ajout d\'huile','Oil entry')} #{index+1}
+            </div>
+            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />{tx('Retirer','Remove')}</span></button>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
-              <div className="label">Quantité</div>
+              <div className="label">{tx('Quantité','Quantity')}</div>
               <input type="number" min="0" step="0.25" className="input" value={entry.qty} onChange={e=>set('qty', e.target.value)} placeholder="0" />
             </div>
             <div>
-              <div className="label">Unité</div>
+              <div className="label">{tx('Unité','Unit')}</div>
               <select className="select" value={entry.unit} onChange={e=>set('unit', e.target.value)}>
-                <option value="qt">pintes (qt)</option>
+                <option value="qt">{tx('pintes (qt)','quarts (qt)')}</option>
                 <option value="L">L</option>
               </select>
             </div>
@@ -7618,7 +7625,7 @@
                     const v = e.target.checked;
                     onChange({ ...entry, engineLeft: v, engineRight: false });
                   }} />
-                <span>Moteur</span>
+                <span>{tx('Moteur','Engine')}</span>
               </label>
             </div>
           ) : (
@@ -7627,13 +7634,13 @@
                 <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
                   checked={!!entry.engineLeft}
                   onChange={e=>set('engineLeft', e.target.checked)} />
-                <span>Moteur gauche</span>
+                <span>{tx('Moteur gauche','Left engine')}</span>
               </label>
               <label className="flex items-center gap-2 select-none cursor-pointer">
                 <input type="checkbox" className="w-5 h-5 accent-[#38bdf8]"
                   checked={!!entry.engineRight}
                   onChange={e=>set('engineRight', e.target.checked)} />
-                <span>Moteur droit</span>
+                <span>{tx('Moteur droit','Right engine')}</span>
               </label>
             </div>
           )}
@@ -7643,6 +7650,7 @@
     }
 
     function OilEntriesEditor({ entries, onChange, defaultUnit='qt', isMonomotor=false }) {
+      const tx = useTx();
       function addEntry() {
         const next = [...(entries||[]), {
           id: 'oe_'+Date.now(),
@@ -7656,7 +7664,7 @@
         const next = [...entries]; next[i] = e; onChange(next);
       }
       function removeEntry(i) {
-        if (!confirm('Retirer cet ajout d\'huile ? (Aucune facture liée — ajoute la facture séparément dans Dépenses si besoin.)')) return;
+        if (!confirm(tx('Retirer cet ajout d\'huile ? (Aucune facture liée — ajoute la facture séparément dans Dépenses si besoin.)','Remove this oil entry? (No linked invoice — add the invoice separately in Expenses if needed.)'))) return;
         const next = [...entries]; next.splice(i,1); onChange(next);
       }
       const totals = (entries||[]).reduce((acc, e) => {
@@ -7670,14 +7678,13 @@
           <div className="flex items-center justify-between">
             <div className="label !mb-0 inline-flex items-center gap-1.5">
               <span style={{ color: '#a16207' }}><LucideIcon name="droplet" size={14} strokeWidth={2.5} /></span>
-              Huile moteur
+              {tx('Huile moteur','Engine oil')}
             </div>
-            <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" onClick={addEntry}>+ Ajouter</button>
+            <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" onClick={addEntry}>{tx('+ Ajouter','+ Add')}</button>
           </div>
           {(entries||[]).length === 0 && (
             <div className="text-xs text-[var(--text-dim)] mt-2">
-              Aucun ajout d'huile pour ce vol. Saisis ici uniquement la quantité et le(s) moteur(s) concerné(s) ;
-              les factures d'huile se gèrent dans l'onglet Dépenses → Huile Moteur.
+              {tx('Aucun ajout d\'huile pour ce vol. Saisis ici uniquement la quantité et le(s) moteur(s) concerné(s) ; les factures d\'huile se gèrent dans l\'onglet Dépenses → Huile Moteur.','No oil entry for this flight. Enter only the quantity and engine(s) involved here; oil invoices are handled in the Expenses → Engine Oil tab.')}
             </div>
           )}
           <div className="space-y-2 mt-2">
