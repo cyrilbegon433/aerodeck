@@ -2204,33 +2204,35 @@
     // ------------------------------------------------------------------
 
     // Segment visuel "▶— LABEL X.X —◀" pour le diagramme temps de vol.
-    // - minutes : durée à afficher (en minutes)
-    // - label   : texte optionnel devant la valeur (ex "FT", "BT")
-    // - flex    : poids flex-grow proportionnel (le plus grand prend plus de place)
-    // - compact : version étroite (sans label, juste la valeur courte)
-    // - highlight : couleur accent (utilisé pour le segment principal FT)
-    // - fullWidth : occupe toute la ligne (utilisé pour BT en bas)
-    function TimeBracket({ minutes = 0, label = '', flex = 1, compact = false, highlight = false, fullWidth = false }) {
+    // Pas de flex-grow proportionnel : tous les segments ont la même taille minimum
+    // pour éviter chevauchement/troncature du texte sur mobile et desktop.
+    function TimeBracket({ minutes = 0, label = '', compact = false, highlight = false, fullWidth = false }) {
       const hours = (minutes / 60).toFixed(1);
       const color = highlight ? 'var(--accent)' : 'var(--text-dim)';
       const textColor = highlight ? 'var(--accent)' : 'var(--text)';
       return (
         <div
-          className="flex items-center gap-1 select-none"
+          className="flex items-center select-none"
           style={{
-            flex: fullWidth ? '1 1 100%' : `${flex} 1 0`,
+            flex: fullWidth ? '1 1 auto' : '1 1 0',
+            minWidth: compact ? 56 : 80,
             color,
-            minWidth: 0,
           }}>
-          <span className="text-base leading-none" style={{ marginRight: -2 }}>▶</span>
-          <span className="flex-1 h-px" style={{ background: 'currentColor', opacity: 0.5 }} />
-          <span className="font-mono tabular-nums whitespace-nowrap px-1.5"
-                style={{ color: textColor, fontWeight: highlight || label ? 600 : 500, fontSize: compact ? '0.7rem' : '0.85rem' }}>
+          <span className="text-sm leading-none flex-shrink-0">▶</span>
+          <span className="flex-1 h-px mx-0.5" style={{ background: 'currentColor', opacity: 0.5 }} />
+          <span
+            className="font-mono tabular-nums whitespace-nowrap px-1 flex-shrink-0"
+            style={{
+              color: textColor,
+              fontWeight: highlight ? 700 : (label ? 600 : 500),
+              fontSize: compact ? '0.7rem' : '0.85rem',
+              lineHeight: 1,
+            }}>
             {label && <span className="opacity-80 mr-1">{label}</span>}
             {hours}
           </span>
-          <span className="flex-1 h-px" style={{ background: 'currentColor', opacity: 0.5 }} />
-          <span className="text-base leading-none" style={{ marginLeft: -2 }}>◀</span>
+          <span className="flex-1 h-px mx-0.5" style={{ background: 'currentColor', opacity: 0.5 }} />
+          <span className="text-sm leading-none flex-shrink-0">◀</span>
         </div>
       );
     }
@@ -2530,19 +2532,19 @@
                 FT = Flight Time aviation = TO→Landing (= notre airTime).
                 BT = Block Time = BO→BI (= notre flightTime). */}
             {isSim ? (
-              <div className="mt-1 px-1 py-1">
-                <TimeBracket label="FT" minutes={flightTime} />
+              <div className="mt-1 px-1 py-1 overflow-hidden">
+                <div className="flex"><TimeBracket label="FT" minutes={flightTime} fullWidth /></div>
               </div>
             ) : (
-              <div className="mt-1 px-1 py-1 space-y-1.5">
+              <div className="mt-1 px-1 py-1 space-y-1.5 overflow-hidden">
                 {/* Ligne du haut : taxi out | FT (= air time) | taxi in */}
-                <div className="flex items-stretch gap-1">
-                  <TimeBracket minutes={taxiOut || 0} flex={Math.max((taxiOut||0), 1)} compact />
-                  <TimeBracket label="FT" minutes={airTime || 0} flex={Math.max((airTime||0)*2, 4)} highlight />
-                  <TimeBracket minutes={taxiIn || 0} flex={Math.max((taxiIn||0), 1)} compact />
+                <div className="flex items-stretch gap-2">
+                  <TimeBracket minutes={taxiOut || 0} compact />
+                  <TimeBracket label="FT" minutes={airTime || 0} highlight />
+                  <TimeBracket minutes={taxiIn || 0} compact />
                 </div>
                 {/* Ligne du bas : BT (block time = total) */}
-                <TimeBracket label="BT" minutes={flightTime || 0} fullWidth />
+                <div className="flex"><TimeBracket label="BT" minutes={flightTime || 0} fullWidth /></div>
               </div>
             )}
             {/* TTSN avion (Total Time Since New) — TTSN après = TTSN avant + Air Time.
