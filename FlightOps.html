@@ -7917,6 +7917,116 @@
         return arr;
       }, [flights, pilotFilter]);
 
+      // Génère un PDF du logbook via window.print() sur une fenêtre dédiée :
+      // l'utilisateur clique "Save as PDF" dans le dialog d'impression du navigateur.
+      // Aucune lib externe — fonctionne offline.
+      function exportTablePDF() {
+        const pilName = pilotFilter==='all'
+          ? tx('Tous les pilotes','All pilots')
+          : pilotDisplayName(pilots.find(p=>p.id===pilotFilter)) || pilotFilter;
+        const today = new Date().toISOString().slice(0,10);
+        // En-têtes localisés
+        const H = {
+          date:    tx('Date','Date'),
+          ac:      tx('Avion','Aircraft'),
+          pic:     'PIC',
+          sic:     'SIC',
+          type:    tx('Type','Type'),
+          rules:   tx('Régime','Rules'),
+          se:      tx('Mono','SE'),
+          me:      tx('Multi','ME'),
+          ir:      tx('Heures IR','IR Hours'),
+          tldg:    'T/LDG',
+          nav:     'Nav',
+          from:    tx('Départ','Dep'),
+          to:      tx('Arrivée','Arr'),
+        };
+        // Lignes
+        const rows = sorted.map(f => {
+          const ac  = aircraft.find(a => a.id === f.aircraftId);
+          const pic = pilots.find(p => p.id === f.pilotId);
+          const sic = pilots.find(p => p.id === f.copilotId);
+          const ft  = f.flightTime || 0;
+          const ec  = ac?.engineCount || 1;
+          const seTime = ec <= 1 ? ft : 0;
+          const meTime = ec >= 2 ? ft : 0;
+          const ifrTime = f.rules === 'IFR' ? ft : 0;
+          const navTime = f.isNavigation ? ft : 0;
+          const totalTO  = ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
+          const totalLDG = ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
+          const dur = (m) => m > 0 ? fmtDuration(m) : '';
+          return {
+            date: f.date || '',
+            ac: (ac?.registration||'?') + (ac?.type ? ' · ' + ac.type : ''),
+            pic: pic ? pilotDisplayName(pic) : '',
+            sic: sic ? pilotDisplayName(sic) : '',
+            type: flightTypeLabel(f.flightType, lang),
+            rules: f.rules || '',
+            se: dur(seTime),
+            me: dur(meTime),
+            ir: dur(ifrTime),
+            tldg: (totalTO || totalLDG) ? `${totalTO}/${totalLDG}` : '',
+            nav: dur(navTime),
+            from: f.from || '',
+            to: f.to || '',
+          };
+        });
+        const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({
+          '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+        }[c]));
+        const headerRow = `<tr>${['date','ac','pic','sic','type','rules','se','me','ir','tldg','nav','from','to']
+          .map(k => `<th>${escHtml(H[k])}</th>`).join('')}</tr>`;
+        const bodyRows = rows.map(r => `<tr>${
+          ['date','ac','pic','sic','type','rules','se','me','ir','tldg','nav','from','to']
+            .map(k => `<td>${escHtml(r[k])}</td>`).join('')
+        }</tr>`).join('');
+        const html = `<!DOCTYPE html>
+<html lang="${lang}">
+<head>
+<meta charset="utf-8">
+<title>Logbook — ${escHtml(pilName)} — ${today}</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #111; margin: 0; padding: 0; font-size: 10pt; }
+  h1 { font-size: 16pt; margin: 0 0 4pt; }
+  .meta { color: #555; font-size: 9pt; margin-bottom: 12pt; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { border: 1px solid #999; padding: 4px 6px; text-align: left; vertical-align: top; }
+  th { background: #f0f0f0; font-size: 8.5pt; text-transform: uppercase; letter-spacing: 0.02em; }
+  td { font-size: 9pt; }
+  td.num, th.num { text-align: center; font-variant-numeric: tabular-nums; font-family: ui-monospace, "SF Mono", Menlo, monospace; }
+  tr:nth-child(even) td { background: #fafafa; }
+  .footer { margin-top: 12pt; font-size: 8pt; color: #777; }
+  @media print { .no-print { display: none; } }
+</style>
+</head>
+<body>
+  <h1>Logbook — ${escHtml(pilName)}</h1>
+  <div class="meta">${escHtml(tx('Généré le','Generated on'))} ${today} · ${escHtml(tx('Total vols','Total flights'))} : ${rows.length}</div>
+  <table>
+    <thead>${headerRow}</thead>
+    <tbody>${bodyRows}</tbody>
+  </table>
+  <div class="footer">${escHtml(tx('Exporté depuis AeroDeck','Exported from AeroDeck'))}</div>
+  <button class="no-print" onclick="window.print()" style="position:fixed;top:8mm;right:8mm;padding:8px 14px;background:#0284c7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+    ${escHtml(tx('Imprimer / Sauver en PDF','Print / Save as PDF'))}
+  </button>
+  <script>
+    // Auto-déclenche le dialog d'impression au chargement (l'utilisateur peut choisir "Save as PDF").
+    window.addEventListener('load', () => setTimeout(() => window.print(), 300));
+  <\/script>
+</body>
+</html>`;
+        const w = window.open('', '_blank');
+        if (!w) {
+          alert(tx('Le navigateur a bloqué la fenêtre d\'impression. Autorise les popups pour ce site.','Browser blocked the print window. Allow popups for this site.'));
+          return;
+        }
+        w.document.open();
+        w.document.write(html);
+        w.document.close();
+      }
+
       function exportTableCSV() {
         const headers = ['date','from','to','registration','aircraft_name','class','flight_time_min',
                          'ifr_min','nav_min','duo_min','night_min','PIC','SIC','to','ldg','flight_type','notes'];
@@ -7964,9 +8074,16 @@
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-xl font-semibold">Staff — Logbook</h2>
-            <button className="btn btn-secondary" onClick={exportTableCSV}>
-              <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Export CSV</span>
-            </button>
+            <div className="flex items-center gap-2 flex-wrap">
+              <button className="btn btn-secondary" onClick={exportTableCSV}
+                title={tx('Télécharger un fichier CSV (Excel, Numbers, Sheets)','Download a CSV file (Excel, Numbers, Sheets)')}>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Export CSV</span>
+              </button>
+              <button className="btn btn-secondary" onClick={exportTablePDF}
+                title={tx('Imprimer ou sauvegarder en PDF (paysage A4)','Print or save as PDF (A4 landscape)')}>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="fileText" size={14} strokeWidth={2.25} />Export PDF</span>
+              </button>
+            </div>
           </div>
 
           <div className="card p-3">
@@ -8000,7 +8117,7 @@
                     <th className="px-1.5 py-2 text-center" title={tx('Régime de vol','Flight rules')}>{tx('Régime','Rules')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Monomoteur','Single-engine')}>{tx('Monomoteur','SE')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Multimoteur','Multi-engine')}>{tx('Multimoteur','ME')}</th>
-                    <th className="px-1.5 py-2 text-center" title={tx('Heure IR (instrument)','IR time (instrument)')}>IR</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Heures aux instruments (IR/IFR)','Instrument hours (IR/IFR)')}>{tx('Heures IR','IR Hours')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Décollages / Atterrissages','Take-offs / Landings')}>T/LDG</th>
                     <th className="px-1.5 py-2 text-center" title="Navigation">Nav</th>
                     <th className="px-1.5 py-2">{tx('Départ','Dep')}</th>
@@ -10018,8 +10135,8 @@
             ))}
           </nav>
 
-          {/* Contenu */}
-          <main className="flex-1 px-3 sm:px-6 py-3 max-w-4xl w-full mx-auto pb-28 sm:pb-10">
+          {/* Contenu — Staff/Stats utilisent toute la largeur pour leurs gros tableaux. */}
+          <main className={`flex-1 px-3 sm:px-6 py-3 w-full mx-auto pb-28 sm:pb-10 ${(tab==='staff' || tab==='stats') ? 'max-w-7xl' : 'max-w-4xl'}`}>
             {tab==='logbook' && <LogbookScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               settings={settings}
