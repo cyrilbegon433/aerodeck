@@ -6719,6 +6719,18 @@
 
     const LICENSE_TYPES = ['PPL','CPL','ATPL','LAPL','MPL','IR','CRI','FI','TRI'];
     const MEDICAL_CLASSES = ['Class 1','Class 2','LAPL','BasicMed','Autre'];
+    // Autorités aviation : pour pilotes ayant des licences de plusieurs pays
+    // (FAA, Transport Canada, EASA, etc.). Affichées dans le sélecteur de licence
+    // avec emoji drapeau pour identification visuelle rapide.
+    const LICENSE_AUTHORITIES = [
+      { id: 'faa',  label: 'FAA',  flag: '🇺🇸' },
+      { id: 'easa', label: 'EASA', flag: '🇪🇺' },
+      { id: 'tc',   label: 'TC',   flag: '🇨🇦' },
+    ];
+    function authorityLabel(id) {
+      const found = LICENSE_AUTHORITIES.find(a => a.id === id);
+      return found ? `${found.flag} ${found.label}` : (id || '—');
+    }
 
     // ------- Helpers dates pour règle médicale -------
     // Ajoute n mois à une date ISO (YYYY-MM-DD). Si le jour cible n'existe pas dans
@@ -6767,6 +6779,43 @@
       return full || '— sans nom —';
     }
 
+    // Construit une licence vide. Un pilote peut en avoir plusieurs (FAA, Transport Canada, EASA…)
+    function blankLicense() {
+      return {
+        id: 'lic_' + Date.now() + '_' + Math.random().toString(36).slice(2,7),
+        authority: 'easa',          // id dans LICENSE_AUTHORITIES
+        type: 'CPL',                // PPL, CPL, ATPL…
+        number: '',                 // N° de licence
+        expiry: '',                 // YYYY-MM-DD
+        ratings: '',                // ex: "ME, IR, B737"
+        // Médical attaché à CETTE licence (chaque pays a son propre médical)
+        medicalClass: 'Class 1',
+        medicalDate: '',
+        medicalExpiry: '',
+      };
+    }
+    // Migration : convertit les anciens champs licence/medical isolés en 1 entrée licenses[]
+    function migratePilotLicenses(p) {
+      if (Array.isArray(p?.licenses) && p.licenses.length > 0) return p;
+      // Si un ancien pilote a au moins un champ legacy → on construit 1 licence à partir de ça
+      const hasLegacy = p && (p.licenseType || p.licenseNumber || p.licenseExpiry || p.medicalClass || p.medicalDate || p.medicalExpiry || p.ratings);
+      if (!hasLegacy) {
+        return { ...p, licenses: [blankLicense()] };
+      }
+      const lic = {
+        ...blankLicense(),
+        authority: 'easa',  // valeur par défaut — l'utilisateur peut éditer
+        type: p.licenseType || 'CPL',
+        number: p.licenseNumber || '',
+        expiry: p.licenseExpiry || '',
+        ratings: p.ratings || '',
+        medicalClass: p.medicalClass || 'Class 1',
+        medicalDate: p.medicalDate || '',
+        medicalExpiry: p.medicalExpiry || '',
+      };
+      return { ...p, licenses: [lic] };
+    }
+
     function PilotForm({ initial, onSave, onCancel }) {
       const tx = useTx();
       const { lang } = React.useContext(I18nContext);
@@ -6774,15 +6823,17 @@
         id: null,
         firstName: '',
         lastName: '',
-        callsign: '',
+        callsign: '',          // Conservé pour compat (ancienne donnée), mais plus exposé en UI
         dateOfBirth: '',       // YYYY-MM-DD
+        licenses: [blankLicense()],  // NOUVEAU : tableau multi-licences (chaque licence a son médical)
+        // Anciens champs LEGACY conservés pour rétrocompat (re-sync depuis licenses[0])
         licenseType: 'CPL',
         licenseNumber: '',
         licenseExpiry: '',
         medicalClass: 'Class 1',
-        medicalDate: '',       // date de l'examen médical
-        medicalExpiry: '',     // date de renouvellement (auto-calculée mais éditable)
-        ratings: '',           // ex: "ME, IR, B777, C172"
+        medicalDate: '',
+        medicalExpiry: '',
+        ratings: '',
         email: '',
         phone: '',
         address: '',           // adresse postale (multi-ligne)
@@ -6793,26 +6844,55 @@
         passportId: '',        // numéro de passeport ou pièce d'identité
         notes: '',
       };
-      const [p, setP] = useState({ ...blank, ...(initial||{}) });
-      // Setter avec auto-calcul de medicalExpiry quand dateOfBirth ou medicalDate changent.
-      // L'utilisateur peut toujours surcharger manuellement medicalExpiry après.
-      function set(k,v){
+      // Migration : si pilote legacy (single license fields), on construit licenses[] depuis ces champs.
+      const [p, setP] = useState(() => migratePilotLicenses({ ...blank, ...(initial||{}) }));
+      function set(k,v){ setP(prev => ({...prev, [k]: v})); }
+      // Met à jour une licence dans licenses[] par index, avec auto-calcul du medicalExpiry
+      // basé sur la date de naissance du pilote + medicalDate de cette licence.
+      function setLicense(idx, key, value) {
         setP(prev => {
-          const next = {...prev, [k]: v};
-          if (k === 'medicalDate' || k === 'dateOfBirth') {
-            const exp = computeMedicalExpiry(next.medicalDate, next.dateOfBirth);
-            if (exp) next.medicalExpiry = exp;
+          const next = { ...prev };
+          const list = [...(prev.licenses || [])];
+          const lic  = { ...list[idx], [key]: value };
+          // Auto-calcul medicalExpiry quand medicalDate change ou dateOfBirth (au niveau pilote)
+          if (key === 'medicalDate') {
+            const exp = computeMedicalExpiry(lic.medicalDate, prev.dateOfBirth);
+            if (exp) lic.medicalExpiry = exp;
           }
+          list[idx] = lic;
+          next.licenses = list;
           return next;
         });
       }
+      function addLicense() {
+        setP(prev => ({ ...prev, licenses: [...(prev.licenses||[]), blankLicense()] }));
+      }
+      function removeLicense(idx) {
+        if (!confirm(tx('Supprimer cette licence ?','Delete this license?'))) return;
+        setP(prev => {
+          const list = [...(prev.licenses||[])];
+          list.splice(idx, 1);
+          // Garde au moins une licence (sinon le formulaire serait vide)
+          if (list.length === 0) list.push(blankLicense());
+          return { ...prev, licenses: list };
+        });
+      }
+      // Recalcule tous les medicalExpiry des licences quand dateOfBirth change
+      useEffect(() => {
+        setP(prev => {
+          if (!prev.licenses) return prev;
+          let changed = false;
+          const list = prev.licenses.map(lic => {
+            if (!lic.medicalDate) return lic;
+            const exp = computeMedicalExpiry(lic.medicalDate, prev.dateOfBirth);
+            if (exp && exp !== lic.medicalExpiry) { changed = true; return { ...lic, medicalExpiry: exp }; }
+            return lic;
+          });
+          return changed ? { ...prev, licenses: list } : prev;
+        });
+      }, [p.dateOfBirth]);
+
       const currentAge = computeAge(p.dateOfBirth);
-      const ageAtExam  = computeAge(p.dateOfBirth, p.medicalDate);
-      const ruleApplied = ageAtExam == null
-        ? null
-        : (ageAtExam >= 40
-            ? tx(`40 ans ou + au moment de l'examen → validité 6 mois`,'40 years old or more at exam time → 6-month validity')
-            : tx(`Avant 40 ans → validité 12 mois`,'Under 40 → 12-month validity'));
 
       return (
         <div className="space-y-3">
@@ -6826,17 +6906,12 @@
               <input className="input" value={p.lastName} onChange={e=>set('lastName', e.target.value)} />
             </div>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="label">{tx('Callsign / surnom','Callsign / nickname')}</div>
-              <input className="input" placeholder="Maverick" value={p.callsign} onChange={e=>set('callsign', e.target.value)} />
-            </div>
+          {/* Base aéroport seule (callsign retiré) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <div className="label">{tx('Base (OACI)','Base (ICAO)')}</div>
               <input className="input uppercase" maxLength={4} placeholder="LFPB" value={p.baseAirport} onChange={e=>set('baseAirport', e.target.value.toUpperCase())} />
             </div>
-          </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <div className="label whitespace-nowrap">{tx('Date de naissance','Date of birth')}</div>
               <input type="date" className="input" value={p.dateOfBirth} onChange={e=>set('dateOfBirth', e.target.value)} />
@@ -6846,61 +6921,111 @@
             </div>
           </div>
 
+          {/* === LICENCES MULTIPLES ===
+              Un pilote peut avoir plusieurs licences (FAA, Transport Canada, EASA…).
+              Chaque licence porte SON propre médical (chaque autorité a son propre médical).
+              Le médical expiry est auto-calculé via la date de naissance + medicalDate. */}
           <div className="card p-3">
-            <div className="label">{tx('Licence','License')}</div>
-            <div className="grid grid-cols-2 gap-3">
-              <select className="select" value={p.licenseType} onChange={e=>set('licenseType', e.target.value)}>
-                {LICENSE_TYPES.map(l => <option key={l}>{l}</option>)}
-              </select>
-              <input className="input" placeholder={tx('N° licence','License number')} value={p.licenseNumber} onChange={e=>set('licenseNumber', e.target.value)} />
-            </div>
-            <div className="mt-2">
-              <div className="label">{tx('Expiration licence','License expiry')}</div>
-              <input type="date" className="input" value={p.licenseExpiry} onChange={e=>set('licenseExpiry', e.target.value)} />
-            </div>
-            <div className="mt-2">
-              <div className="label whitespace-nowrap">{tx('Qualifications','Ratings')}</div>
-              <input className="input" placeholder={tx('ME, IR, B737, C172 (séparées par virgule)','ME, IR, B737, C172 (comma separated)')} value={p.ratings} onChange={e=>set('ratings', e.target.value)} />
-            </div>
-          </div>
-
-          <div className="card p-3">
-            <div className="label">{tx('Médical','Medical')}</div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <div className="label whitespace-nowrap">{tx('Classe','Class')}</div>
-                <select className="select" value={p.medicalClass} onChange={e=>set('medicalClass', e.target.value)}>
-                  {MEDICAL_CLASSES.map(m => <option key={m}>{m}</option>)}
-                </select>
+            <div className="flex items-center justify-between mb-2">
+              <div className="label !mb-0 inline-flex items-center gap-1.5">
+                <span style={{ color: 'var(--accent)' }}><LucideIcon name="briefcase" size={14} strokeWidth={2.5} /></span>
+                {tx('Licences','Licenses')} ({(p.licenses||[]).length})
               </div>
-              <div>
-                <div className="label whitespace-nowrap">{tx('Date d\'examen','Exam date')}</div>
-                <input type="date" className="input" value={p.medicalDate} onChange={e=>set('medicalDate', e.target.value)} />
-              </div>
+              <button type="button" className="btn btn-secondary !py-1 !px-3 text-sm" onClick={addLicense}>
+                {tx('+ Ajouter une licence','+ Add license')}
+              </button>
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-2">
-              <div>
-                <div className="label whitespace-nowrap">{tx('Date de renouvellement','Renewal date')}</div>
-                <input type="date" className="input" value={p.medicalExpiry} onChange={e=>set('medicalExpiry', e.target.value)} />
-                <div className="mt-1">
-                  <Hint title={tx('Calcul automatique','Auto calculation')}>
-                    {tx('Calculée automatiquement depuis la date de naissance + date d\'examen. Modifiable manuellement si besoin.','Automatically calculated from date of birth + exam date. Editable manually if needed.')}
-                  </Hint>
-                </div>
-              </div>
-              <div className="text-xs flex flex-col justify-end gap-1">
-                {!p.dateOfBirth && (
-                  <div className="text-[var(--warn)]">⚠ {tx('Renseigne d\'abord la date de naissance pour le calcul auto.','Enter date of birth first for auto calculation.')}</div>
-                )}
-                {p.dateOfBirth && !p.medicalDate && (
-                  <div className="text-[var(--text-dim)]">{tx('Renseigne la date de l\'examen pour calculer l\'expiration.','Enter the exam date to calculate expiry.')}</div>
-                )}
-                {ruleApplied && (
-                  <div className="text-[var(--accent)]">
-                    <span className="font-semibold">{tx('Règle','Rule')} :</span> {ruleApplied}
+            <div className="space-y-3">
+              {(p.licenses||[]).map((lic, idx) => {
+                const ageAtExam = computeAge(p.dateOfBirth, lic.medicalDate);
+                const ruleApplied = ageAtExam == null
+                  ? null
+                  : (ageAtExam >= 40
+                      ? tx('40 ans ou + → validité 6 mois','40+ years → 6-month validity')
+                      : tx('Avant 40 ans → validité 12 mois','Under 40 → 12-month validity'));
+                return (
+                  <div key={lic.id || idx} className="bg-[var(--bg-elev)] p-3 rounded-lg border border-[var(--border-soft)] space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)]">
+                        {tx('Licence','License')} #{idx + 1}
+                      </div>
+                      {(p.licenses||[]).length > 1 && (
+                        <button type="button"
+                          title={tx('Supprimer cette licence','Delete this license')}
+                          className="grid place-items-center w-8 h-8 rounded-md text-[var(--err)] hover:bg-[var(--err)]/15 transition-colors"
+                          onClick={()=>removeLicense(idx)}>
+                          <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
+                        </button>
+                      )}
+                    </div>
+                    {/* Autorité émettrice (drapeau) */}
+                    <div>
+                      <div className="label whitespace-nowrap">{tx('Autorité émettrice','Issuing authority')}</div>
+                      <select className="select" value={lic.authority} onChange={e=>setLicense(idx, 'authority', e.target.value)}>
+                        {LICENSE_AUTHORITIES.map(a => (
+                          <option key={a.id} value={a.id}>{a.flag} {a.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <div className="label whitespace-nowrap">{tx('Type','Type')}</div>
+                        <select className="select" value={lic.type} onChange={e=>setLicense(idx, 'type', e.target.value)}>
+                          {LICENSE_TYPES.map(l => <option key={l}>{l}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <div className="label whitespace-nowrap">{tx('N° licence','License #')}</div>
+                        <input className="input" placeholder="—" value={lic.number} onChange={e=>setLicense(idx, 'number', e.target.value)} />
+                      </div>
+                    </div>
+                    <div>
+                      <div className="label whitespace-nowrap">{tx('Expiration licence','License expiry')}</div>
+                      <input type="date" className="input" value={lic.expiry} onChange={e=>setLicense(idx, 'expiry', e.target.value)} />
+                    </div>
+                    <div>
+                      <div className="label whitespace-nowrap">{tx('Qualifications','Ratings')}</div>
+                      <input className="input" placeholder={tx('ME, IR, B737, C172','ME, IR, B737, C172')} value={lic.ratings} onChange={e=>setLicense(idx, 'ratings', e.target.value)} />
+                    </div>
+                    {/* === MÉDICAL DE CETTE LICENCE === */}
+                    <div className="mt-2 pt-2 border-t border-[var(--border-soft)]">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-[var(--text-dim)] mb-2 inline-flex items-center gap-1.5">
+                        <LucideIcon name="shieldCheck" size={12} strokeWidth={2.5} />
+                        {tx('Médical attaché','Attached medical')}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <div className="label whitespace-nowrap">{tx('Classe','Class')}</div>
+                          <select className="select" value={lic.medicalClass} onChange={e=>setLicense(idx, 'medicalClass', e.target.value)}>
+                            {MEDICAL_CLASSES.map(m => <option key={m}>{m}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <div className="label whitespace-nowrap">{tx('Date d\'examen','Exam date')}</div>
+                          <input type="date" className="input" value={lic.medicalDate} onChange={e=>setLicense(idx, 'medicalDate', e.target.value)} />
+                        </div>
+                      </div>
+                      <div className="mt-2">
+                        <div className="label whitespace-nowrap">{tx('Date de renouvellement','Renewal date')}</div>
+                        <input type="date" className="input" value={lic.medicalExpiry} onChange={e=>setLicense(idx, 'medicalExpiry', e.target.value)} />
+                        {ruleApplied && (
+                          <div className="text-xs text-[var(--accent)] mt-1">
+                            <span className="font-semibold">{tx('Règle','Rule')} :</span> {ruleApplied}
+                          </div>
+                        )}
+                        {!p.dateOfBirth && (
+                          <div className="text-xs text-[var(--warn)] mt-1">⚠ {tx('Renseigne la date de naissance pour le calcul auto.','Enter date of birth for auto calculation.')}</div>
+                        )}
+                      </div>
+                    </div>
                   </div>
-                )}
-              </div>
+                );
+              })}
+            </div>
+            <div className="mt-2">
+              <Hint title={tx('Multi-licences','Multi-licenses')}>
+                {tx('Tu peux ajouter plusieurs licences (FAA, Transport Canada, EASA, etc.). Chaque licence porte son propre médical (date d\'examen, classe, renouvellement) car chaque autorité émet son propre certificat médical. Le renouvellement est calculé automatiquement depuis la date de naissance + date d\'examen.','You can add several licenses (FAA, Transport Canada, EASA, etc.). Each license has its own medical (exam date, class, renewal) because each authority issues its own medical certificate. Renewal is auto-calculated from date of birth + exam date.')}
+              </Hint>
             </div>
           </div>
 
@@ -6954,10 +7079,24 @@
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn btn-secondary" onClick={onCancel}>{tx('Annuler','Cancel')}</button>
             <button className="btn btn-primary" onClick={()=>{
-              if (!p.firstName && !p.lastName && !p.callsign) {
-                return alert(tx('Au moins un nom, prénom ou callsign requis.','At least a name, first name or callsign required.'));
+              if (!p.firstName && !p.lastName) {
+                return alert(tx('Au moins un nom ou prénom requis.','At least a first name or last name required.'));
               }
-              onSave({ ...p, id: p.id || 'pl_'+Date.now() });
+              // Sync les champs LEGACY (licenseType, medicalExpiry…) depuis la 1re licence
+              // pour rétrocompat avec PilotsScreen list view, alertes médical/licence, etc.
+              const first = (p.licenses && p.licenses[0]) || {};
+              const synced = {
+                ...p,
+                id: p.id || 'pl_'+Date.now(),
+                licenseType:   first.type        || '',
+                licenseNumber: first.number      || '',
+                licenseExpiry: first.expiry      || '',
+                medicalClass:  first.medicalClass|| '',
+                medicalDate:   first.medicalDate || '',
+                medicalExpiry: first.medicalExpiry || '',
+                ratings:       first.ratings     || '',
+              };
+              onSave(synced);
             }}>{tx('Enregistrer','Save')}</button>
           </div>
         </div>
@@ -7006,6 +7145,19 @@
                         {p.baseAirport && ` · base ${p.baseAirport}`}
                         {p.dateOfBirth && computeAge(p.dateOfBirth) != null && ` · ${computeAge(p.dateOfBirth)} ans`}
                       </div>
+                      {/* Drapeaux des autorités émettrices si plusieurs licences */}
+                      {Array.isArray(p.licenses) && p.licenses.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {p.licenses.map((lic, i) => {
+                            const auth = LICENSE_AUTHORITIES.find(a => a.id === lic.authority);
+                            return (
+                              <span key={lic.id || i} className="badge text-[10px]" title={auth ? auth.label : lic.authority}>
+                                {auth ? auth.flag : '🌐'} {lic.type || '—'}{lic.number ? ` ${lic.number}` : ''}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
                       {p.ratings && <div className="text-xs text-[var(--text-dim)] truncate">QT : {p.ratings}</div>}
                       {p.medicalExpiry && (
                         <div className="text-xs text-[var(--text-dim)] truncate">
