@@ -1905,21 +1905,29 @@
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
              data-modal
              onClick={onClose}
-             style={{ overscrollBehavior: 'contain', touchAction: 'none' }}>
+             style={{ overscrollBehavior: 'contain', touchAction: 'none', overflow: 'hidden' }}>
           <div className="absolute inset-0 bg-black/50" />
           <div
-            className="relative card w-full sm:max-w-2xl max-h-[92vh] overflow-y-auto anim-pop"
-            style={{ borderRadius: '20px 20px 0 0', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y pinch-zoom' }}
+            className="relative card w-full sm:max-w-2xl max-h-[92vh] anim-pop"
+            style={{
+              borderRadius: '20px 20px 0 0',
+              overscrollBehavior: 'contain',
+              WebkitOverflowScrolling: 'touch',
+              touchAction: 'pan-y pinch-zoom',
+              overflowY: 'auto',
+              overflowX: 'hidden',           // bloque tout mouvement horizontal de la fiche
+              maxWidth: '100vw',
+            }}
             onClick={(e)=>e.stopPropagation()}
           >
             <div className="sticky top-0 glass z-10 flex items-center justify-between px-4 py-3" style={{borderRadius:'20px 20px 0 0'}}>
               <h3 className="font-semibold text-base">{title}</h3>
               <button className="btn btn-secondary !py-1 !px-2 text-sm" onClick={onClose}>Fermer</button>
             </div>
-            <div className="p-4">{children}</div>
-            {/* Footer non-sticky : il reste en bas du contenu (scroll naturel)
-                au lieu de flotter en permanence et masquer le formulaire. */}
-            {footer && <div className="px-4 py-3 flex justify-end gap-2 border-t border-[var(--border-soft)]">{footer}</div>}
+            {/* overflow-x:hidden aussi sur le wrapper du contenu : empêche tout enfant
+                trop large (input long, badge, label) de provoquer un scroll latéral. */}
+            <div className="p-4" style={{ overflowX: 'hidden', maxWidth: '100%' }}>{children}</div>
+            {footer && <div className="px-4 py-3 flex justify-end gap-2 border-t border-[var(--border-soft)]" style={{ overflowX: 'hidden' }}>{footer}</div>}
           </div>
         </div>
       );
@@ -9861,10 +9869,18 @@
             ZIP local pour libérer de la place et continuer à remplir le vol. */}
         {storageFullModal && (
           <div className="fixed inset-0 z-[70] flex items-end sm:items-center justify-center" data-storage-modal
-               style={{ overscrollBehavior: 'contain', touchAction: 'none' }}>
+               style={{ overscrollBehavior: 'contain', touchAction: 'none', overflow: 'hidden' }}>
             <div className="absolute inset-0 bg-black/60" onClick={()=>setStorageFullModal(null)} />
-            <div className="relative card w-full sm:max-w-lg max-h-[90vh] overflow-y-auto anim-pop p-5"
-                 style={{ borderRadius: '20px 20px 0 0', overscrollBehavior: 'contain', WebkitOverflowScrolling: 'touch', touchAction: 'pan-y pinch-zoom' }}>
+            <div className="relative card w-full sm:max-w-lg max-h-[90vh] anim-pop p-5"
+                 style={{
+                   borderRadius: '20px 20px 0 0',
+                   overscrollBehavior: 'contain',
+                   WebkitOverflowScrolling: 'touch',
+                   touchAction: 'pan-y pinch-zoom',
+                   overflowY: 'auto',
+                   overflowX: 'hidden',
+                   maxWidth: '100vw',
+                 }}>
               <div className="text-center mb-3">
                 <div className="grid place-items-center mx-auto mb-2 w-14 h-14 rounded-2xl"
                      style={{ background: 'rgba(245,158,11,0.18)', color: 'var(--warn)', boxShadow: 'inset 0 0 0 1.25px rgba(245,158,11,0.45)' }}>
