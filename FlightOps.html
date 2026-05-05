@@ -1604,6 +1604,11 @@
       mapPinned:    'M18 8c0 3.613-3.869 7.429-5.393 8.795a1 1 0 0 1-1.214 0C9.87 15.429 6 11.613 6 8a6 6 0 0 1 12 0z M12 10a2 2 0 1 0 0-4 2 2 0 0 0 0 4z M8.714 14h-3.71a1 1 0 0 0-.948.683l-2.004 6A1 1 0 0 0 3 22h18a1 1 0 0 0 .948-1.316l-2-6A1 1 0 0 0 19 14h-3.71',
       file:         'M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z M14 2v6h6',
       trash2:       'M3 6h18 M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6 M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2 M10 11v6 M14 11v6',
+      camera:       'M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z M12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z',
+      check:        'M20 6 9 17l-5-5',
+      arrowDown:    'M12 5v14 M19 12l-7 7-7-7',
+      arrowUp:      'M12 19V5 M5 12l7-7 7 7',
+      x:            'M18 6 6 18 M6 6l12 12',
     };
     function LucideIcon({ name, size = 20, strokeWidth = 2 }) {
       const path = LUCIDE_ICONS[name];
@@ -2005,7 +2010,7 @@
                 <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
                 <div className="truncate text-[var(--text-dim)]">{t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
               </div>
-              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}>Retirer</button>
+              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
             </div>
           );
         }
@@ -2026,7 +2031,7 @@
               </div>
             </div>
             <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs" onClick={()=>openDoc(d)}>Ouvrir</button>
-            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}>Retirer</button>
+            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDoc(d.id)}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
           </div>
         );
       }
@@ -2064,11 +2069,11 @@
                           <div className="absolute right-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
                             <button type="button" className="btn btn-secondary w-full mb-1 justify-start"
                               onClick={()=>triggerCamera(v.id)}>
-                              📷 Scanner avec l'appareil photo
+                              <span className="inline-flex items-center gap-1.5"><LucideIcon name="camera" size={14} strokeWidth={2.25} />Scanner avec l'appareil photo</span>
                             </button>
                             <button type="button" className="btn btn-secondary w-full justify-start"
                               onClick={()=>triggerFiles(v.id)}>
-                              📥 Importer depuis Téléchargements
+                              <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Importer depuis Téléchargements</span>
                             </button>
                           </div>
                         </>
@@ -2722,14 +2727,14 @@
                       className={`btn !text-white font-semibold ${canComplete ? '' : 'opacity-40 cursor-not-allowed'}`}
                       style={{ background: VERIFICATION_STATUSES.complete.color }}
                       title={canComplete ? 'Marquer ce vol comme validé Complet' : 'Compléter d\'abord les données manquantes'}>
-                      ✓ Marquer Complet
+                      <span className="inline-flex items-center gap-1.5"><LucideIcon name="check" size={14} strokeWidth={2.75} />Marquer Complet</span>
                     </button>
                   ) : (
                     <button type="button"
                       onClick={()=>set('verificationStatus', 'pending')}
                       className="btn btn-secondary !py-1.5 !px-3 text-xs sm:text-sm sm:!py-2 sm:!px-4"
                       title="Annuler la validation Complet (revient au statut auto)">
-                      ↶ Annuler la validation
+                      <span className="inline-flex items-center gap-1.5"><LucideIcon name="refreshCw" size={12} strokeWidth={2.5} />Annuler la validation</span>
                     </button>
                   )}
                 </div>
@@ -3131,7 +3136,7 @@
                       {d.hours && <>à {d.hours} h cellule</>}
                     </div>
                   </div>
-                  <button className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDeadline(d.id)}>Retirer</button>
+                  <button className="btn btn-danger !py-1 !px-2 text-xs" onClick={()=>removeDeadline(d.id)}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
                 </div>
               ))}
             </div>
@@ -3287,7 +3292,7 @@
                 if (confirm('Supprimer cet avion ? Les vols associés ne seront pas effacés.')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <AircraftForm initial={editing} flights={flights} onCancel={()=>setShowForm(false)} onSave={(a)=>{ onAddOrUpdate(a); setShowForm(false); }} />
@@ -3376,7 +3381,7 @@
                   onClick={()=>{
                     if (!confirm('Retirer la référence à ce fichier archivé ?')) return;
                     setD(prev => ({ ...prev, thumbnail:'', dataUrl:'', fileName:'', mime:'', archived: false }));
-                  }}>Retirer</button>
+                  }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
               </div>
             ) : hasFile ? (
               <div className="space-y-2">
@@ -3394,7 +3399,7 @@
                   <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs"
                     onClick={()=>setViewing(true)}>Ouvrir</button>
                   <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
-                    onClick={removeFile}>Retirer</button>
+                    onClick={removeFile}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
                 </div>
                 {/* Bouton Remplacer optionnel */}
                 <div className="relative inline-block">
@@ -3407,10 +3412,10 @@
                       <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
                       <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
                         <button type="button" className="btn btn-secondary w-full mb-1 justify-start" onClick={triggerCamera}>
-                          📷 Scanner avec l'appareil photo
+                          <span className="inline-flex items-center gap-1.5"><LucideIcon name="camera" size={14} strokeWidth={2.25} />Scanner avec l'appareil photo</span>
                         </button>
                         <button type="button" className="btn btn-secondary w-full justify-start" onClick={triggerFiles}>
-                          📥 Importer un fichier (image ou PDF)
+                          <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Importer un fichier (image ou PDF)</span>
                         </button>
                       </div>
                     </>
@@ -3428,10 +3433,10 @@
                     <div className="fixed inset-0 z-20" onClick={()=>setMenuOpen(false)} />
                     <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
                       <button type="button" className="btn btn-secondary w-full mb-1 justify-start" onClick={triggerCamera}>
-                        📷 Scanner avec l'appareil photo
+                        <span className="inline-flex items-center gap-1.5"><LucideIcon name="camera" size={14} strokeWidth={2.25} />Scanner avec l'appareil photo</span>
                       </button>
                       <button type="button" className="btn btn-secondary w-full justify-start" onClick={triggerFiles}>
-                        📥 Importer un fichier (image ou PDF)
+                        <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Importer un fichier (image ou PDF)</span>
                       </button>
                     </div>
                   </>
@@ -3455,7 +3460,9 @@
             />
           )}
 
-          <div className="grid grid-cols-2 gap-3">
+          {/* Mobile : Fournisseur passe sous la Date (le picker date natif iOS est large
+              et rognait le champ Fournisseur). Desktop : 2 colonnes côte à côte. */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <div className="label whitespace-nowrap">Date</div>
               <input type="date" className="input" value={d.date} onChange={e=>set('date', e.target.value)} />
@@ -4145,7 +4152,7 @@
                 if (confirm('Supprimer cette facture ? (Préfère un export JSON avant.)')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <DocumentForm
@@ -5183,9 +5190,9 @@
           <div className="card p-3 space-y-2">
             <div className="label">Sauvegarde / Restauration</div>
             <div className="flex flex-wrap gap-2">
-              <button className="btn btn-primary" onClick={onExportJSON}>📥 Exporter sauvegarde JSON</button>
+              <button className="btn btn-primary" onClick={onExportJSON}><span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Exporter sauvegarde JSON</span></button>
               <label className="btn btn-secondary cursor-pointer">
-                📤 Importer sauvegarde JSON
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />Importer sauvegarde JSON</span>
                 <input type="file" accept="application/json" className="hidden"
                   onChange={(e)=>{
                     const file = e.target.files?.[0];
@@ -5870,7 +5877,7 @@
                   onDeleteFlight && onDeleteFlight(editing.id);
                   setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <FlightForm
@@ -5927,7 +5934,7 @@
           </div>
           <div className="flex justify-end gap-2 pt-2">
             {current && (
-              <button className="btn btn-danger" onClick={onClear}>Retirer</button>
+              <button className="btn btn-danger" onClick={onClear}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
             )}
             <button className="btn btn-primary" onClick={()=>onSave(statusId, color)}>Enregistrer</button>
           </div>
@@ -6031,11 +6038,13 @@
                 <img src={m.photo} alt="" className="rounded-lg max-h-48 mx-auto" />
                 <div className="flex justify-center gap-2">
                   <button type="button" className="btn btn-secondary" onClick={()=>fileRef.current?.click()}>Remplacer</button>
-                  <button type="button" className="btn btn-danger" onClick={()=>{ if (confirm('Retirer la photo ?')) set('photo',''); }}>Retirer</button>
+                  <button type="button" className="btn btn-danger" onClick={()=>{ if (confirm('Retirer la photo ?')) set('photo',''); }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
                 </div>
               </div>
             ) : (
-              <button type="button" className="btn btn-secondary" onClick={()=>fileRef.current?.click()}>📷 Ajouter une photo</button>
+              <button type="button" className="btn btn-secondary" onClick={()=>fileRef.current?.click()}>
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="camera" size={14} strokeWidth={2.25} />Ajouter une photo</span>
+              </button>
             )}
             <input ref={fileRef} type="file" accept="image/*" capture="environment" className="hidden" onChange={handlePhoto} />
           </div>
@@ -6292,7 +6301,7 @@
                 if (confirm('Supprimer cette entrée maintenance ? (Préfère un export JSON avant.)')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <MaintenanceForm
@@ -6314,7 +6323,7 @@
                   onMechanicVisitDelete && onMechanicVisitDelete(editingMechVisit.id);
                   setShowMechVisitForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <MechanicVisitForm
@@ -6430,19 +6439,20 @@
     // 12d) ÉCRAN — DOCUMENTS COMPAGNIE
     // ------------------------------------------------------------------
 
+    // `lucide` + `color` = icône moderne ; `icon` = fallback emoji legacy.
     const COMPANY_DOC_TYPES = [
-      { id: 'ops_a',     label: 'OPS Manual A (Général)',  icon: '📘' },
-      { id: 'ops_b',     label: 'OPS Manual B (Aéronef)',  icon: '📗' },
-      { id: 'ops_c',     label: 'OPS Manual C (Routes)',   icon: '📙' },
-      { id: 'ops_d',     label: 'OPS Manual D (Formation)',icon: '📕' },
-      { id: 'mel',       label: 'MEL',                     icon: '📋' },
-      { id: 'mmel',      label: 'MMEL',                    icon: '📋' },
-      { id: 'poh',       label: 'POH / FCOM / AFM',        icon: '📓' },
-      { id: 'sms',       label: 'Manuel sécurité / SMS',   icon: '🛡️' },
-      { id: 'training',  label: 'Documents formation',     icon: '🎓' },
-      { id: 'compliance',label: 'Compliance / Audit',      icon: '⚖️' },
-      { id: 'contracts', label: 'Contrats',                icon: '📑' },
-      { id: 'other',     label: 'Autre',                   icon: '📄' },
+      { id: 'ops_a',     label: 'OPS Manual A (Général)',   icon: '📘', lucide: 'fileText',      color: '#38bdf8' },
+      { id: 'ops_b',     label: 'OPS Manual B (Aéronef)',   icon: '📗', lucide: 'fileText',      color: '#34d399' },
+      { id: 'ops_c',     label: 'OPS Manual C (Routes)',    icon: '📙', lucide: 'fileText',      color: '#f59e0b' },
+      { id: 'ops_d',     label: 'OPS Manual D (Formation)', icon: '📕', lucide: 'fileText',      color: '#ef4444' },
+      { id: 'mel',       label: 'MEL',                      icon: '📋', lucide: 'clipboard',     color: '#a78bfa' },
+      { id: 'mmel',      label: 'MMEL',                     icon: '📋', lucide: 'clipboard',     color: '#c084fc' },
+      { id: 'poh',       label: 'POH / FCOM / AFM',         icon: '📓', lucide: 'fileText',      color: '#06b6d4' },
+      { id: 'sms',       label: 'Manuel sécurité / SMS',    icon: '🛡️', lucide: 'shieldCheck',   color: '#34d399' },
+      { id: 'training',  label: 'Documents formation',      icon: '🎓', lucide: 'graduationCap', color: '#c084fc' },
+      { id: 'compliance',label: 'Compliance / Audit',       icon: '⚖️', lucide: 'scale',         color: '#a78bfa' },
+      { id: 'contracts', label: 'Contrats',                 icon: '📑', lucide: 'fileText',      color: '#fb923c' },
+      { id: 'other',     label: 'Autre',                    icon: '📄', lucide: 'file',          color: '#94a3b8' },
     ];
 
     function CompanyDocForm({ initial, aircraft, onSave, onCancel }) {
@@ -6521,7 +6531,9 @@
               </div>
             ) : (
               <button type="button" className="btn btn-primary" disabled={busy} onClick={()=>fileRef.current?.click()}>
-                {busy ? 'Import…' : '📥 Choisir un fichier'}
+                {busy ? 'Import…' : (
+                  <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Choisir un fichier</span>
+                )}
               </button>
             )}
             <input ref={fileRef} type="file" accept="image/*,application/pdf" className="hidden" onChange={handleFile} />
@@ -6599,7 +6611,9 @@
               return (
                 <div key={d.id} className="card p-3 cursor-pointer" onClick={()=>{ setEditing(d); setShowForm(true); }}>
                   <div className="flex items-start gap-3">
-                    <div className="text-3xl leading-none">{t.icon}</div>
+                    {t.lucide
+                      ? <CategoryIconChip name={t.lucide} color={t.color} size={44} iconSize={22} shape="rounded-xl" />
+                      : <div className="text-3xl leading-none">{t.icon}</div>}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center justify-between gap-2">
                         <div className="font-medium truncate">{d.title || t.label}</div>
@@ -6630,7 +6644,7 @@
                 if (confirm('Supprimer ce document ? (Préfère un export JSON avant.)')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <CompanyDocForm
@@ -6975,7 +6989,7 @@
                 if (confirm('Supprimer ce pilote du roster ? Les vols existants gardent leur référence (id non résolu).')) {
                   onDelete(editing.id); setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <PilotForm initial={editing} onCancel={()=>setShowForm(false)} onSave={(p)=>{ onAddOrUpdate(p); setShowForm(false); }} />
@@ -7176,7 +7190,7 @@
                   ⬆ Replier
                 </button>
               )}
-              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}>Retirer</button>
+              <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
             </div>
           </div>
           {/* Date du plein puis N° facture en dessous (évite l'empiètement quand
@@ -7406,11 +7420,11 @@
                   <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
                     <button type="button" className="btn btn-secondary w-full mb-1 justify-start"
                       onClick={()=>{ setMenuOpen(false); triggerCamera(); }}>
-                      📷 Scanner avec l'appareil photo
+                      <span className="inline-flex items-center gap-1.5"><LucideIcon name="camera" size={14} strokeWidth={2.25} />Scanner avec l'appareil photo</span>
                     </button>
                     <button type="button" className="btn btn-secondary w-full justify-start"
                       onClick={()=>{ setMenuOpen(false); triggerFiles(); }}>
-                      📥 Importer depuis Téléchargements
+                      <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Importer depuis Téléchargements</span>
                     </button>
                   </div>
                 </>
@@ -7431,11 +7445,11 @@
                   <div className="absolute left-0 top-full mt-1 z-30 card p-2 min-w-[230px] anim-pop">
                     <button type="button" className="btn btn-secondary w-full mb-1 justify-start"
                       onClick={()=>{ setMenuOpen(false); triggerCamera(); }}>
-                      📷 Scanner avec l'appareil photo
+                      <span className="inline-flex items-center gap-1.5"><LucideIcon name="camera" size={14} strokeWidth={2.25} />Scanner avec l'appareil photo</span>
                     </button>
                     <button type="button" className="btn btn-secondary w-full justify-start"
                       onClick={()=>{ setMenuOpen(false); triggerFiles(); }}>
-                      📥 Importer depuis Téléchargements
+                      <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Importer depuis Téléchargements</span>
                     </button>
                   </div>
                 </>
@@ -7535,7 +7549,7 @@
         <div className="bg-[var(--bg-elev)] p-3 rounded-lg space-y-2">
           <div className="flex items-center justify-between">
             <div className="text-sm font-medium">🛢️ Ajout d'huile #{index+1}</div>
-            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}>Retirer</button>
+            <button type="button" className="btn btn-danger !py-1 !px-2 text-xs" onClick={onRemove}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
           </div>
           <div className="grid grid-cols-3 gap-2">
             <div className="col-span-2">
@@ -7728,7 +7742,9 @@
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <h2 className="text-xl font-semibold">Staff — Logbook</h2>
-            <button className="btn btn-secondary" onClick={exportTableCSV}>📥 Export CSV</button>
+            <button className="btn btn-secondary" onClick={exportTableCSV}>
+              <span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Export CSV</span>
+            </button>
           </div>
 
           <div className="card p-3">
@@ -7897,7 +7913,7 @@
                   onDeleteFlight && onDeleteFlight(editing.id);
                   setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <FlightForm
@@ -8311,7 +8327,7 @@
                 if (confirm('Supprimer cette période duty manuelle ? La duty auto reprendra si des vols existent ce jour-là.')) {
                   handleDelete(editing.id); setShowForm(false);
                 }
-              }}>Supprimer</button>
+              }}><span className="inline-flex items-center gap-1.5"><LucideIcon name="trash2" size={14} strokeWidth={2.5} />Supprimer</span></button>
             )}
           >
             <DutyForm
@@ -8646,9 +8662,9 @@
                 title="Affiche la popup d'archivage automatique (test sans attendre que le stockage soit plein)">
                 🧪 Tester la popup d'archivage
               </button>
-              <button className="btn btn-primary" onClick={onExportJSON}>📥 Exporter sauvegarde JSON</button>
+              <button className="btn btn-primary" onClick={onExportJSON}><span className="inline-flex items-center gap-1.5"><LucideIcon name="download" size={14} strokeWidth={2.25} />Exporter sauvegarde JSON</span></button>
               <label className="btn btn-secondary cursor-pointer">
-                📤 Importer sauvegarde JSON
+                <span className="inline-flex items-center gap-1.5"><LucideIcon name="upload" size={14} strokeWidth={2.25} />Importer sauvegarde JSON</span>
                 <input type="file" accept="application/json" className="hidden"
                   onChange={(e)=>{
                     const file = e.target.files?.[0];
