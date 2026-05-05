@@ -2071,9 +2071,12 @@
           || (!d.dataUrl && !!d.id && !!(d.fileName || d.type));
         if (isArchived) {
           return (
-            <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
+            <div className="flex items-center gap-2 p-2">
               <div className="flex-1 min-w-0 text-xs">
-                <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
+                <div className="truncate font-semibold text-[var(--ok)] inline-flex items-center gap-1.5">
+                  <LucideIcon name="check" size={12} strokeWidth={2.5} />
+                  {tx('OK archivé','Archived OK')}
+                </div>
                 <div className="truncate text-[var(--text-dim)]">{lang === 'en' && t.labelEn ? t.labelEn : t.label}{d.fileName ? ` · ${d.fileName}` : ''}</div>
               </div>
               <button type="button"
@@ -2134,7 +2137,7 @@
                       {list.length > 0 && <span className="badge">{list.length}</span>}
                     </div>
                     <div className="relative flex-shrink-0">
-                      <button type="button" className="btn btn-primary" disabled={busy}
+                      <button type="button" className="btn btn-primary !py-1 !px-3 text-sm" disabled={busy}
                         onClick={()=> setActiveMenu(menuOpen ? null : v.id)}>
                         {busy && pendingType===v.id ? tx('Import…','Import…') : tx('+ Ajouter','+ Add')}
                       </button>
@@ -2999,11 +3002,17 @@
             onClose={()=>setShowForm(false)}
             title={editing ? t('logbook.editFlight') : t('logbook.newFlight').replace('+ ','')}
             footer={editing && (
-              <button className="btn btn-danger" onClick={()=>{
-                if (confirm(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
-                  onDelete(editing.id); setShowForm(false);
-                }
-              }}>{t('btn.delete')}</button>
+              <button
+                onClick={()=>{
+                  if (confirm(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
+                    onDelete(editing.id); setShowForm(false);
+                  }
+                }}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors"
+                style={{ background: 'transparent' }}>
+                <LucideIcon name="trash2" size={16} strokeWidth={2.25} />
+                {t('btn.delete')}
+              </button>
             )}
           >
             <FlightForm
