@@ -166,6 +166,13 @@
       box-sizing: border-box;
       -webkit-appearance: none;  /* aligne le rendu iOS sur le style standard */
     }
+    /* Cache les flèches des inputs number (Chrome / Safari / Firefox) */
+    input[type="number"]::-webkit-outer-spin-button,
+    input[type="number"]::-webkit-inner-spin-button {
+      -webkit-appearance: none;
+      margin: 0;
+    }
+    input[type="number"] { -moz-appearance: textfield; }
     .input:hover, .select:hover, .textarea:hover { border-color: color-mix(in oklab, var(--border) 60%, var(--accent) 40%); }
     .input:focus, .select:focus, .textarea:focus {
       outline: none;
@@ -8295,13 +8302,315 @@
       return ac.engineCount + '-mot.';
     }
 
-    function StaffScreen({ flights, aircraft, pilots=[], addExpense, onUpsertFlight, onDeleteFlight }) {
+    // Formulaire d'import du logbook précédent (papier ou autre logbook électronique).
+    // Saisie en heures décimales (ex: 1234.5 h), stockée en minutes pour rester
+    // cohérent avec le reste du modèle (flightTime en minutes).
+    function ImportLogbookForm({ pilot, onSave, onCancel }) {
+      const tx = useTx();
+      const prev = pilot?.previousLogbook || {};
+      const m2h = (m) => (m && m > 0) ? (m / 60).toFixed(2) : '';
+      const h2m = (h) => {
+        const v = parseFloat(h);
+        return (!isNaN(v) && v > 0) ? Math.round(v * 60) : 0;
+      };
+      const [d, setD] = useState({
+        date:   prev.date || '',
+        source: prev.source || '',
+        pic:    prev.pic || (pilot ? pilotDisplayName(pilot) : ''),
+        sic:    prev.sic || '',
+        flightType: prev.flightType || '',
+        ft:     m2h(prev.ft),
+        se:     m2h(prev.se),
+        me:     m2h(prev.me),
+        ir:     m2h(prev.ir),
+        nav:    m2h(prev.nav),
+        night:  m2h(prev.night),
+        takeoffs: prev.takeoffs || '',
+        landings: prev.landings || '',
+        notes:  prev.notes || '',
+      });
+      function set(k, v) { setD(p => ({ ...p, [k]: v })); }
+      function save() {
+        onSave({
+          date: d.date || '',
+          source: (d.source || '').trim(),
+          pic:   (d.pic || '').trim(),
+          sic:   (d.sic || '').trim(),
+          flightType: (d.flightType || '').trim(),
+          ft:    h2m(d.ft),
+          se:    h2m(d.se),
+          me:    h2m(d.me),
+          ir:    h2m(d.ir),
+          nav:   h2m(d.nav),
+          night: h2m(d.night),
+          takeoffs: parseInt(d.takeoffs) || 0,
+          landings: parseInt(d.landings) || 0,
+          notes: d.notes || '',
+        });
+      }
+      return (
+        <div className="space-y-3">
+          <div className="text-sm text-[var(--text-dim)] leading-relaxed">
+            {tx(
+              'Saisis ici les totaux par catégorie issus de ton logbook précédent (papier ou électronique). Ces heures sont ajoutées aux totaux du Staff sans être inscrites comme vols individuels — utile pour démarrer ton carnet électronique sur de bonnes bases.',
+              'Enter category totals from your previous (paper or electronic) logbook. These hours are added to Staff totals without being recorded as individual flights — useful to start your electronic logbook on the right foot.'
+            )}
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <div className="label">{tx('Source','Source')}</div>
+              <input className="input" placeholder={tx('Logbook papier, Foreflight…','Paper logbook, Foreflight…')}
+                value={d.source} onChange={e=>set('source', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Date d\'arrêt','Cutoff date')}</div>
+              <input type="date" className="input" value={d.date} onChange={e=>set('date', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="label">PIC</div>
+              <input className="input" placeholder={tx('Nom PIC','PIC name')}
+                value={d.pic} onChange={e=>set('pic', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">SIC</div>
+              <input className="input" placeholder={tx('Nom SIC (optionnel)','SIC name (optional)')}
+                value={d.sic} onChange={e=>set('sic', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Type de vol','Flight type')}</div>
+              <input className="input" placeholder={tx('ex: Multi, IFR, Charter…','e.g. Multi, IFR, Charter…')}
+                value={d.flightType} onChange={e=>set('flightType', e.target.value)} />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div>
+              <div className="label">{tx('Flight Time (h)','Flight Time (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="1234.5"
+                value={d.ft} onChange={e=>set('ft', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Mono (h)','SE (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0"
+                value={d.se} onChange={e=>set('se', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Multi (h)','ME (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0"
+                value={d.me} onChange={e=>set('me', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Heures IR (h)','IR (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0"
+                value={d.ir} onChange={e=>set('ir', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Navigation (h)','Navigation (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0"
+                value={d.nav} onChange={e=>set('nav', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Nuit (h)','Night (h)')}</div>
+              <input type="number" step="0.1" min="0" className="input font-mono" placeholder="0.0"
+                value={d.night} onChange={e=>set('night', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Décollages','Take-offs')}</div>
+              <input type="number" min="0" className="input font-mono" placeholder="0"
+                value={d.takeoffs} onChange={e=>set('takeoffs', e.target.value)} />
+            </div>
+            <div>
+              <div className="label">{tx('Atterrissages','Landings')}</div>
+              <input type="number" min="0" className="input font-mono" placeholder="0"
+                value={d.landings} onChange={e=>set('landings', e.target.value)} />
+            </div>
+          </div>
+          <div>
+            <div className="label">{tx('Notes (optionnel)','Notes (optional)')}</div>
+            <textarea className="textarea" rows={2}
+              value={d.notes} onChange={e=>set('notes', e.target.value)} />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <button className="btn btn-secondary" onClick={onCancel}>{tx('Annuler','Cancel')}</button>
+            <button className="btn btn-primary" onClick={save}>{tx('Enregistrer','Save')}</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Ligne éditable inline (desktop) pour saisir le logbook reporté DIRECTEMENT
+    // dans le tableau. Mêmes colonnes que les vols. Avion / Régime / Départ / Arrivée
+    // sont volontairement bloqués (pas de sens pour un total agrégé).
+    function InlineImportRow({ pilot, onSave, onCancel }) {
+      const tx = useTx();
+      const prev = pilot?.previousLogbook || {};
+      const m2h = (m) => (m && m > 0) ? (m / 60).toFixed(1) : '';
+      const h2m = (h) => {
+        const v = parseFloat(h);
+        return (!isNaN(v) && v > 0) ? Math.round(v * 60) : 0;
+      };
+      const [d, setD] = useState({
+        date: prev.date || '',
+        source: prev.source || '',
+        pic: prev.pic || (pilot ? pilotDisplayName(pilot) : ''),
+        sic: prev.sic || '',
+        flightType: prev.flightType || '',
+        ft: m2h(prev.ft),
+        se: m2h(prev.se),
+        me: m2h(prev.me),
+        ir: m2h(prev.ir),
+        nav: m2h(prev.nav),
+        night: m2h(prev.night),
+        takeoffs: prev.takeoffs || '',
+        landings: prev.landings || '',
+        notes: prev.notes || '',
+      });
+      function set(k, v) { setD(p => ({ ...p, [k]: v })); }
+      function save() {
+        onSave({
+          date: d.date || '', source: (d.source || '').trim(),
+          pic: (d.pic || '').trim(), sic: (d.sic || '').trim(),
+          flightType: (d.flightType || '').trim(),
+          ft: h2m(d.ft), se: h2m(d.se), me: h2m(d.me),
+          ir: h2m(d.ir), nav: h2m(d.nav), night: h2m(d.night),
+          takeoffs: parseInt(d.takeoffs) || 0,
+          landings: parseInt(d.landings) || 0,
+          notes: d.notes || '',
+        });
+      }
+      // Style des inputs : assez grands, bordure accentuée, focus net.
+      // Pas de flèches sur les inputs number (cachées globalement via CSS).
+      const inputCls = "w-full bg-[var(--bg-card)] border-2 border-[var(--accent)]/30 rounded-lg px-2 py-2 text-sm focus:border-[var(--accent)] focus:bg-[var(--bg-elev)] focus:outline-none transition-colors";
+      const numInputCls = inputCls + " font-mono text-center font-semibold tabular-nums";
+      const lockedCls = "text-center px-2 py-3 text-[var(--text-dim)]/40 italic select-none";
+      return (
+        <>
+          {/* En-tête de l'éditeur : Source + Date d'arrêt + Notes — fond cyan léger,
+              séparé visuellement du tableau par une bordure cyan en haut. */}
+          <tr className="border-t-4 border-[var(--accent)]">
+            <td colSpan={16} className="px-3 py-3 bg-[var(--accent)]/8">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="inline-flex items-center gap-1.5 text-[var(--accent)] font-bold text-xs uppercase tracking-wider">
+                  <LucideIcon name="clipboard" size={14} strokeWidth={2.75} />
+                  {tx('Saisie du logbook reporté','Carried-over logbook entry')}
+                </span>
+                <span className="text-[var(--text-dim)] text-[11px] italic">
+                  · {tx('cellules grisées : non applicables à un total agrégé','greyed cells: not applicable to an aggregated total')}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-2">
+                <div className="md:col-span-3">
+                  <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold mb-1">{tx('Source','Source')}</div>
+                  <input className={inputCls} placeholder={tx('Logbook papier, Foreflight…','Paper logbook, Foreflight…')}
+                    value={d.source} onChange={e=>set('source', e.target.value)} />
+                </div>
+                <div className="md:col-span-3">
+                  <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold mb-1">{tx('Date d\'arrêt','Cutoff date')}</div>
+                  <input type="date" className={inputCls + " font-mono"} value={d.date} onChange={e=>set('date', e.target.value)} />
+                </div>
+                <div className="md:col-span-6">
+                  <div className="text-[10px] text-[var(--text-dim)] uppercase tracking-wider font-bold mb-1">Notes</div>
+                  <input className={inputCls} placeholder={tx('Notes (optionnel)','Notes (optional)')}
+                    value={d.notes} onChange={e=>set('notes', e.target.value)} />
+                </div>
+              </div>
+            </td>
+          </tr>
+          {/* Ligne principale : valeurs par colonne (cellules plus hautes, plus larges) */}
+          <tr className="bg-[var(--accent)]/8 border-b-2 border-[var(--accent)]/30">
+            {/* Date — colonne aplatie (déjà en haut de l'en-tête), affiche un résumé */}
+            <td className="px-2 py-3 font-mono text-xs text-[var(--text-dim)] whitespace-nowrap">
+              {d.date || tx('Date ↑','Date ↑')}
+            </td>
+            <td className={lockedCls} title={tx('Non applicable','Not applicable')}>—</td>
+            <td className="px-2 py-3">
+              <input className={inputCls} placeholder="PIC" value={d.pic} onChange={e=>set('pic', e.target.value)} />
+            </td>
+            <td className="px-2 py-3">
+              <input className={inputCls} placeholder="SIC" value={d.sic} onChange={e=>set('sic', e.target.value)} />
+            </td>
+            <td className="px-2 py-3">
+              <input className={inputCls} placeholder={tx('Type','Type')} value={d.flightType} onChange={e=>set('flightType', e.target.value)} />
+            </td>
+            <td className="px-2 py-3" style={{ minWidth: 90 }}>
+              <input type="number" step="0.1" min="0" className={numInputCls} placeholder="0.0" value={d.ft} onChange={e=>set('ft', e.target.value)} />
+            </td>
+            <td className={lockedCls} title={tx('Non applicable','Not applicable')}>—</td>
+            <td className="px-2 py-3" style={{ minWidth: 80 }}>
+              <input type="number" step="0.1" min="0" className={numInputCls} placeholder="0.0" value={d.se} onChange={e=>set('se', e.target.value)} />
+            </td>
+            <td className="px-2 py-3" style={{ minWidth: 80 }}>
+              <input type="number" step="0.1" min="0" className={numInputCls} placeholder="0.0" value={d.me} onChange={e=>set('me', e.target.value)} />
+            </td>
+            <td className="px-2 py-3" style={{ minWidth: 80 }}>
+              <input type="number" step="0.1" min="0" className={numInputCls} placeholder="0.0" value={d.ir} onChange={e=>set('ir', e.target.value)} />
+            </td>
+            <td className="px-2 py-3" style={{ minWidth: 110 }}>
+              <div className="flex items-center gap-1">
+                <input type="number" min="0" className={numInputCls} placeholder="T" value={d.takeoffs} onChange={e=>set('takeoffs', e.target.value)} />
+                <span className="text-[var(--text-dim)] font-bold">/</span>
+                <input type="number" min="0" className={numInputCls} placeholder="L" value={d.landings} onChange={e=>set('landings', e.target.value)} />
+              </div>
+            </td>
+            <td className="px-2 py-3" style={{ minWidth: 80 }}>
+              <input type="number" step="0.1" min="0" className={numInputCls} placeholder="0.0" value={d.nav} onChange={e=>set('nav', e.target.value)} />
+            </td>
+            <td className="px-2 py-3" style={{ minWidth: 80 }}>
+              <input type="number" step="0.1" min="0" className={numInputCls} placeholder="0.0" value={d.night} onChange={e=>set('night', e.target.value)} />
+            </td>
+            <td className={lockedCls} title={tx('Non applicable','Not applicable')}>—</td>
+            <td className={lockedCls} title={tx('Non applicable','Not applicable')}>—</td>
+            <td className="px-2 py-3" style={{ minWidth: 90 }}>
+              <div className="flex items-center gap-1.5 justify-end">
+                <button type="button"
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-[var(--ok)] text-white shadow-md hover:scale-110 active:scale-95 transition-transform"
+                  title={tx('Enregistrer','Save')} onClick={save}>
+                  <LucideIcon name="check" size={16} strokeWidth={3} />
+                </button>
+                <button type="button"
+                  className="inline-flex items-center justify-center w-8 h-8 rounded-full border-2 border-[var(--err)] text-[var(--err)] hover:bg-[var(--err)]/10 transition-colors"
+                  title={tx('Annuler','Cancel')} onClick={onCancel}>
+                  <LucideIcon name="x" size={14} strokeWidth={3} />
+                </button>
+              </div>
+            </td>
+          </tr>
+          {/* Petite ligne de hint sous l'éditeur : unités */}
+          <tr className="bg-[var(--accent)]/5">
+            <td colSpan={16} className="px-3 py-1.5 text-[10px] text-[var(--text-dim)] italic">
+              {tx('Heures en décimales (ex : 1234.5 = 1234h30). Le grand total = sous-total carnet + reporté.','Hours in decimal format (e.g. 1234.5 = 1234h30). Grand total = subtotal + carried-over.')}
+            </td>
+          </tr>
+        </>
+      );
+    }
+
+    function StaffScreen({ flights, aircraft, pilots=[], addExpense, onUpsertFlight, onDeleteFlight, onUpsertPilot }) {
       const tx = useTx();
       const { lang } = React.useContext(I18nContext);
       const [pilotFilter, setPilotFilter] = useState('all');
       const [showAll, setShowAll] = useState(false);
       const [editing, setEditing] = useState(null);
       const [showForm, setShowForm] = useState(false);
+      // Modal d'import du logbook reporté (papier ou autre logbook électronique).
+      // Une seule fiche modale, identique sur mobile et desktop.
+      const [showImportLogbook, setShowImportLogbook] = useState(false);
+      function openImport() { setShowImportLogbook(true); }
+      function saveImport(data) {
+        if (onUpsertPilot && selectedPilot) {
+          onUpsertPilot({ ...selectedPilot, previousLogbook: data });
+        }
+        setShowImportLogbook(false);
+      }
+
+      const selectedPilot = pilotFilter !== 'all' ? pilots.find(p => p.id === pilotFilter) : null;
+      const prevLog = selectedPilot?.previousLogbook;
+      const hasPrevLog = !!prevLog && (
+        (prevLog.ft||0) || (prevLog.se||0) || (prevLog.me||0) ||
+        (prevLog.ir||0) || (prevLog.nav||0) || (prevLog.night||0) ||
+        (prevLog.takeoffs||0) || (prevLog.landings||0)
+      );
 
       const sorted = useMemo(() => {
         let arr = flights.filter(f => {
@@ -8327,12 +8636,14 @@
           pic:     'PIC',
           sic:     'SIC',
           type:    tx('Type','Type'),
+          ft:      'FT',
           rules:   tx('Régime','Rules'),
           se:      tx('Mono','SE'),
           me:      tx('Multi','ME'),
           ir:      tx('Heures IR','IR Hours'),
           tldg:    'T/LDG',
           nav:     'Nav',
+          night:   tx('Nuit','Night'),
           from:    tx('Départ','Dep'),
           to:      tx('Arrivée','Arr'),
         };
@@ -8347,6 +8658,7 @@
           const meTime = ec >= 2 ? ft : 0;
           const ifrTime = f.rules === 'IFR' ? ft : 0;
           const navTime = f.isNavigation ? ft : 0;
+          const nightTime = f.nightTime || 0;
           const totalTO  = ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
           const totalLDG = ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
           const dur = (m) => m > 0 ? fmtDuration(m) : '';
@@ -8356,12 +8668,14 @@
             pic: pic ? pilotDisplayName(pic) : '',
             sic: sic ? pilotDisplayName(sic) : '',
             type: flightTypeLabel(f.flightType, lang),
+            ft: dur(ft),
             rules: f.rules || '',
             se: dur(seTime),
             me: dur(meTime),
             ir: dur(ifrTime),
             tldg: (totalTO || totalLDG) ? `${totalTO}/${totalLDG}` : '',
             nav: dur(navTime),
+            night: dur(nightTime),
             from: f.from || '',
             to: f.to || '',
           };
@@ -8369,12 +8683,40 @@
         const escHtml = s => String(s||'').replace(/[&<>"']/g, c => ({
           '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
         }[c]));
-        const headerRow = `<tr>${['date','ac','pic','sic','type','rules','se','me','ir','tldg','nav','from','to']
+        const headerRow = `<tr>${['date','ac','pic','sic','type','ft','rules','se','me','ir','tldg','nav','night','from','to']
           .map(k => `<th>${escHtml(H[k])}</th>`).join('')}</tr>`;
         const bodyRows = rows.map(r => `<tr>${
-          ['date','ac','pic','sic','type','rules','se','me','ir','tldg','nav','from','to']
+          ['date','ac','pic','sic','type','ft','rules','se','me','ir','tldg','nav','night','from','to']
             .map(k => `<td>${escHtml(r[k])}</td>`).join('')
         }</tr>`).join('');
+        // Ligne de totaux : on recalcule depuis sorted pour avoir les totaux numériques
+        let tFT=0, tSE=0, tME=0, tIR=0, tNav=0, tNight=0, tTO=0, tLDG=0;
+        for (const f of sorted) {
+          const ac = aircraft.find(a => a.id === f.aircraftId);
+          const ec = ac?.engineCount || 1;
+          const fft = f.flightTime || 0;
+          tFT += fft;
+          if (ec <= 1) tSE += fft; else tME += fft;
+          if (f.rules === 'IFR') tIR += fft;
+          if (f.isNavigation) tNav += fft;
+          tNight += (f.nightTime || 0);
+          tTO  += ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
+          tLDG += ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
+        }
+        const totalRow = `<tr style="background:#e8f4fc;font-weight:bold;border-top:2px solid #0284c7;">
+          <td>${escHtml(tx('Total','Total'))}</td>
+          <td>${rows.length} ${escHtml(tx('vol(s)','flight(s)'))}</td>
+          <td>—</td><td>—</td><td>—</td>
+          <td>${escHtml(tFT>0?fmtDuration(tFT):'—')}</td>
+          <td>—</td>
+          <td>${escHtml(tSE>0?fmtDuration(tSE):'—')}</td>
+          <td>${escHtml(tME>0?fmtDuration(tME):'—')}</td>
+          <td>${escHtml(tIR>0?fmtDuration(tIR):'—')}</td>
+          <td>${tTO}/${tLDG}</td>
+          <td>${escHtml(tNav>0?fmtDuration(tNav):'—')}</td>
+          <td>${escHtml(tNight>0?fmtDuration(tNight):'—')}</td>
+          <td>—</td><td>—</td>
+        </tr>`;
         const html = `<!DOCTYPE html>
 <html lang="${lang}">
 <head>
@@ -8401,6 +8743,7 @@
   <table>
     <thead>${headerRow}</thead>
     <tbody>${bodyRows}</tbody>
+    <tfoot>${totalRow}</tfoot>
   </table>
   <div class="footer">${escHtml(tx('Exporté depuis AeroDeck','Exported from AeroDeck'))}</div>
   <button class="no-print" onclick="window.print()" style="position:fixed;top:8mm;right:8mm;padding:8px 14px;background:#0284c7;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:600;">
@@ -8465,6 +8808,24 @@
       const limit = showAll ? sorted.length : Math.min(sorted.length, 200);
       const visible = sorted.slice(0, limit);
 
+      // Totaux par colonne (basés sur les vols visibles)
+      const totals = useMemo(() => {
+        let ft=0, se=0, me=0, ir=0, nav=0, night=0, to=0, ldg=0;
+        for (const f of visible) {
+          const ac = aircraft.find(a => a.id === f.aircraftId);
+          const ec = ac?.engineCount || 1;
+          const fft = f.flightTime || 0;
+          ft += fft;
+          if (ec <= 1) se += fft; else me += fft;
+          if (f.rules === 'IFR') ir += fft;
+          if (f.isNavigation) nav += fft;
+          night += (f.nightTime || 0);
+          to  += ((f.takeoffsPic||0)+(f.takeoffsSic||0)) || (f.takeoffs||0);
+          ldg += ((f.landingsPic||0)+(f.landingsSic||0)) || (f.landings||0);
+        }
+        return { ft, se, me, ir, nav, night, to, ldg, count: visible.length };
+      }, [visible, aircraft]);
+
       return (
         <div className="space-y-3">
           <div className="flex items-center justify-between gap-2 flex-wrap">
@@ -8487,7 +8848,44 @@
               <option value="all">Tous les pilotes</option>
               {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
             </select>
+
+            {/* Bouton moderne : importer / modifier le logbook précédent.
+                Visible uniquement quand un pilote précis est sélectionné. */}
+            {pilotFilter !== 'all' && selectedPilot && (
+              <div className="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
+                <button type="button"
+                  onClick={openImport}
+                  className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-full border-2 border-[var(--accent)] text-[var(--accent)] font-semibold hover:bg-[var(--accent)]/10 transition-all hover:scale-105 active:scale-95 self-start"
+                  style={{ background: 'transparent' }}>
+                  <LucideIcon name={hasPrevLog ? 'clipboard' : 'plus'} size={16} strokeWidth={2.5} />
+                  <span>{hasPrevLog
+                    ? tx('Modifier le logbook reporté','Edit carried-over logbook')
+                    : tx('+ Importer logbook précédent','+ Import previous logbook')}</span>
+                </button>
+                {hasPrevLog && (
+                  <span className="text-xs text-[var(--text-dim)]">
+                    {prevLog.source ? prevLog.source : tx('Reporté','Carried-over')}
+                    {prevLog.date ? ` · ${tx('arrêté au','as of')} ${prevLog.date}` : ''}
+                    {(prevLog.ft||0) > 0 ? ` · ${fmtDuration(prevLog.ft)} FT` : ''}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
+
+          {/* Modal mobile : formulaire complet stacké. Ne s'ouvre que si déclenché
+              côté mobile (showImportLogbook true). Côté desktop, c'est la ligne
+              inline dans le tableau qui prend le relais (voir tfoot du tableau). */}
+          <Modal open={showImportLogbook} onClose={()=>setShowImportLogbook(false)}
+            title={tx('Logbook précédent (papier ou électronique)','Previous logbook (paper or electronic)')}>
+            {selectedPilot && (
+              <ImportLogbookForm
+                pilot={selectedPilot}
+                onCancel={()=>setShowImportLogbook(false)}
+                onSave={saveImport}
+              />
+            )}
+          </Modal>
 
           {visible.length === 0 && (
             <div className="card p-6 text-center text-[var(--text-dim)]">
@@ -8509,12 +8907,14 @@
                     <th className="px-1.5 py-2">PIC</th>
                     <th className="px-1.5 py-2">SIC</th>
                     <th className="px-1.5 py-2" title={tx('Type de vol','Flight type')}>{tx('Type','Type')}</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Flight Time (Block to Block)','Flight Time (Block to Block)')}>FT</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Régime de vol','Flight rules')}>{tx('Régime','Rules')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Monomoteur','Single-engine')}>{tx('Monomoteur','SE')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Multimoteur','Multi-engine')}>{tx('Multimoteur','ME')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Heures aux instruments (IR/IFR)','Instrument hours (IR/IFR)')}>{tx('Heures IR','IR Hours')}</th>
                     <th className="px-1.5 py-2 text-center" title={tx('Décollages / Atterrissages','Take-offs / Landings')}>T/LDG</th>
                     <th className="px-1.5 py-2 text-center" title="Navigation">Nav</th>
+                    <th className="px-1.5 py-2 text-center" title={tx('Vol de nuit','Night flight')}>{tx('Nuit','Night')}</th>
                     <th className="px-1.5 py-2">{tx('Départ','Dep')}</th>
                     <th className="px-1.5 py-2">{tx('Arrivée','Arr')}</th>
                     <th className="px-1.5 py-2 text-center"></th>
@@ -8545,6 +8945,7 @@
                         <td className="px-1.5 py-1.5 truncate max-w-[110px]">{pic ? pilotDisplayName(pic) : '—'}</td>
                         <td className="px-1.5 py-1.5 truncate max-w-[110px]">{sic ? pilotDisplayName(sic) : '—'}</td>
                         <td className="px-1.5 py-1.5 whitespace-nowrap text-[10px]">{flightTypeLabel(f.flightType, lang)}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono font-semibold text-[var(--accent)]">{ft > 0 ? fmtDuration(ft) : '—'}</td>
                         <td className="px-1.5 py-1.5 text-center whitespace-nowrap">{f.rules || '—'}</td>
                         <td className="px-1.5 py-1.5 text-center font-mono">{seTime > 0 ? fmtDuration(seTime) : '—'}</td>
                         <td className="px-1.5 py-1.5 text-center font-mono">{meTime > 0 ? fmtDuration(meTime) : '—'}</td>
@@ -8553,6 +8954,7 @@
                           {totalTO}/{totalLDG}
                         </td>
                         <td className="px-1.5 py-1.5 text-center font-mono">{navTime > 0 ? fmtDuration(navTime) : '—'}</td>
+                        <td className="px-1.5 py-1.5 text-center font-mono">{(f.nightTime||0) > 0 ? fmtDuration(f.nightTime) : '—'}</td>
                         <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.from || '—'}</td>
                         <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.to || '—'}</td>
                         <td className="px-1.5 py-1.5 text-center">
@@ -8570,7 +8972,126 @@
                     );
                   })}
                 </tbody>
+                {/* === LIGNE(S) DE TOTAUX === Sommes par colonne sur les vols visibles.
+                     Si un pilote est sélectionné et a un logbook reporté, on affiche
+                     3 lignes : Sous-total carnet électronique / Reporté / Grand total. */}
+                {visible.length > 0 && (
+                  <tfoot>
+                    <tr className="border-t-2 border-[var(--accent)]/40 bg-[var(--bg-elev)] font-bold uppercase text-[10px] tracking-wide">
+                      <td className="px-1.5 py-2 whitespace-nowrap">{hasPrevLog ? tx('Sous-total','Subtotal') : tx('Total','Total')}</td>
+                      <td className="px-1.5 py-2 text-[var(--text-dim)]">{totals.count} {tx('vol(s)','flight(s)')}</td>
+                      <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                      <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                      <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs">{totals.ft > 0 ? fmtDuration(totals.ft) : '—'}</td>
+                      <td className="px-1.5 py-2 text-center text-[var(--text-dim)]">—</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs">{totals.se > 0 ? fmtDuration(totals.se) : '—'}</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs">{totals.me > 0 ? fmtDuration(totals.me) : '—'}</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs">{totals.ir > 0 ? fmtDuration(totals.ir) : '—'}</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs whitespace-nowrap">{totals.to}/{totals.ldg}</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs">{totals.nav > 0 ? fmtDuration(totals.nav) : '—'}</td>
+                      <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-xs">{totals.night > 0 ? fmtDuration(totals.night) : '—'}</td>
+                      <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                      <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                      <td className="px-1.5 py-2"></td>
+                    </tr>
+                    {hasPrevLog && (
+                      <>
+                        {/* Ligne "Reporté du logbook précédent" — affiche aussi PIC/SIC/Type */}
+                        <tr className="bg-[var(--bg-elev)]/50 font-semibold uppercase text-[10px] tracking-wide italic group cursor-pointer hover:bg-[var(--bg-elev)]"
+                            onClick={openImport}
+                            title={tx('Cliquer pour modifier','Click to edit')}>
+                          <td className="px-1.5 py-2 whitespace-nowrap text-[var(--text-dim)]">{tx('Reporté','Carried-over')}{prevLog.date ? ' · '+prevLog.date : ''}</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)] truncate" title={prevLog.source||''}>{prevLog.source || tx('Logbook précédent','Previous logbook')}</td>
+                          <td className="px-1.5 py-2 truncate max-w-[110px]" title={prevLog.pic||''}>{prevLog.pic || '—'}</td>
+                          <td className="px-1.5 py-2 truncate max-w-[110px]" title={prevLog.sic||''}>{prevLog.sic || '—'}</td>
+                          <td className="px-1.5 py-2 text-[10px] truncate max-w-[100px]" title={prevLog.flightType||''}>{prevLog.flightType || '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs">{(prevLog.ft||0) > 0 ? fmtDuration(prevLog.ft) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs">{(prevLog.se||0) > 0 ? fmtDuration(prevLog.se) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs">{(prevLog.me||0) > 0 ? fmtDuration(prevLog.me) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs">{(prevLog.ir||0) > 0 ? fmtDuration(prevLog.ir) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs whitespace-nowrap">{(prevLog.takeoffs||0)}/{(prevLog.landings||0)}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs">{(prevLog.nav||0) > 0 ? fmtDuration(prevLog.nav) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-xs">{(prevLog.night||0) > 0 ? fmtDuration(prevLog.night) : '—'}</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2"></td>
+                        </tr>
+                        {/* Ligne GRAND TOTAL = sous-total + reporté */}
+                        <tr className="border-t-2 border-[var(--accent)] bg-[var(--accent)]/10 font-bold uppercase text-[10px] tracking-wide">
+                          <td className="px-1.5 py-2 whitespace-nowrap text-[var(--accent)]">{tx('Grand total','Grand total')}</td>
+                          <td className="px-1.5 py-2 text-[var(--accent)]">—</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm">{(totals.ft+(prevLog.ft||0)) > 0 ? fmtDuration(totals.ft+(prevLog.ft||0)) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm">{(totals.se+(prevLog.se||0)) > 0 ? fmtDuration(totals.se+(prevLog.se||0)) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm">{(totals.me+(prevLog.me||0)) > 0 ? fmtDuration(totals.me+(prevLog.me||0)) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm">{(totals.ir+(prevLog.ir||0)) > 0 ? fmtDuration(totals.ir+(prevLog.ir||0)) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm whitespace-nowrap">{totals.to+(prevLog.takeoffs||0)}/{totals.ldg+(prevLog.landings||0)}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm">{(totals.nav+(prevLog.nav||0)) > 0 ? fmtDuration(totals.nav+(prevLog.nav||0)) : '—'}</td>
+                          <td className="px-1.5 py-2 text-center font-mono text-[var(--accent)] text-sm">{(totals.night+(prevLog.night||0)) > 0 ? fmtDuration(totals.night+(prevLog.night||0)) : '—'}</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2 text-[var(--text-dim)]">—</td>
+                          <td className="px-1.5 py-2"></td>
+                        </tr>
+                      </>
+                    )}
+                  </tfoot>
+                )}
               </table>
+            </div>
+          )}
+
+          {/* === MOBILE : carte récap totaux + reporté + grand total quand un logbook
+              est reporté pour le pilote sélectionné. */}
+          {hasPrevLog && (
+            <div className="sm:hidden card p-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="text-xs uppercase tracking-wider text-[var(--accent)] font-bold inline-flex items-center gap-1.5">
+                  <LucideIcon name="clipboard" size={14} strokeWidth={2.5} />
+                  {tx('Logbook reporté','Carried-over')}
+                </div>
+                {prevLog.date && <div className="text-[10px] text-[var(--text-dim)]">{tx('au','as of')} {prevLog.date}</div>}
+              </div>
+              {prevLog.source && <div className="text-xs text-[var(--text-dim)]">{prevLog.source}</div>}
+              {/* 3 colonnes : Reporté / Carnet électronique / Grand total */}
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div className="text-center">
+                  <div className="text-[9px] uppercase text-[var(--text-dim)] font-semibold">{tx('Reporté','Carried')}</div>
+                  <div className="font-mono tabular-nums font-bold mt-0.5">{(prevLog.ft||0) > 0 ? fmtDuration(prevLog.ft) : '—'}</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-[9px] uppercase text-[var(--text-dim)] font-semibold">{tx('Sous-total','Subtotal')}</div>
+                  <div className="font-mono tabular-nums font-bold mt-0.5 text-[var(--accent)]">{totals.ft > 0 ? fmtDuration(totals.ft) : '—'}</div>
+                </div>
+                <div className="text-center bg-[var(--accent)]/10 rounded px-1 py-0.5">
+                  <div className="text-[9px] uppercase text-[var(--accent)] font-bold">{tx('Total','Total')}</div>
+                  <div className="font-mono tabular-nums font-bold mt-0.5 text-[var(--accent)]">{(totals.ft+(prevLog.ft||0)) > 0 ? fmtDuration(totals.ft+(prevLog.ft||0)) : '—'}</div>
+                </div>
+              </div>
+              {/* Détail par catégorie en 2 colonnes (Reporté / Grand Total) */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] pt-1 border-t border-[var(--border)]">
+                {[
+                  ['Mono', prevLog.se||0, totals.se+(prevLog.se||0)],
+                  ['Multi', prevLog.me||0, totals.me+(prevLog.me||0)],
+                  [tx('Heures IR','IR'), prevLog.ir||0, totals.ir+(prevLog.ir||0)],
+                  ['Nav', prevLog.nav||0, totals.nav+(prevLog.nav||0)],
+                  [tx('Nuit','Night'), prevLog.night||0, totals.night+(prevLog.night||0)],
+                  ['T/LDG', `${prevLog.takeoffs||0}/${prevLog.landings||0}`, `${totals.to+(prevLog.takeoffs||0)}/${totals.ldg+(prevLog.landings||0)}`],
+                ].map(([label, prev, total]) => (
+                  <div key={label} className="flex items-center justify-between">
+                    <span className="text-[var(--text-dim)]">{label}</span>
+                    <span className="font-mono tabular-nums">
+                      <span className="text-[var(--text-dim)]">{typeof prev === 'number' ? (prev > 0 ? fmtDuration(prev) : '—') : prev}</span>
+                      <span className="mx-1 text-[var(--text-dim)]">→</span>
+                      <span className="text-[var(--accent)] font-bold">{typeof total === 'number' ? (total > 0 ? fmtDuration(total) : '—') : total}</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -10572,7 +11093,8 @@
             {tab==='staff' && <StaffScreen
               flights={flights} aircraft={aircraft} pilots={pilots}
               addExpense={addExpense}
-              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={remove(setFlights)} />}
+              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={remove(setFlights)}
+              onUpsertPilot={upsert(setPilots)} />}
             {tab==='calendar' && <CalendarScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               onAddFlights={addFlights}
