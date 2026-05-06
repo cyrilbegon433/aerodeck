@@ -1254,6 +1254,28 @@
         );
       } catch (_) {}
     }
+    // Helper : tente un fetch direct, puis via 2 proxies CORS publics si échec.
+    // Certains environnements (Safari ITP strict, certains ISP, extensions
+    // privacy) bloquent les requêtes cross-origin vers Frankfurter — les
+    // proxies réémettent la requête depuis leur serveur et renvoient le
+    // résultat avec les bons en-têtes CORS pour github.io et autres.
+    async function fxFetchWithFallback(frankfurterPath) {
+      const directUrl = `https://api.frankfurter.app/${frankfurterPath}`;
+      const candidates = [
+        directUrl,
+        `https://corsproxy.io/?${encodeURIComponent(directUrl)}`,
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(directUrl)}`,
+      ];
+      for (const url of candidates) {
+        try {
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) continue;
+          const j = await res.json();
+          if (j && j.rates) return j;
+        } catch (_) {}
+      }
+      return null;
+    }
     // Variante détaillée : retourne {rate, sourceDate, source} ou null.
     // - source ∈ 'historic-cache' | 'historic-live' | 'latest-live' | 'last-known' | 'static-fallback'
     // - sourceDate = date que Frankfurter a réellement utilisée pour le taux retourné
@@ -1267,37 +1289,30 @@
       if (cachedHist) {
         return { rate: cachedHist.rate, sourceDate: cachedHist.sourceDate, source: 'historic-cache' };
       }
-      // Tentative 1 : taux historique pour cette date (Frankfurter peut renvoyer
-      // un autre jour ouvré si la date est un week-end/férié — on capture ça via j.date)
-      try {
-        const url = `https://api.frankfurter.app/${date}?from=${fromCurrency}&to=${toCurrency}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (res.ok) {
-          const j = await res.json();
-          const rate = j && j.rates && j.rates[toCurrency];
-          const actualDate = (j && j.date) || date;
-          if (rate && rate > 0) {
-            fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, actualDate);
-            fxWriteLastKnown(fromCurrency, toCurrency, rate, actualDate);
-            return { rate, sourceDate: actualDate, source: 'historic-live' };
-          }
+      // Tentative 1 : taux historique pour cette date (avec fallback proxies CORS).
+      // Frankfurter peut renvoyer un autre jour ouvré si la date est un
+      // week-end/férié — on capture ça via j.date.
+      const j1 = await fxFetchWithFallback(`${date}?from=${fromCurrency}&to=${toCurrency}`);
+      if (j1) {
+        const rate = j1.rates && j1.rates[toCurrency];
+        const actualDate = j1.date || date;
+        if (rate && rate > 0) {
+          fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, actualDate);
+          fxWriteLastKnown(fromCurrency, toCurrency, rate, actualDate);
+          return { rate, sourceDate: actualDate, source: 'historic-live' };
         }
-      } catch (_) {}
+      }
       // Tentative 2 : taux "latest" (utile si la date demandée est dans le futur)
-      try {
-        const url = `https://api.frankfurter.app/latest?from=${fromCurrency}&to=${toCurrency}`;
-        const res = await fetch(url, { cache: 'no-store' });
-        if (res.ok) {
-          const j = await res.json();
-          const rate = j && j.rates && j.rates[toCurrency];
-          const actualDate = (j && j.date) || null;
-          if (rate && rate > 0) {
-            fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, actualDate);
-            fxWriteLastKnown(fromCurrency, toCurrency, rate, actualDate);
-            return { rate, sourceDate: actualDate, source: 'latest-live' };
-          }
+      const j2 = await fxFetchWithFallback(`latest?from=${fromCurrency}&to=${toCurrency}`);
+      if (j2) {
+        const rate = j2.rates && j2.rates[toCurrency];
+        const actualDate = j2.date || null;
+        if (rate && rate > 0) {
+          fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, actualDate);
+          fxWriteLastKnown(fromCurrency, toCurrency, rate, actualDate);
+          return { rate, sourceDate: actualDate, source: 'latest-live' };
         }
-      } catch (_) {}
+      }
       // Tentative 3 : dernier taux connu (offline complet)
       const lastKnown = fxGetLastKnown(fromCurrency, toCurrency);
       if (lastKnown && lastKnown.rate > 0) {
