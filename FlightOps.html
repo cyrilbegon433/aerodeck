@@ -4607,6 +4607,69 @@
     // 11) ÉCRAN — DOCUMENTS / FACTURES
     // ------------------------------------------------------------------
 
+    // Sélecteur de catégorie moderne : remplace le <select> natif (qui ne
+    // peut afficher que du texte dans <option>) par un dropdown custom qui
+    // rend les icônes Lucide en couleur. Garde la même API (value/onChange).
+    function CategoryPicker({ value, onChange, categories, lang }) {
+      const [open, setOpen] = useState(false);
+      const wrapRef = useRef(null);
+      const tx = useTx();
+      const current = categories.find(c => c.id === value) || categories[0];
+      useEffect(() => {
+        if (!open) return;
+        function onDocClick(e) {
+          if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener('mousedown', onDocClick);
+        return () => document.removeEventListener('mousedown', onDocClick);
+      }, [open]);
+      function renderIcon(cat, size = 16) {
+        const lucideName = CATEGORY_LUCIDE[cat.id];
+        if (lucideName) {
+          return (
+            <span style={{ color: cat.color || 'currentColor', lineHeight: 0, display: 'inline-flex' }}>
+              <LucideIcon name={lucideName} size={size} strokeWidth={2.25} />
+            </span>
+          );
+        }
+        return <span style={{ color: cat.color || 'currentColor' }}>{cat.icon}</span>;
+      }
+      return (
+        <div ref={wrapRef} className="relative">
+          <button type="button"
+            onClick={()=>setOpen(o=>!o)}
+            className="select w-full flex items-center justify-between gap-2 text-left"
+            aria-haspopup="listbox" aria-expanded={open}>
+            <div className="flex items-center gap-2 min-w-0">
+              {current && renderIcon(current, 16)}
+              <span className="truncate">{current ? categoryDisplayName(current, lang) : tx('Choisir…','Choose…')}</span>
+            </div>
+            <span className="opacity-50 text-xs flex-shrink-0">▾</span>
+          </button>
+          {open && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-72 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl anim-pop"
+                 role="listbox">
+              {categories.map(c => (
+                <button key={c.id} type="button"
+                  onClick={()=>{ onChange(c.id); setOpen(false); }}
+                  role="option"
+                  aria-selected={c.id === value}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${c.id === value ? 'bg-[var(--bg-elev)]' : 'hover:bg-[var(--bg-elev)]'}`}>
+                  {renderIcon(c, 16)}
+                  <span className="flex-1 text-sm">{categoryDisplayName(c, lang)}</span>
+                  {c.id === value && (
+                    <span style={{ color: 'var(--accent)', lineHeight: 0 }}>
+                      <LucideIcon name="check" size={14} strokeWidth={2.5} />
+                    </span>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     function DocumentForm({ initial, aircraft, categories, pilots = [], onSave, onCancel }) {
       const { lang } = React.useContext(I18nContext);
       const tx = useTx();
@@ -5019,9 +5082,12 @@
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="label whitespace-nowrap">{tx('Catégorie','Category')}</div>
-              <select className="select" value={d.categoryId} onChange={e=>set('categoryId', e.target.value)}>
-                {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {categoryDisplayName(c, lang)}</option>)}
-              </select>
+              <CategoryPicker
+                value={d.categoryId}
+                onChange={(id)=>set('categoryId', id)}
+                categories={categories}
+                lang={lang}
+              />
             </div>
             <div>
               <div className="label whitespace-nowrap">{tx('Avion','Aircraft')} <span className="normal-case tracking-normal opacity-70">{tx('(opt.)','(opt.)')}</span></div>
