@@ -4928,6 +4928,31 @@
         return m;
       }, [documentsAll]);
 
+      // Totaux par catégorie ET par devise — chaque facture/dépense garde sa devise
+      // d'origine (EUR, USD, CAD, etc.). Sert à afficher la tuile catégorie dans la
+      // devise effective de ses factures (au lieu de "mainCurrency" globale qui
+      // mélangeait tout).
+      const totalsByCatByCurrency = useMemo(() => {
+        const m = {}; // { catId: { EUR: 100, USD: 50 } }
+        for (const d of documentsAll) {
+          const k = d.categoryId || 'other';
+          const c = (d.currency || 'EUR').toUpperCase();
+          if (!m[k]) m[k] = {};
+          m[k][c] = (m[k][c] || 0) + (parseFloat(d.amount)||0);
+        }
+        return m;
+      }, [documentsAll]);
+
+      // Format : "150 EUR" si 1 devise, "100 EUR · 50 USD" si plusieurs.
+      // `decimals` = 0 pour tuiles compactes, 2 pour panneaux détaillés.
+      function fmtCatTotal(catId, decimals = 2) {
+        const map = totalsByCatByCurrency[catId];
+        if (!map) return `0`;
+        const entries = Object.entries(map).filter(([, v]) => Math.abs(v) > 0.005).sort((a, b) => b[1] - a[1]);
+        if (entries.length === 0) return `0`;
+        return entries.map(([curr, v]) => `${v.toFixed(decimals)} ${curr}`).join(' · ');
+      }
+
       // Totaux HT et Taxe par catégorie. Si la dépense n'a pas d'amountHT/amountTax
       // saisis (legacy), on incrémente juste le TTC sans gonfler HT ou Taxe — la
       // colonne reste vide pour ces dépenses. Les visites mécanicien virtuelles
@@ -5316,7 +5341,7 @@
               <div className="mt-3 h-2 rounded-full overflow-hidden flex" style={{ background: 'var(--bg-elev)' }}>
                 {usedCats.slice(0, 8).map(c => (
                   <div key={c.id}
-                       title={`${categoryDisplayName(c, lang)} : ${c.total.toFixed(2)} ${mainCurrency} (${((c.total/totalAmount)*100).toFixed(0)}%)`}
+                       title={`${categoryDisplayName(c, lang)} : ${fmtCatTotal(c.id, 2)} (${((c.total/totalAmount)*100).toFixed(0)}%)`}
                        style={{ width: `${(c.total/totalAmount)*100}%`, background: c.color, transition: 'width .35s ease' }} />
                 ))}
               </div>
@@ -5380,7 +5405,7 @@
                       </div>
                       <div className="text-xs font-semibold truncate" title={categoryDisplayName(c, lang)}>{categoryDisplayName(c, lang)}</div>
                       <div className="text-base font-mono tabular-nums font-bold mt-0.5" style={{ color: c.color }}>
-                        {c.total.toFixed(0)} <span className="text-[10px] opacity-70">{mainCurrency}</span>
+                        {fmtCatTotal(c.id, 0)}
                       </div>
                       <div className="text-[10px] text-[var(--text-dim)]">{c.count} {tx(c.count>1?'factures':'facture',c.count>1?'invoices':'invoice')}</div>
                     </button>
@@ -5445,7 +5470,7 @@
                         {showBreakdown && c.tax > 0 ? c.tax.toFixed(2) : '—'}
                       </div>
                       <div className="text-right font-mono tabular-nums font-bold" style={{ color: c.color }}>
-                        {c.total.toFixed(2)} <span className="text-[10px] opacity-70">{mainCurrency}</span>
+                        {fmtCatTotal(c.id, 2)}
                       </div>
                     </button>
                   );
@@ -5721,7 +5746,7 @@
                               )}
                             </div>
                             <div className="flex items-center gap-2 flex-shrink-0">
-                              <span className="font-mono tabular-nums" style={{ color: c.color }}>{c.total.toFixed(2)}</span>
+                              <span className="font-mono tabular-nums" style={{ color: c.color }}>{fmtCatTotal(c.id, 2)}</span>
                               <span className="font-mono text-[10px] text-[var(--text-dim)] w-10 text-right">{pct.toFixed(1)}%</span>
                             </div>
                           </div>
