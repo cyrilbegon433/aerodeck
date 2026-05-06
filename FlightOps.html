@@ -4608,6 +4608,86 @@
     // 11) ÉCRAN — DOCUMENTS / FACTURES
     // ------------------------------------------------------------------
 
+    // === ModernSelect : dropdown générique custom ===
+    // Remplace les <select> natifs (peu personnalisables) par un menu déroulant
+    // qui supporte : pastilles colorées (statut), icônes Lucide, recherche
+    // visuelle, sections, hover state cohérent avec le design system.
+    // Props :
+    //   - value           : valeur actuelle (string)
+    //   - onChange(v)     : callback lors du choix
+    //   - options         : [{ value, label, dot?, icon?, color?, disabled? }]
+    //   - placeholder     : texte affiché quand aucune option n'est sélectionnée
+    //   - disabled        : désactive le bouton
+    //   - resetOnChange   : si true, ré-affiche le placeholder après chaque
+    //                       sélection (utile pour les actions immédiates type
+    //                       "appliquer un statut" qui ne stockent pas la valeur)
+    function ModernSelect({ value, onChange, options = [], placeholder = '—', disabled = false, resetOnChange = false }) {
+      const [open, setOpen] = useState(false);
+      const wrapRef = useRef(null);
+      useEffect(() => {
+        if (!open) return;
+        function onDocClick(e) {
+          if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false);
+        }
+        document.addEventListener('mousedown', onDocClick);
+        return () => document.removeEventListener('mousedown', onDocClick);
+      }, [open]);
+      const current = options.find(o => o.value === value && !o.disabled);
+      function renderRow(o, inDropdown) {
+        return (
+          <>
+            {o.dot && <span className="inline-block w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: o.dot, boxShadow: '0 0 0 1px rgba(255,255,255,0.15)' }} />}
+            {o.icon && (
+              <span style={{ color: o.color || 'currentColor', lineHeight: 0, display: 'inline-flex' }}>
+                <LucideIcon name={o.icon} size={16} strokeWidth={2.25} />
+              </span>
+            )}
+            <span className={`${inDropdown ? 'flex-1 text-sm' : 'truncate'}`}>{o.label}</span>
+            {inDropdown && o.value === value && (
+              <span style={{ color: 'var(--accent)', lineHeight: 0 }}>
+                <LucideIcon name="check" size={14} strokeWidth={2.5} />
+              </span>
+            )}
+          </>
+        );
+      }
+      return (
+        <div ref={wrapRef} className="relative">
+          <button type="button"
+            onClick={()=>{ if (!disabled) setOpen(o=>!o); }}
+            disabled={disabled}
+            className={`select w-full flex items-center justify-between gap-2 text-left ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            aria-haspopup="listbox" aria-expanded={open}>
+            <div className="flex items-center gap-2 min-w-0">
+              {current && !resetOnChange ? renderRow(current, false) : (
+                <span className="text-[var(--text-dim)] truncate">{placeholder}</span>
+              )}
+            </div>
+            <span className="opacity-50 text-xs flex-shrink-0">▾</span>
+          </button>
+          {open && (
+            <div className="absolute left-0 right-0 top-full mt-1 z-50 max-h-72 overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--bg-card)] shadow-2xl anim-pop"
+                 role="listbox">
+              {options.map(o => (
+                <button key={String(o.value)} type="button"
+                  disabled={o.disabled}
+                  onClick={()=>{
+                    if (o.disabled) return;
+                    onChange(o.value);
+                    setOpen(false);
+                  }}
+                  role="option"
+                  aria-selected={o.value === value}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors ${o.disabled ? 'opacity-40 cursor-not-allowed' : (o.value === value && !resetOnChange ? 'bg-[var(--bg-elev)]' : 'hover:bg-[var(--bg-elev)]')}`}>
+                  {renderRow(o, true)}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    }
+
     // Sélecteur de catégorie moderne : remplace le <select> natif (qui ne
     // peut afficher que du texte dans <option>) par un dropdown custom qui
     // rend les icônes Lucide en couleur. Garde la même API (value/onChange).
@@ -7560,6 +7640,9 @@
       const [showForm, setShowForm] = useState(false);
       // Statut pilote : sélecteur du pilote dont on visualise/édite les statuts journaliers
       const [statusPilot, setStatusPilot] = useState('');
+      // Filtre avion : si défini, le calendrier ne montre que les vols de cet avion.
+      // Le double-clic sur une tuile crée un nouveau vol pré-rempli avec cet avion.
+      const [filterAircraft, setFilterAircraft] = useState('');
       // Multi-sélection : ensemble de dates ISO sélectionnées par clic.
       const [selectedDays, setSelectedDays] = useState(() => new Set());
       const [statusColor, setStatusColor] = useState(PILOT_STATUS_DEFAULTS.on.color);
@@ -7568,6 +7651,10 @@
       // Pas pré-ouvert sur aujourd'hui : le calendrier suffit à indiquer la date du jour
       // (case visuellement marquée), inutile d'afficher un modal vide « Aucun vol ce jour ».
       const [dayDetailDate, setDayDetailDate] = useState(null);
+      // Ref pour différencier clic simple et double-clic sur les tuiles.
+      // En mode statut pilote : 1 clic = sélection pour batch, 2 clics = ouvrir
+      // directement la fiche "Ajouter un vol" pré-remplie avec la date.
+      const tileClickTimerRef = useRef(null);
 
       // Clic en dehors du calendrier : on annule la sélection en cours.
       // IMPORTANT : on exempte le panneau de statut (data-status-panel) et les modals
@@ -7647,6 +7734,8 @@
         const m = {};
         for (const f of flights) {
           if (!f.date) continue;
+          // Filtre avion actif : on n'affiche que les vols correspondants
+          if (filterAircraft && f.aircraftId !== filterAircraft) continue;
           const d = new Date(f.date+'T00:00:00Z');
           if (d.getUTCFullYear() === year && d.getUTCMonth() === month) {
             const key = d.getUTCDate();
@@ -7654,7 +7743,7 @@
           }
         }
         return m;
-      }, [flights, year, month]);
+      }, [flights, year, month, filterAircraft]);
 
       function downloadICS() {
         const ics = buildICS(flights, aircraft);
@@ -7719,31 +7808,75 @@
             )}
           </Hint>
 
+          {/* Filtre avion : si activé, le calendrier n'affiche que les vols de cet avion.
+              Permet de visualiser l'occupation d'un appareil et d'ajouter rapidement
+              un nouveau vol par double-clic (avion pré-rempli). */}
+          <div className="card p-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
+              <div>
+                <div className="label inline-flex items-center gap-1.5">
+                  <LucideIcon name="planeTakeoff" size={14} strokeWidth={2.25} />
+                  {tx('Filtrer par avion','Filter by aircraft')}
+                </div>
+                <ModernSelect
+                  value={filterAircraft}
+                  onChange={(v)=>setFilterAircraft(v)}
+                  placeholder={tx('— tous les avions —','— all aircraft —')}
+                  options={[
+                    { value: '', label: tx('— tous les avions —','— all aircraft —') },
+                    ...aircraft.filter(a => (a.kind||'real')==='real').map(a => ({
+                      value: a.id,
+                      label: `${a.registration}${a.type ? ' · ' + a.type : ''}`,
+                      icon: 'planeTakeoff',
+                      color: 'var(--accent)',
+                    })),
+                  ]}
+                />
+              </div>
+              {filterAircraft && (
+                <div className="text-xs text-[var(--text-dim)] sm:pt-6 leading-relaxed">
+                  {tx('Le calendrier n\'affiche que les vols de cet avion. Double-clique sur un jour pour créer un nouveau vol pré-rempli.','The calendar only shows flights for this aircraft. Double-click a day to create a new flight pre-filled.')}
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Sélecteur pilote + multi-sélection de jours pour appliquer un statut groupé */}
           <div className="card p-3" data-status-panel>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <div className="label">{tx('Statut pilote (par jour)','Pilot status (per day)')}</div>
-                <select className="select" value={statusPilot} onChange={e=>{ setStatusPilot(e.target.value); setSelectedDays(new Set()); }}>
-                  <option value="">{tx('— aucun (juste les vols) —','— none (flights only) —')}</option>
-                  {pilots.map(p => <option key={p.id} value={p.id}>{pilotDisplayName(p)}</option>)}
-                </select>
+                <ModernSelect
+                  value={statusPilot}
+                  onChange={(v)=>{ setStatusPilot(v); setSelectedDays(new Set()); }}
+                  placeholder={tx('— aucun (juste les vols) —','— none (flights only) —')}
+                  options={[
+                    { value: '', label: tx('— aucun (juste les vols) —','— none (flights only) —') },
+                    ...pilots.map(p => ({ value: p.id, label: pilotDisplayName(p), icon: 'user' })),
+                  ]}
+                />
               </div>
               {statusPilot && (
                 <>
                   <div>
                     <div className="label">{tx('Statut à appliquer','Status to apply')}</div>
-                    <select
-                      className="select"
+                    <ModernSelect
                       disabled={selectedDays.size === 0}
+                      resetOnChange={true}
                       value=""
-                      onChange={e=>applyStatusToSelected(e.target.value)}>
-                      <option value="">{tx('— choisir —','— choose —')}</option>
-                      {Object.entries(PILOT_STATUS_DEFAULTS).map(([id, def]) => (
-                        <option key={id} value={id}>{lang === 'en' && def.labelEn ? def.labelEn : def.label}</option>
-                      ))}
-                      <option value="clear">{tx('Retirer le statut','Clear status')}</option>
-                    </select>
+                      onChange={(v)=>{ if (v) applyStatusToSelected(v); }}
+                      placeholder={selectedDays.size === 0
+                        ? tx('Sélectionne d\'abord des jours','Select days first')
+                        : tx('— choisir un statut —','— choose a status —')}
+                      options={[
+                        ...Object.entries(PILOT_STATUS_DEFAULTS).map(([id, def]) => ({
+                          value: id,
+                          label: lang === 'en' && def.labelEn ? def.labelEn : def.label,
+                          dot: def.color,
+                        })),
+                        { value: 'clear', label: tx('Retirer le statut','Clear status'), icon: 'trash2' },
+                      ]}
+                    />
                   </div>
                   <div>
                     <div className="label">{tx('Couleur','Color')}</div>
@@ -7765,7 +7898,7 @@
             </div>
             {statusPilot && (
               <div className="text-xs text-[var(--text-dim)] mt-2">
-                {tx('Clique sur un ou plusieurs jours du calendrier pour les sélectionner.','Click on one or more days in the calendar to select them.')}
+                {tx('Clic = sélectionner un jour pour appliquer un statut. Double-clic = ouvrir directement la fiche d\'ajout d\'un vol.','Click = select a day to apply a status. Double-click = open the add-flight form directly.')}
                 {selectedDays.size > 0 && (
                   <span className="ml-1 text-[var(--accent)] font-semibold">
                     {tx(`${selectedDays.size} jour(s) sélectionné(s).`,`${selectedDays.size} day(s) selected.`)}
@@ -7813,19 +7946,45 @@
                 const dowName = d ? dows[i % 7] : '';
                 return (
                   <div key={i}
-                       className={`min-h-20 sm:min-h-32 p-1 sm:p-2 rounded-md sm:rounded-lg border flex flex-col transition-all ${d ? 'bg-[var(--bg-elev)] border-[var(--border-soft)] hover:border-[var(--border)]' : 'border-transparent'} ${isToday?'!border-[var(--accent)] shadow-[0_0_18px_-4px_var(--accent-glow)]':''} ${d ? 'cursor-pointer' : ''} ${selectedCls}`}
+                       className={`min-h-20 sm:min-h-32 p-1 sm:p-2 rounded-md sm:rounded-lg border flex flex-col transition-all ${d ? 'bg-[var(--bg-elev)] border-[var(--border-soft)] hover:border-[var(--border)]' : 'border-transparent'} ${isToday?'!border-[var(--accent)] shadow-[0_0_18px_-4px_var(--accent-glow)]':''} ${d ? 'cursor-pointer select-none' : ''} ${selectedCls}`}
                        style={cellStyle}
+                       title={d && (statusPilot || filterAircraft) ? tx('Clic = sélection · Double-clic = ajouter un vol','Click = select · Double-click = add a flight') : undefined}
                        onClick={()=>{
                          if (!d) return;
-                         // Mode statut pilote : toggle la sélection + ouvre aussi le détail
-                         // si le jour contient des vols (pour voir les bannières).
-                         // Sinon (pas de pilote sélectionné) : juste ouvrir le détail.
-                         if (statusPilot) {
-                           toggleDay(dateISO);
-                           if (list.length > 0) setDayDetailDate(dateISO);
+                         // Mode statut pilote OU filtre avion : on diffère le single-click
+                         // de 250ms pour laisser une fenêtre au double-click. Si un
+                         // double-clic arrive avant 250ms, on annule le single-click et
+                         // on ouvre directement la fiche "Ajouter un vol".
+                         if (statusPilot || filterAircraft) {
+                           if (tileClickTimerRef.current) clearTimeout(tileClickTimerRef.current);
+                           tileClickTimerRef.current = setTimeout(() => {
+                             if (statusPilot) {
+                               // Pilote actif : single-click = toggle le jour pour status batch
+                               toggleDay(dateISO);
+                             } else {
+                               // Avion seul : single-click = ouvre détail du jour
+                               setDayDetailDate(dateISO);
+                             }
+                             tileClickTimerRef.current = null;
+                           }, 250);
                          } else {
+                           // Aucun filtre : comportement classique, un clic ouvre le panneau détail.
                            setDayDetailDate(dateISO);
                          }
+                       }}
+                       onDoubleClick={()=>{
+                         if (!d) return;
+                         // Annule le single-click en attente (en mode pilote ou avion)
+                         if (tileClickTimerRef.current) {
+                           clearTimeout(tileClickTimerRef.current);
+                           tileClickTimerRef.current = null;
+                         }
+                         // Double-clic = ajouter un vol à cette date.
+                         // Si un avion est filtré, on le pré-remplit dans la fiche.
+                         const initial = { date: dateISO };
+                         if (filterAircraft) initial.aircraftId = filterAircraft;
+                         setEditing(initial);
+                         setShowForm(true);
                        }}>
                     {d && (
                       <>
@@ -7847,13 +8006,17 @@
                           )}
                         </div>
                         {/* MOBILE : avions ✈ + immats raccourcies (4 derniers caractères) */}
+                        {/* Pas de onClick ici : on laisse l'événement remonter à la
+                            tuile parente pour respecter la logique pilote/avion
+                            (single-click = sélectionner, double-click = ajouter un vol). */}
                         {list.length > 0 && (
-                          <div className="sm:hidden flex flex-col gap-0.5 mt-0.5 flex-1 min-h-0"
-                               onClick={(e)=>{ e.stopPropagation(); setDayDetailDate(dateISO); }}>
-                            {/* Ligne avions : un ✈ par vol, jusqu'à 4 */}
-                            <div className="flex flex-wrap gap-0 leading-none justify-center" style={{ color: '#fde68a' }}>
+                          <div className="sm:hidden flex flex-col gap-0.5 mt-0.5 flex-1 min-h-0">
+                            {/* Ligne avions : icône Lucide moderne par vol, jusqu'à 4 */}
+                            <div className="flex flex-wrap gap-0.5 leading-none justify-center items-center" style={{ color: '#ffffff' }}>
                               {list.slice(0,4).map(f => (
-                                <span key={f.id} className="text-[8px]" title={`${tx('Vol','Flight')} ${f.from}→${f.to}`}>✈</span>
+                                <span key={f.id} title={`${tx('Vol','Flight')} ${f.from}→${f.to}`} style={{ lineHeight: 0, display: 'inline-flex' }}>
+                                  <LucideIcon name="planeTakeoff" size={14} strokeWidth={2.25} />
+                                </span>
                               ))}
                               {list.length > 4 && <span className="text-[7px] text-[var(--text-dim)]">+{list.length-4}</span>}
                             </div>
@@ -7874,13 +8037,10 @@
                             </div>
                           </div>
                         )}
-                        {/* DESKTOP : liste détaillée des immats + FT + liserai statut Ops */}
-                        <div className="hidden sm:block space-y-0.5 mt-1 flex-1 min-h-0"
-                             onClick={(e)=>{
-                               e.stopPropagation();
-                               setDayDetailDate(dateISO);
-                             }}
-                             title={tx('Cliquer pour voir le détail des vols du jour','Click to see the day\'s flight details')}>
+                        {/* DESKTOP : liste détaillée des immats + FT + liserai statut Ops.
+                            Pas de onClick spécifique : on laisse l'événement remonter à
+                            la tuile parente pour respecter la logique pilote/avion. */}
+                        <div className="hidden sm:block space-y-0.5 mt-1 flex-1 min-h-0">
                           {list.slice(0,3).map(f => {
                             const ac = aircraft.find(a => a.id === f.aircraftId);
                             const reg = ac?.registration || '—';
@@ -7898,11 +8058,13 @@
                           })}
                           {list.length > 3 && <div className="text-[10px] text-[var(--text-dim)]">+{list.length-3}</div>}
                         </div>
-                        {/* DESKTOP : avions ✈️ en bas */}
+                        {/* DESKTOP : icônes avion Lucide en bas */}
                         {list.length > 0 && (
-                          <div className="hidden sm:flex flex-wrap gap-0.5 mt-1 leading-none" style={{ color: '#fde68a' }}>
+                          <div className="hidden sm:flex flex-wrap gap-1.5 mt-1 leading-none items-center" style={{ color: '#ffffff' }}>
                             {list.slice(0,8).map(f => (
-                              <span key={f.id} className="text-sm" title={`${tx('Vol','Flight')} ${f.from}→${f.to}`}>✈️</span>
+                              <span key={f.id} title={`${tx('Vol','Flight')} ${f.from}→${f.to}`} style={{ lineHeight: 0, display: 'inline-flex' }}>
+                                <LucideIcon name="planeTakeoff" size={18} strokeWidth={2.25} />
+                              </span>
                             ))}
                             {list.length > 8 && <span className="text-[10px] text-[var(--text-dim)]">+{list.length-8}</span>}
                           </div>
