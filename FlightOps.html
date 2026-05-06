@@ -8504,7 +8504,58 @@
       return { ...p, licenses: [lic] };
     }
 
-    function PilotForm({ initial, onSave, onCancel }) {
+    // === Helper : couleur d'une autorisation avion selon récence d'activité ===
+    // Cyan si :
+    //   - review date saisie ET datant de moins de 3 mois (override)
+    //   - OU pilote a volé sur un avion correspondant + ≥ 3 TO et ≥ 3 LDG dans
+    //     les 6 derniers mois.
+    // Orange sinon (besoin de revalidation).
+    const AIRCRAFT_AUTH_OK_COLOR   = '#22d3ee'; // cyan
+    const AIRCRAFT_AUTH_WARN_COLOR = 'var(--warn)';
+    function aircraftAuthRecencyColor(authName, pilotId, flights, aircraftList, reviewDate) {
+      if (!authName || !pilotId) return AIRCRAFT_AUTH_OK_COLOR;
+      const norm = String(authName).trim().toUpperCase();
+      if (!norm) return AIRCRAFT_AUTH_OK_COLOR;
+      // Override : review date < 3 mois → cyan direct
+      if (reviewDate) {
+        const rev = new Date(reviewDate);
+        if (!isNaN(rev.getTime())) {
+          const threeMonthsAgo = new Date();
+          threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+          if (rev >= threeMonthsAgo) return AIRCRAFT_AUTH_OK_COLOR;
+        }
+      }
+      // Aircraft entries dont registration / type / serial matchent (substring)
+      const matchingAcIds = new Set(
+        (aircraftList || [])
+          .filter(ac => {
+            const fields = [ac.registration, ac.type, ac.serial].filter(Boolean).map(s => String(s).toUpperCase());
+            return fields.some(f => f === norm || f.includes(norm) || norm.includes(f));
+          })
+          .map(ac => ac.id)
+      );
+      // Cutoff = il y a 6 mois
+      const cutoffDate = new Date();
+      cutoffDate.setMonth(cutoffDate.getMonth() - 6);
+      const cutoff = cutoffDate.toISOString().slice(0, 10);
+      const recentFlights = (flights || []).filter(f =>
+        (f.pilotId === pilotId || f.copilotId === pilotId) &&
+        matchingAcIds.has(f.aircraftId) &&
+        (f.date || '') >= cutoff
+      );
+      if (recentFlights.length === 0) return AIRCRAFT_AUTH_WARN_COLOR;
+      let totalTo = 0, totalLdg = 0;
+      for (const f of recentFlights) {
+        const toSplit = (parseInt(f.takeoffsPic, 10) || 0) + (parseInt(f.takeoffsSic, 10) || 0);
+        const ldgSplit = (parseInt(f.landingsPic, 10) || 0) + (parseInt(f.landingsSic, 10) || 0);
+        totalTo  += toSplit  || (parseInt(f.takeoffs, 10) || 0);
+        totalLdg += ldgSplit || (parseInt(f.landings, 10) || 0);
+      }
+      if (totalTo < 3 || totalLdg < 3) return AIRCRAFT_AUTH_WARN_COLOR;
+      return AIRCRAFT_AUTH_OK_COLOR;
+    }
+
+    function PilotForm({ initial, onSave, onCancel, flights = [], aircraft = [] }) {
       const tx = useTx();
       const { lang } = React.useContext(I18nContext);
       const blank = {
@@ -8530,6 +8581,12 @@
         driversLicense: '',    // numéro de permis de conduire
         nas: '',               // numéro NAS (Canada) / SSN / équivalent
         passportId: '',        // numéro de passeport ou pièce d'identité
+        passportExpiry: '',    // date d'expiration du passeport (YYYY-MM-DD)
+        // Autorisations avion : liste libre de noms d'avions sur lesquels le pilote
+        // est habilité, avec date de review (last check sur ce type). Sert à colorer
+        // le statut : vert si vol récent OU 3 TO/LDG dans les 6 derniers mois,
+        // orange sinon (besoin de revalidation).
+        aircraftAuthorizations: [], // [{ id, name, reviewDate, addedAt }]
         notes: '',
       };
       // Migration : si pilote legacy (single license fields), on construit licenses[] depuis ces champs.
@@ -8564,6 +8621,29 @@
           if (list.length === 0) list.push(blankLicense());
           return { ...prev, licenses: list };
         });
+      }
+
+      // === Autorisations avion : state local pour le formulaire de saisie ===
+      const [newAircraftName, setNewAircraftName] = useState('');
+      const [newAircraftReview, setNewAircraftReview] = useState('');
+      function addAircraftAuth() {
+        const name = (newAircraftName || '').trim();
+        if (!name) return;
+        setP(prev => ({
+          ...prev,
+          aircraftAuthorizations: [
+            ...(prev.aircraftAuthorizations || []),
+            { id: 'aa_' + Date.now(), name, reviewDate: newAircraftReview || '', addedAt: Date.now() }
+          ]
+        }));
+        setNewAircraftName('');
+        setNewAircraftReview('');
+      }
+      function removeAircraftAuth(id) {
+        setP(prev => ({
+          ...prev,
+          aircraftAuthorizations: (prev.aircraftAuthorizations || []).filter(a => a.id !== id)
+        }));
       }
       // Recalcule tous les medicalExpiry des licences quand dateOfBirth change
       useEffect(() => {
@@ -8717,6 +8797,58 @@
             </div>
           </div>
 
+          {/* === AVIONS — Autorisations et review ===
+              Champ libre + date review + bouton Valider. La liste des avions
+              validés s'affiche en dessous (vert si vol récent + 3 TO/LDG dans les
+              6 derniers mois, sinon orange). */}
+          <div className="card p-3">
+            <div className="text-xs uppercase tracking-wider font-bold text-[var(--text-dim)] mb-2 inline-flex items-center gap-1.5">
+              <span style={{ color: 'var(--accent)' }}><LucideIcon name="planeTakeoff" size={13} strokeWidth={2.5} /></span>
+              {tx('Avions','Aircraft')}
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto_auto] gap-2 items-end">
+              <div>
+                <div className="label whitespace-nowrap">{tx("Nom de l'avion",'Aircraft name')}</div>
+                <input className="input" placeholder={tx('ex: PC-12, C172, B737','e.g. PC-12, C172, B737')}
+                  value={newAircraftName} onChange={e=>setNewAircraftName(e.target.value)}
+                  onKeyDown={e=>{ if (e.key === 'Enter') { e.preventDefault(); addAircraftAuth(); } }} />
+              </div>
+              <div>
+                <div className="label whitespace-nowrap">{tx('Date review','Review date')}</div>
+                <input type="date" className="input" value={newAircraftReview} onChange={e=>setNewAircraftReview(e.target.value)} />
+              </div>
+              <div>
+                <button type="button" className="btn btn-primary !py-2 !px-4 inline-flex items-center gap-1.5"
+                  onClick={addAircraftAuth} disabled={!newAircraftName.trim()}>
+                  <LucideIcon name="check" size={14} strokeWidth={2.5} />
+                  {tx('Valider','Validate')}
+                </button>
+              </div>
+            </div>
+            {/* Liste des avions validés — texte uniquement, vert/orange selon récence */}
+            {(p.aircraftAuthorizations || []).length > 0 && (
+              <div className="mt-3 flex flex-col gap-1.5">
+                {(p.aircraftAuthorizations || []).map(a => {
+                  const color = aircraftAuthRecencyColor(a.name, p.id, flights, aircraft, a.reviewDate);
+                  return (
+                    <div key={a.id} className="flex items-center justify-between gap-2 text-sm">
+                      <span className="font-semibold" style={{ color }}>
+                        {a.name}
+                        {a.reviewDate && <span className="ml-2 text-xs font-normal text-[var(--text-dim)]">{tx('review','review')} {a.reviewDate}</span>}
+                      </span>
+                      <button type="button"
+                        title={tx('Retirer cet avion','Remove this aircraft')}
+                        className="grid place-items-center w-7 h-7 rounded-lg text-[var(--err)] hover:bg-[var(--err)]/15 transition-colors flex-shrink-0"
+                        onClick={()=>removeAircraftAuth(a.id)}>
+                        <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           {/* Mobile : Email puis Téléphone empilés (sinon les valeurs longues sont tronquées).
               Desktop : 2 colonnes côte à côte. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -8752,9 +8884,15 @@
                 <input className="input" value={p.nas} onChange={e=>set('nas', e.target.value)} placeholder="ex: 123 456 789" />
               </div>
             </div>
-            <div className="mt-2">
-              <div className="label whitespace-nowrap">{tx('N° passeport / pièce d\'identité','Passport / ID number')}</div>
-              <input className="input" value={p.passportId || ''} onChange={e=>set('passportId', e.target.value)} placeholder="ex: 12AB34567" />
+            <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <div className="label whitespace-nowrap">{tx('N° passeport / pièce d\'identité','Passport / ID number')}</div>
+                <input className="input" value={p.passportId || ''} onChange={e=>set('passportId', e.target.value)} placeholder="ex: 12AB34567" />
+              </div>
+              <div>
+                <div className="label whitespace-nowrap">{tx('Date d\'expiration passeport','Passport expiry date')}</div>
+                <input type="date" className="input" value={p.passportExpiry || ''} onChange={e=>set('passportExpiry', e.target.value)} />
+              </div>
             </div>
             <div className="mt-2">
               <Hint title={tx('Données sensibles — sécurité','Sensitive data — security')}>
@@ -8795,7 +8933,7 @@
       );
     }
 
-    function PilotsScreen({ pilots, flights, onAddOrUpdate, onDelete }) {
+    function PilotsScreen({ pilots, flights, aircraft = [], onAddOrUpdate, onDelete }) {
       const t = useT();
       const tx = useTx();
       const [showForm, setShowForm] = useState(false);
@@ -8808,6 +8946,16 @@
         if (!dateStr) return false;
         const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
         return diff <= days;
+      }
+      // Retourne 'red' / 'orange' / 'green' selon les seuils warn/danger en jours.
+      // - Médical / Licence : warn=14, danger=5
+      // - Passeport : warn=60 (~2 mois), danger=14 (~2 semaines)
+      function expiryColor(dateStr, warnDays, dangerDays) {
+        if (!dateStr) return null;
+        const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+        if (diff <= dangerDays) return 'var(--err)';
+        if (diff <= warnDays)   return 'var(--warn)';
+        return 'var(--ok)';
       }
 
       return (
@@ -8828,6 +8976,10 @@
               const count = flightsCountFor(p.id);
               const medicalSoon = isExpiringSoon(p.medicalExpiry);
               const licenseSoon = isExpiringSoon(p.licenseExpiry);
+              // Couleurs précises basées sur jours avant expiration
+              const medicalColor  = expiryColor(p.medicalExpiry, 14, 5)  || 'var(--ok)';
+              const licenseColor  = expiryColor(p.licenseExpiry, 14, 5)  || 'var(--ok)';
+              const passportColor = expiryColor(p.passportExpiry, 60, 14) || 'var(--ok)';
               // Total temps de vol (heures décimales) cumulé pour ce pilote
               const totalMinPilot = (flights || [])
                 .filter(f => f.pilotId === p.id || f.copilotId === p.id)
@@ -8840,79 +8992,170 @@
                       sur mobile empilé. La largeur de la card est étendue à max-w-7xl
                       pour exploiter l'espace écran. */}
                   <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    {/* Colonne 1 — Identité (5/12 sur desktop) */}
-                    <div className="md:col-span-5 min-w-0">
-                      <div className="text-lg font-semibold tracking-wide truncate">{pilotDisplayName(p)}</div>
-                      <div className="text-sm text-[var(--text-dim)] truncate mt-0.5">
-                        {p.licenseType} {p.licenseNumber && `· ${p.licenseNumber}`}
-                        {p.baseAirport && ` · ${tx('base','base')} ${p.baseAirport}`}
-                        {p.dateOfBirth && computeAge(p.dateOfBirth) != null && ` · ${computeAge(p.dateOfBirth)} ${tx('ans','yrs')}`}
-                      </div>
-                      {/* Drapeaux des autorités émettrices si plusieurs licences */}
+                    {/* Colonne 1 — Identité (2/12) — ultra-compacte pour pousser
+                        contact + médical/licence très à gauche / très à droite. */}
+                    <div className="md:col-span-2 min-w-0">
+                      <div className="text-lg md:text-xl font-semibold tracking-wide truncate">{pilotDisplayName(p)}</div>
+                      {/* Sous-ligne : seulement base + âge (CPL et N° licence sont déjà
+                          dans le badge drapeau ci-dessous, donc on évite le doublon) */}
+                      {(p.baseAirport || (p.dateOfBirth && computeAge(p.dateOfBirth) != null)) && (
+                        <div className="text-sm md:text-base text-[var(--text-dim)] truncate mt-0.5">
+                          {p.baseAirport && `${tx('Base','Base')} ${p.baseAirport}`}
+                          {p.baseAirport && p.dateOfBirth && computeAge(p.dateOfBirth) != null && ' · '}
+                          {p.dateOfBirth && computeAge(p.dateOfBirth) != null && `${computeAge(p.dateOfBirth)} ${tx('ans','yrs')}`}
+                        </div>
+                      )}
+                      {/* Badges licence : drapeau circulaire + type + numéro, mêmes
+                          codes visuels que le sélecteur de langue (pastille ronde
+                          + label à droite). Sur mobile, les chips "Médical" et "License"
+                          (sans numéros, juste l'état coloré) apparaissent en face. */}
                       {Array.isArray(p.licenses) && p.licenses.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mt-2">
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
                           {p.licenses.map((lic, i) => {
                             const auth = LICENSE_AUTHORITIES.find(a => a.id === lic.authority);
                             return (
-                              <span key={lic.id || i} className="badge text-[10px]" title={auth ? auth.label : lic.authority}>
-                                {auth ? auth.flag : '🌐'} {lic.type || '—'}{lic.number ? ` ${lic.number}` : ''}
+                              <div key={lic.id || i}
+                                className="inline-flex items-center gap-2 pl-1 pr-3 md:pr-4 py-1 md:py-1.5 rounded-full border border-[var(--border-soft)] bg-[var(--bg-elev)]"
+                                title={auth ? auth.label : lic.authority}>
+                                {/* Pastille ronde drapeau (style sélecteur de langue) */}
+                                <span className="grid place-items-center w-7 h-7 md:w-8 md:h-8 rounded-full bg-[var(--bg-card)] text-base md:text-lg shadow-sm">
+                                  {auth ? auth.flag : '🌐'}
+                                </span>
+                                <span className="text-xs md:text-sm font-semibold tracking-wide">
+                                  {lic.type || '—'}
+                                  {lic.number && <span className="ml-1.5 text-[var(--text-dim)] font-mono font-normal">{lic.number}</span>}
+                                </span>
+                              </div>
+                            );
+                          })}
+                          {/* Mobile uniquement : chips Médical / License sans numéros, juste état coloré */}
+                          {p.medicalExpiry && (
+                            <span className="md:hidden inline-flex items-center gap-1 text-xs font-semibold" style={{ color: medicalColor }}>
+                              <LucideIcon name="shieldCheck" size={12} strokeWidth={2.5} />
+                              {tx('Médical','Medical')}
+                            </span>
+                          )}
+                          {p.licenseExpiry && (
+                            <span className="md:hidden inline-flex items-center gap-1 text-xs font-semibold" style={{ color: licenseColor }}>
+                              <LucideIcon name="ticket" size={12} strokeWidth={2.5} />
+                              {tx('Licence','License')}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {p.ratings && <div className="text-xs text-[var(--text-dim)] truncate mt-2">{tx('QT','Ratings')} : {p.ratings}</div>}
+                    </div>
+
+                    {/* Colonne 2 — Contact (3/12 sur desktop) — collé à droite de l'identité */}
+                    <div className="md:col-span-3 min-w-0 text-sm md:text-base text-[var(--text-dim)]">
+                      <div className="flex flex-col gap-2 md:gap-2.5">
+                        {p.email && (
+                          <div className="inline-flex items-center gap-2 truncate">
+                            <LucideIcon name="user" size={16} strokeWidth={2.25} />
+                            <span className="truncate">{p.email}</span>
+                          </div>
+                        )}
+                        {p.phone && (
+                          <div className="inline-flex items-center gap-2 truncate">
+                            <LucideIcon name="radio" size={16} strokeWidth={2.25} />
+                            <span className="truncate">{p.phone}</span>
+                          </div>
+                        )}
+                        {p.address && (
+                          <div className="inline-flex items-start gap-2">
+                            <span className="mt-[3px] flex-shrink-0"><LucideIcon name="mapPin" size={16} strokeWidth={2.25} /></span>
+                            <span className="line-clamp-2">{p.address}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    {/* Colonne 3a — Avions autorisés (cols 6-7) — entre contact et médical sur desktop.
+                        Liste cyan/orange selon récence d'activité. Masqué sur mobile. */}
+                    <div className="hidden md:block md:col-start-6 md:col-span-2 min-w-0 text-sm md:text-base text-[var(--text-dim)]">
+                      {(p.aircraftAuthorizations || []).length > 0 && (
+                        <div className="flex flex-col gap-1.5">
+                          {(p.aircraftAuthorizations || []).map(a => {
+                            const color = aircraftAuthRecencyColor(a.name, p.id, flights, aircraft, a.reviewDate);
+                            return (
+                              <span key={a.id} className="font-semibold truncate" style={{ color }}>
+                                {a.name}
                               </span>
                             );
                           })}
                         </div>
                       )}
-                      {p.ratings && <div className="text-xs text-[var(--text-dim)] truncate mt-1">{tx('QT','Ratings')} : {p.ratings}</div>}
+                    </div>
+                    {/* Colonne 3 — Médical / Licence / Passeport (cols 8-9) — encore plus à droite.
+                        Stats (col 4) restent à l'extrême droite.
+                        Masquée sur mobile (chips compacts visibles en col 1).
+                        Les dates sont en gris (text-dim), seuls icône + label se colorent
+                        en orange/rouge si proche expiration. */}
+                    <div className="hidden md:block md:col-start-8 md:col-span-2 min-w-0 text-sm md:text-base text-[var(--text-dim)]">
+                      {(p.medicalExpiry || p.licenseExpiry || p.passportId || p.passportExpiry) && (
+                        // Grille 2 colonnes : labels auto-width à gauche (icône + texte),
+                        // valeurs à droite alignées verticalement entre elles.
+                        <div className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-3 items-center">
+                          {p.medicalExpiry && (
+                            <>
+                              <div className="inline-flex items-center gap-2 whitespace-nowrap">
+                                <span style={{ color: medicalColor }}>
+                                  <LucideIcon name="shieldCheck" size={16} strokeWidth={2.5} />
+                                </span>
+                                <span className="font-semibold" style={{ color: medicalColor }}>
+                                  {tx('Médical','Medical')}
+                                </span>
+                              </div>
+                              <span className="font-mono text-[var(--text-dim)] whitespace-nowrap">{p.medicalExpiry}</span>
+                            </>
+                          )}
+                          {p.licenseExpiry && (
+                            <>
+                              <div className="inline-flex items-center gap-2 whitespace-nowrap">
+                                <span style={{ color: licenseColor }}>
+                                  <LucideIcon name="ticket" size={16} strokeWidth={2.5} />
+                                </span>
+                                <span className="font-semibold" style={{ color: licenseColor }}>
+                                  {tx('Licence','License')}
+                                </span>
+                              </div>
+                              <span className="font-mono text-[var(--text-dim)] whitespace-nowrap">{p.licenseExpiry}</span>
+                            </>
+                          )}
+                          {(p.passportId || p.passportExpiry) && (
+                            <>
+                              <div className="inline-flex items-center gap-2 whitespace-nowrap">
+                                <span style={{ color: passportColor }}>
+                                  <LucideIcon name="shield" size={16} strokeWidth={2.5} />
+                                </span>
+                                <span className="font-semibold" style={{ color: passportColor }}>
+                                  {tx('Passeport','Passport')}
+                                </span>
+                              </div>
+                              <span className="font-mono whitespace-nowrap">
+                                {p.passportId && <span className="text-[var(--text-dim)]">{p.passportId}</span>}
+                                {p.passportId && p.passportExpiry && <span className="text-[var(--text-dim)] mx-1">·</span>}
+                                {p.passportExpiry && (
+                                  <span style={{ color: passportColor === 'var(--ok)' ? 'var(--text-dim)' : passportColor }}>
+                                    {p.passportExpiry}
+                                  </span>
+                                )}
+                              </span>
+                            </>
+                          )}
+                        </div>
+                      )}
                     </div>
 
-                    {/* Colonne 2 — Contact (4/12 sur desktop) */}
-                    <div className="md:col-span-4 min-w-0 text-xs text-[var(--text-dim)] space-y-1">
-                      {p.email && (
-                        <div className="inline-flex items-center gap-1.5 truncate">
-                          <LucideIcon name="user" size={11} strokeWidth={2.25} />
-                          <span className="truncate">{p.email}</span>
-                        </div>
-                      )}
-                      {p.phone && (
-                        <div className="inline-flex items-center gap-1.5 truncate">
-                          <LucideIcon name="radio" size={11} strokeWidth={2.25} />
-                          <span className="truncate">{p.phone}</span>
-                        </div>
-                      )}
-                      {p.address && (
-                        <div className="inline-flex items-start gap-1.5">
-                          <span className="mt-[3px] flex-shrink-0"><LucideIcon name="mapPin" size={11} strokeWidth={2.25} /></span>
-                          <span className="line-clamp-2">{p.address}</span>
-                        </div>
-                      )}
-                      {p.medicalExpiry && (
-                        <div className="inline-flex items-center gap-1.5 truncate">
-                          <LucideIcon name="shieldCheck" size={11} strokeWidth={2.25} />
-                          <span className="truncate">
-                            {tx('Médical','Medical')} : {p.medicalExpiry}
-                            {p.dateOfBirth && p.medicalDate && computeAge(p.dateOfBirth, p.medicalDate) != null && (
-                              <> ({computeAge(p.dateOfBirth, p.medicalDate) >= 40 ? tx('6 mois','6 months') : tx('12 mois','12 months')})</>
-                            )}
-                          </span>
-                        </div>
-                      )}
-                      {p.licenseExpiry && (
-                        <div className="inline-flex items-center gap-1.5 truncate">
-                          <LucideIcon name="ticket" size={11} strokeWidth={2.25} />
-                          <span className="truncate">{tx('Licence exp.','License exp.')} : {p.licenseExpiry}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Colonne 3 — Stats (3/12 sur desktop) */}
-                    <div className="md:col-span-3 flex md:flex-col md:items-end md:justify-center gap-3 md:gap-1">
+                    {/* Colonne 4 — Stats (cols 10-12 sur desktop) — extrême droite */}
+                    <div className="md:col-start-10 md:col-span-3 flex md:flex-col md:items-end md:justify-center gap-3 md:gap-2">
                       <div className="text-right">
-                        <div className="text-2xl font-mono font-bold text-[var(--accent)] leading-none">{count}</div>
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-bold mt-0.5">{tx('vols','flights')}</div>
+                        <div className="text-2xl md:text-3xl font-mono font-bold text-[var(--accent)] leading-none">{count}</div>
+                        <div className="text-[10px] md:text-xs uppercase tracking-wider text-[var(--text-dim)] font-bold mt-0.5">{tx('vols','flights')}</div>
                       </div>
                       {totalMinPilot > 0 && (
                         <div className="text-right">
-                          <div className="text-2xl font-mono font-bold text-[var(--accent-2)] leading-none">{totalH}</div>
-                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-bold mt-0.5">{tx('heures totales','total hours')}</div>
+                          <div className="text-2xl md:text-3xl font-mono font-bold text-[var(--accent-2)] leading-none">{totalH}</div>
+                          <div className="text-[10px] md:text-xs uppercase tracking-wider text-[var(--text-dim)] font-bold mt-0.5">{tx('heures totales','total hours')}</div>
                         </div>
                       )}
                     </div>
@@ -8948,7 +9191,7 @@
               </button>
             )}
           >
-            <PilotForm initial={editing} onCancel={()=>setShowForm(false)} onSave={(p)=>{ onAddOrUpdate(p); setShowForm(false); }} />
+            <PilotForm initial={editing} flights={flights} aircraft={aircraft} onCancel={()=>setShowForm(false)} onSave={(p)=>{ onAddOrUpdate(p); setShowForm(false); }} />
           </Modal>
         </div>
       );
@@ -13514,7 +13757,7 @@
               aircraft={aircraft} flights={flights}
               onAddOrUpdate={upsert(setAircraft)} onDelete={remove(setAircraft)} />}
             {tab==='pilots' && <PilotsScreen
-              pilots={pilots} flights={flights}
+              pilots={pilots} flights={flights} aircraft={aircraft}
               onAddOrUpdate={upsert(setPilots)} onDelete={remove(setPilots)} />}
             {tab==='duty' && <DutyScreen
               flights={flights} pilots={pilots} dutyPeriods={dutyPeriods}
