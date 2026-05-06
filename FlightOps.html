@@ -2646,6 +2646,7 @@
     }
 
     function Modal({ open, onClose, title, children, footer }) {
+      const tx = useTx();
       if (!open) return null;
       return (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center"
@@ -2668,7 +2669,7 @@
           >
             <div className="sticky top-0 glass z-10 flex items-center justify-between px-4 py-3" style={{borderRadius:'20px 20px 0 0'}}>
               <h3 className="font-semibold text-base">{title}</h3>
-              <button className="btn btn-secondary !py-1 !px-2 text-sm" onClick={onClose}>Fermer</button>
+              <button className="btn btn-secondary !py-1 !px-2 text-sm" onClick={onClose}>{tx('Fermer','Close')}</button>
             </div>
             {/* overflow-x:hidden aussi sur le wrapper du contenu : empêche tout enfant
                 trop large (input long, badge, label) de provoquer un scroll latéral. */}
@@ -4824,14 +4825,14 @@
               /* Encart vert "OK archivé" : binaire dans le ZIP, métadonnées préservées */
               <div className="flex items-center gap-2 bg-[var(--ok)]/10 border border-[var(--ok)]/40 p-2 rounded-lg">
                 <div className="flex-1 min-w-0 text-xs">
-                  <div className="truncate font-semibold text-[var(--ok)]">✓ OK archivé</div>
-                  <div className="truncate text-[var(--text-dim)]">{d.fileName || 'Pièce jointe'}</div>
+                  <div className="truncate font-semibold text-[var(--ok)]">✓ {tx('OK archivé','Archived')}</div>
+                  <div className="truncate text-[var(--text-dim)]">{d.fileName || tx('Pièce jointe','Attachment')}</div>
                 </div>
                 <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
                   onClick={()=>{
                     if (!confirmDelete(tx('Retirer la référence à ce fichier archivé ?','Remove the reference to this archived file?'))) return;
                     setD(prev => ({ ...prev, thumbnail:'', dataUrl:'', fileName:'', mime:'', archived: false }));
-                  }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
+                  }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />{tx('Retirer','Remove')}</span></button>
               </div>
             ) : hasFile ? (
               <div className="space-y-2">
@@ -4843,11 +4844,11 @@
                     <img src={d.thumbnail || d.dataUrl} alt="" className="w-12 h-12 object-cover rounded flex-shrink-0" />
                   )}
                   <div className="flex-1 min-w-0 text-xs">
-                    <div className="truncate font-medium">{d.fileName || 'Pièce jointe'}</div>
-                    <div className="truncate text-[var(--text-dim)]">✓ Rattachée</div>
+                    <div className="truncate font-medium">{d.fileName || tx('Pièce jointe','Attachment')}</div>
+                    <div className="truncate text-[var(--text-dim)]">✓ {tx('Rattachée','Attached')}</div>
                   </div>
                   <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs"
-                    onClick={()=>setViewing(true)}>Ouvrir</button>
+                    onClick={()=>setViewing(true)}>{tx('Ouvrir','Open')}</button>
                   <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
                     onClick={removeFile}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />{tx('Retirer','Remove')}</span></button>
                 </div>
@@ -4876,7 +4877,7 @@
               <div className="relative inline-block">
                 <button type="button" className="btn btn-primary" disabled={busy}
                   onClick={()=>setMenuOpen(o=>!o)}>
-                  {busy ? 'Import…' : '🧾 + Ajouter une facture'}
+                  {busy ? tx('Import…','Import…') : tx('🧾 + Ajouter une facture','🧾 + Add an invoice')}
                 </button>
                 {menuOpen && (
                   <>
@@ -4891,7 +4892,7 @@
                     </div>
                   </>
                 )}
-                <div className="text-xs text-[var(--text-dim)] mt-2">Optionnel — tu peux enregistrer la dépense sans facture.</div>
+                <div className="text-xs text-[var(--text-dim)] mt-2">{tx('Optionnel — tu peux enregistrer la dépense sans facture.','Optional — you can save the expense without an invoice.')}</div>
               </div>
             )}
             {/* Note : on retire `capture="environment"` pour permettre à iOS d'afficher
@@ -8867,14 +8868,14 @@
                         <div className="font-medium truncate">{d.title || t.label}</div>
                         {d.dataUrl && (
                           <button type="button" className="btn btn-secondary !py-1 !px-2 text-xs"
-                            onClick={(e)=>{ e.stopPropagation(); openDoc(d); }}>Ouvrir</button>
+                            onClick={(e)=>{ e.stopPropagation(); openDoc(d); }}>{tx('Ouvrir','Open')}</button>
                         )}
                       </div>
                       <div className="text-xs text-[var(--text-dim)] truncate">
                         {t.label} {d.version && `· ${d.version}`} {d.effectiveDate && `· ${d.effectiveDate}`}
                       </div>
                       <div className="text-xs text-[var(--text-dim)] truncate">
-                        {ac ? `Avion : ${ac.registration}` : 'Global compagnie'}
+                        {ac ? `${tx('Avion','Aircraft')} : ${ac.registration}` : tx('Global compagnie','Company-wide')}
                       </div>
                     </div>
                   </div>
@@ -9925,8 +9926,8 @@
         <div className="flex items-center gap-2 mt-2 text-xs bg-[var(--bg-card)] p-2 rounded">
           {isPdf ? <span className="text-xl">📄</span> : (entry.invoiceDataUrl ? <img src={entry.invoiceDataUrl} alt="" className="w-8 h-8 object-cover rounded" /> : <span className="text-xl">🧾</span>)}
           <div className="flex-1 min-w-0 truncate">
-            <div className="text-[var(--ok)]">✓ Facture rattachée</div>
-            <div className="text-[var(--text-dim)] truncate">{entry.invoiceFileName || '(facture)'}  → onglet Dépenses · Carburant Avion / Huile</div>
+            <div className="text-[var(--ok)]">✓ {tx('Facture rattachée','Invoice attached')}</div>
+            <div className="text-[var(--text-dim)] truncate">{entry.invoiceFileName || tx('(facture)','(invoice)')}  → {tx('onglet Dépenses · Carburant Avion / Huile','Expenses tab · Aircraft Fuel / Oil')}</div>
           </div>
         </div>
       );
