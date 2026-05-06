@@ -1198,45 +1198,136 @@
       MXN: 0.078, BRL: 0.27, NZD: 0.83, SEK: 0.13,
       NOK: 0.13, DKK: 0.20, ZAR: 0.075,
     };
-    async function getFxRate(date, fromCurrency, toCurrency = 'CAD') {
-      if (!date || !fromCurrency || fromCurrency === toCurrency) return 1;
-      const key = `fx_${date}_${fromCurrency}_${toCurrency}`;
+    // Cache "dernier taux connu" par paire (from→to), indépendamment de la date.
+    // Mis à jour à chaque fetch Frankfurter réussi. Sert de filet de sécurité quand
+    // on saisit une facture offline : on prend le dernier taux mémorisé, et la
+    // prochaine sync corrigera (si la date de la facture est postérieure et qu'un
+    // taux historique réel devient disponible). Stocké en localStorage.
+    const FX_LAST_KNOWN_KEY = 'aerodeck.fxLastKnown.v1';
+    function fxReadLastKnownMap() {
       try {
-        const cached = localStorage.getItem(key);
-        if (cached) {
-          const v = parseFloat(cached);
-          if (!isNaN(v) && v > 0) return v;
-        }
+        const raw = localStorage.getItem(FX_LAST_KNOWN_KEY);
+        if (!raw) return {};
+        const map = JSON.parse(raw);
+        return (map && typeof map === 'object') ? map : {};
+      } catch (_) { return {}; }
+    }
+    function fxWriteLastKnown(from, to, rate, sourceDate) {
+      try {
+        const map = fxReadLastKnownMap();
+        map[`${from}|${to}`] = { rate, fetchedAt: Date.now(), sourceDate: sourceDate || null };
+        localStorage.setItem(FX_LAST_KNOWN_KEY, JSON.stringify(map));
       } catch (_) {}
-      // Tentative 1 : taux historique pour cette date
+    }
+    function fxGetLastKnown(from, to) {
+      const map = fxReadLastKnownMap();
+      const e = map[`${from}|${to}`];
+      if (e && typeof e.rate === 'number' && e.rate > 0) return e;
+      return null;
+    }
+    // Lit le cache historique. Format moderne : JSON `{rate, sourceDate}` (la
+    // date que Frankfurter a réellement renvoyée — ex: 2026-05-03 demandé →
+    // 2026-05-01 vendredi retourné car samedi). Format ancien : nombre brut
+    // (rétrocompat avec les caches d'avant cette refonte).
+    function fxReadHistoricCache(date, fromCurrency, toCurrency) {
+      try {
+        const raw = localStorage.getItem(`fx_${date}_${fromCurrency}_${toCurrency}`);
+        if (!raw) return null;
+        // Tente le format JSON moderne en premier
+        if (raw.startsWith('{')) {
+          const o = JSON.parse(raw);
+          if (o && typeof o.rate === 'number' && o.rate > 0) {
+            return { rate: o.rate, sourceDate: o.sourceDate || date };
+          }
+        }
+        // Fallback format ancien : juste un nombre
+        const v = parseFloat(raw);
+        if (!isNaN(v) && v > 0) return { rate: v, sourceDate: date };
+      } catch (_) {}
+      return null;
+    }
+    function fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, sourceDate) {
+      try {
+        localStorage.setItem(
+          `fx_${date}_${fromCurrency}_${toCurrency}`,
+          JSON.stringify({ rate, sourceDate: sourceDate || date })
+        );
+      } catch (_) {}
+    }
+    // Variante détaillée : retourne {rate, sourceDate, source} ou null.
+    // - source ∈ 'historic-cache' | 'historic-live' | 'latest-live' | 'last-known' | 'static-fallback'
+    // - sourceDate = date que Frankfurter a réellement utilisée pour le taux retourné
+    //   (peut différer de la date demandée si week-end / jour férié)
+    async function getFxRateDetailed(date, fromCurrency, toCurrency = 'CAD') {
+      if (!date || !fromCurrency || fromCurrency === toCurrency) {
+        return { rate: 1, sourceDate: date, source: 'identity' };
+      }
+      // Cache historique pour cette date
+      const cachedHist = fxReadHistoricCache(date, fromCurrency, toCurrency);
+      if (cachedHist) {
+        return { rate: cachedHist.rate, sourceDate: cachedHist.sourceDate, source: 'historic-cache' };
+      }
+      // Tentative 1 : taux historique pour cette date (Frankfurter peut renvoyer
+      // un autre jour ouvré si la date est un week-end/férié — on capture ça via j.date)
       try {
         const url = `https://api.frankfurter.app/${date}?from=${fromCurrency}&to=${toCurrency}`;
         const res = await fetch(url, { cache: 'no-store' });
         if (res.ok) {
           const j = await res.json();
           const rate = j && j.rates && j.rates[toCurrency];
+          const actualDate = (j && j.date) || date;
           if (rate && rate > 0) {
-            try { localStorage.setItem(key, String(rate)); } catch (_) {}
-            return rate;
+            fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, actualDate);
+            fxWriteLastKnown(fromCurrency, toCurrency, rate, actualDate);
+            return { rate, sourceDate: actualDate, source: 'historic-live' };
           }
         }
       } catch (_) {}
-      // Tentative 2 : taux "latest" (jour ouvré le plus récent, utile si la date est dans le futur)
+      // Tentative 2 : taux "latest" (utile si la date demandée est dans le futur)
       try {
         const url = `https://api.frankfurter.app/latest?from=${fromCurrency}&to=${toCurrency}`;
         const res = await fetch(url, { cache: 'no-store' });
         if (res.ok) {
           const j = await res.json();
           const rate = j && j.rates && j.rates[toCurrency];
+          const actualDate = (j && j.date) || null;
           if (rate && rate > 0) {
-            try { localStorage.setItem(key, String(rate)); } catch (_) {}
-            return rate;
+            fxWriteHistoricCache(date, fromCurrency, toCurrency, rate, actualDate);
+            fxWriteLastKnown(fromCurrency, toCurrency, rate, actualDate);
+            return { rate, sourceDate: actualDate, source: 'latest-live' };
           }
         }
       } catch (_) {}
-      // Tentative 3 : table statique de secours (toCurrency doit être CAD)
+      // Tentative 3 : dernier taux connu (offline complet)
+      const lastKnown = fxGetLastKnown(fromCurrency, toCurrency);
+      if (lastKnown && lastKnown.rate > 0) {
+        return { rate: lastKnown.rate, sourceDate: lastKnown.sourceDate || null, source: 'last-known' };
+      }
+      // Tentative 4 : table statique de secours
       if (toCurrency === 'CAD' && FX_FALLBACK_TO_CAD[fromCurrency]) {
-        return FX_FALLBACK_TO_CAD[fromCurrency];
+        return { rate: FX_FALLBACK_TO_CAD[fromCurrency], sourceDate: null, source: 'static-fallback' };
+      }
+      return null;
+    }
+    // Wrapper rétrocompat : retourne juste le nombre. Utilisé partout où la date
+    // du taux n'est pas nécessaire (sumWithRates, agrégations Stats, etc.).
+    async function getFxRate(date, fromCurrency, toCurrency = 'CAD') {
+      const r = await getFxRateDetailed(date, fromCurrency, toCurrency);
+      return r ? r.rate : null;
+    }
+    // Variante synchrone — lit uniquement les caches locaux (cache par date OU
+    // dernier taux connu). Utile pour offrir un taux instantané quand on ouvre
+    // un formulaire offline, sans attendre l'aller-retour réseau.
+    function getFxRateCached(date, fromCurrency, toCurrency = 'CAD') {
+      if (!date || !fromCurrency || fromCurrency === toCurrency) return { rate: 1, source: 'identity', sourceDate: date };
+      const cachedHist = fxReadHistoricCache(date, fromCurrency, toCurrency);
+      if (cachedHist) {
+        return { rate: cachedHist.rate, source: 'historic-cache', sourceDate: cachedHist.sourceDate };
+      }
+      const lk = fxGetLastKnown(fromCurrency, toCurrency);
+      if (lk && lk.rate > 0) return { rate: lk.rate, source: 'last-known', sourceDate: lk.sourceDate, fetchedAt: lk.fetchedAt };
+      if (toCurrency === 'CAD' && FX_FALLBACK_TO_CAD[fromCurrency]) {
+        return { rate: FX_FALLBACK_TO_CAD[fromCurrency], source: 'static-fallback', sourceDate: null };
       }
       return null;
     }
@@ -1296,6 +1387,45 @@
       return z; // 'zulu' par défaut
     }
     // Format date d'après réglage
+    // === Ref globale aux settings courants ===
+    // Permet aux helpers fmt*/confirmDelete d'accéder aux préférences utilisateur
+    // sans avoir à propager `settings` via les props de chaque composant.
+    // Mise à jour par App à chaque changement de settings via useEffect.
+    let __currentSettings = null;
+    function getSettings() {
+      return __currentSettings || (typeof DEFAULT_SETTINGS !== 'undefined' ? DEFAULT_SETTINGS : {});
+    }
+    // Helpers thématisés qui consomment getSettings()
+    function fmtDate(dateISO) {
+      const s = getSettings();
+      return fmtDateBySetting(dateISO, s.dateFormat || 'iso');
+    }
+    function fmtTime(dateISO, hhmm) {
+      const s = getSettings();
+      return fmtTimeBySetting(dateISO, hhmm, s.timeDisplay || 'zulu');
+    }
+    // Confirmation de suppression — bypass si askBeforeDelete=false
+    function confirmDelete(msg) {
+      const s = getSettings();
+      if (s.askBeforeDelete === false) return true;
+      return confirm(msg);
+    }
+    // Compteur de modifs pour le rappel d'export. Incrémenté à chaque mutation
+    // utilisateur. Stocké en localStorage pour survivre aux reloads.
+    function bumpModCounter() {
+      try {
+        const n = (parseInt(localStorage.getItem('aerodeck.modCount.v1'), 10) || 0) + 1;
+        localStorage.setItem('aerodeck.modCount.v1', String(n));
+        return n;
+      } catch { return 0; }
+    }
+    function getModCounter() {
+      try { return parseInt(localStorage.getItem('aerodeck.modCount.v1'), 10) || 0; } catch { return 0; }
+    }
+    function resetModCounter() {
+      try { localStorage.setItem('aerodeck.modCount.v1', '0'); } catch {}
+    }
+
     function fmtDateBySetting(dateISO, fmt) {
       if (!dateISO) return '';
       const m = dateISO.match(/^(\d{4})-(\d{2})-(\d{2})$/);
@@ -1339,12 +1469,23 @@
       const rounded = Math.round(h * 10) / 10;
       return `${rounded.toFixed(1).replace(/\.0$/, '')} h`;
     }
-    // Formatte HHMM -> "HH:MMZ"
-    function fmtHHMMZ(v) {
+    // Formatte HHMM -> "HH:MMZ" (Zulu) / "HH:MM" (local) / "HH:MMZ (HH:MM L)" (both)
+    // Respecte le réglage settings.timeDisplay via la ref globale __currentSettings.
+    // Si pas de date passée, on utilise aujourd'hui Zulu pour le calcul du décalage local.
+    function fmtHHMMZ(v, dateISO) {
       const m = parseHHMM(v);
       if (m==null) return '';
       const h = Math.floor(m/60); const mm = m%60;
-      return `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}Z`;
+      const zuluStr = `${String(h).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+      const mode = (getSettings().timeDisplay || 'zulu');
+      if (mode === 'zulu') return `${zuluStr}Z`;
+      const baseDate = dateISO || todayZuluDate();
+      if (mode === 'local') {
+        return zuluToLocalHHMM(baseDate, zuluStr) || `${zuluStr}Z`;
+      }
+      // both
+      const local = zuluToLocalHHMM(baseDate, zuluStr);
+      return `${zuluStr}Z${local ? ` (${local} L)` : ''}`;
     }
 
     // ------- CARs 702 (Canada) — Limites Duty / Flight Time -------
@@ -2178,6 +2319,10 @@
       arrowUp:      'M12 19V5 M5 12l7-7 7 7',
       x:            'M18 6 6 18 M6 6l12 12',
       plus:         'M5 12h14 M12 5v14',
+      // Crayon (édition inline) — utilisé pour le bouton "Ajuster" du taux comptable
+      edit3:        'M12 20h9 M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4z',
+      // Flèche circulaire anti-horaire — bouton "Réinitialiser" override comptable
+      rotateCcw:    'M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8 M3 3v5h5',
     };
     function LucideIcon({ name, size = 20, strokeWidth = 2 }) {
       const path = LUCIDE_ICONS[name];
@@ -2667,7 +2812,7 @@
       }
 
       function removeDoc(id) {
-        if (!confirm(tx('Retirer ce document ? (Pense à exporter en JSON avant si tu veux le conserver.)','Remove this document? (Export JSON first if you want to keep it.)'))) return;
+        if (!confirmDelete(tx('Retirer ce document ? (Pense à exporter en JSON avant si tu veux le conserver.)','Remove this document? (Export JSON first if you want to keep it.)'))) return;
         onChange((docs||[]).filter(d => d.id !== id));
       }
       // Visionneuse interne (avec bouton ← Retour) au lieu d'ouvrir un nouvel
@@ -3946,7 +4091,7 @@
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-sm text-[var(--text-dim)] flex items-center gap-2">
-                        <span>{f.date}</span>
+                        <span>{fmtDate(f.date)}</span>
                         {ac?.kind === 'simulator' && (
                           <span className="badge !bg-[var(--accent)]/15 !text-[var(--accent)] !border-[var(--accent)]/40 !py-0.5 !px-1.5 text-[10px] inline-flex items-center gap-1" title={tx('Vol en simulateur','Simulator flight')}>
                             <LucideIcon name="joystick" size={10} strokeWidth={2.5} /> SIM
@@ -4045,7 +4190,7 @@
             footer={editing && (
               <button
                 onClick={()=>{
-                  if (confirm(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
+                  if (confirmDelete(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
                     onDelete(editing.id); setShowForm(false);
                   }
                 }}
@@ -4144,7 +4289,7 @@
         setNewDeadline({ label:'', date:'', hours:'' });
       }
       function removeDeadline(id) {
-        if (!confirm(tx('Retirer cette échéance ?','Remove this deadline?'))) return;
+        if (!confirmDelete(tx('Retirer cette échéance ?','Remove this deadline?'))) return;
         set('deadlines', a.deadlines.filter(d=>d.id!==id));
       }
 
@@ -4267,7 +4412,7 @@
                   <div className="text-sm">
                     <div className="font-medium">{d.label}</div>
                     <div className="text-xs text-[var(--text-dim)]">
-                      {d.date && <>{tx('échéance','due')} : {d.date}</>}
+                      {d.date && <>{tx('échéance','due')} : {fmtDate(d.date)}</>}
                       {d.date && d.hours && ' · '}
                       {d.hours && <>{tx('à','at')} {d.hours} {tx('h cellule','h airframe')}</>}
                     </div>
@@ -4426,7 +4571,7 @@
             title={editing ? tx("Modifier l'avion",'Edit aircraft') : tx('Nouvel avion','New aircraft')}
             footer={editing && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer cet avion ? Les vols associés ne seront pas effacés.','Delete this aircraft? Associated flights will not be deleted.'))) {
+                if (confirmDelete(tx('Supprimer cet avion ? Les vols associés ne seront pas effacés.','Delete this aircraft? Associated flights will not be deleted.'))) {
                   onDelete(editing.id); setShowForm(false);
                 }
               }}
@@ -4458,6 +4603,15 @@
         amountHT: '',          // HT (optionnel ; vide pour les dépenses legacy)
         amountTax: '',         // Taxe(s) (optionnel ; vide pour les dépenses legacy)
         currency: 'EUR',
+        // Override comptable du montant converti dans la devise utilisateur.
+        // Permet de saisir le montant exact prélevé sur la carte (incluant les
+        // frais bancaires, la marge change), au lieu du taux de marché Frankfurter.
+        // Si null/vide → calcul automatique au taux du jour.
+        convertedAmountOverride: '',
+        // Devise figée au moment de l'override (cohérence comptable si l'utilisateur
+        // change settings.defaultCurrency plus tard, l'override reste rattaché à
+        // la devise d'origine pour ne pas être mal interprété).
+        convertedCurrencyAtOverride: '',
         categoryId: 'other',
         aircraftId: '',
         pilotId: '',           // pilote rattaché à la dépense (optionnel)
@@ -4475,6 +4629,78 @@
       const [menuOpen, setMenuOpen] = useState(false);
       const [busy, setBusy] = useState(false);
       const [viewing, setViewing] = useState(false);
+
+      // Devise cible utilisateur (depuis settings) — utilisée pour afficher le
+      // taux de change appliqué quand la devise de la facture diffère.
+      // Le montant saisi en devise d'origine est conservé tel quel ;
+      // la conversion sert au total et peut être ajustée manuellement
+      // (override comptable pour coller au prélèvement bancaire réel).
+      const targetCurrency = ((getSettings().defaultCurrency || 'CAD')).toUpperCase();
+      const [fxInfo, setFxInfo] = useState(null); // { rate, date, from, to, source } | null
+      const [fxBusy, setFxBusy] = useState(false);
+      const [showOverrideEditor, setShowOverrideEditor] = useState(false);
+
+      useEffect(() => {
+        let cancelled = false;
+        const cur = (d.currency || '').toUpperCase();
+        if (!cur || cur === targetCurrency) {
+          setFxInfo(null);
+          setFxBusy(false);
+          return;
+        }
+        const date = d.date || todayZuluDate();
+        // 1) Affichage instantané depuis le cache local (taux historique pour
+        //    cette date OU dernier taux connu pour la paire).
+        //    `sourceDate` = la VRAIE date du taux retourné par Frankfurter
+        //    (peut être un jour ouvré antérieur si la date demandée est un
+        //    week-end ou jour férié).
+        const cachedHit = getFxRateCached(date, cur, targetCurrency);
+        if (cachedHit) {
+          setFxInfo({ rate: cachedHit.rate, requestedDate: date, from: cur, to: targetCurrency,
+                      source: cachedHit.source, sourceDate: cachedHit.sourceDate || null });
+        }
+        // 2) Fetch détaillé en arrière-plan : on récupère AUSSI la date que
+        //    Frankfurter a réellement utilisée pour le taux. Si la date
+        //    demandée est un week-end, Frankfurter renvoie le vendredi
+        //    précédent — on l'affiche tel quel pour transparence comptable.
+        setFxBusy(true);
+        (async () => {
+          try {
+            const r = await getFxRateDetailed(date, cur, targetCurrency);
+            if (cancelled) return;
+            if (r != null && r.rate > 0) {
+              setFxInfo({ rate: r.rate, requestedDate: date, from: cur, to: targetCurrency,
+                          source: r.source, sourceDate: r.sourceDate || date });
+            } else if (!cachedHit) {
+              setFxInfo({ rate: null, requestedDate: date, from: cur, to: targetCurrency, source: 'none', sourceDate: null });
+            }
+          } catch {
+            if (!cancelled && !cachedHit) setFxInfo({ rate: null, requestedDate: date, from: cur, to: targetCurrency, source: 'none', sourceDate: null });
+          } finally {
+            if (!cancelled) setFxBusy(false);
+          }
+        })();
+        return () => { cancelled = true; };
+      }, [d.currency, d.date, targetCurrency]);
+
+      // Helpers pour l'override comptable du montant converti.
+      const hasOverride = d.convertedAmountOverride !== '' && d.convertedAmountOverride != null
+                          && parseFloat(d.convertedAmountOverride) > 0
+                          && (d.convertedCurrencyAtOverride || targetCurrency) === targetCurrency;
+      const autoConvertedAmount = (fxInfo && fxInfo.rate != null && parseFloat(d.amount) > 0)
+                                    ? parseFloat(d.amount) * fxInfo.rate : null;
+      function applyOverride(value) {
+        const num = parseFloat(value);
+        if (isNaN(num) || num <= 0) {
+          setD(p => ({ ...p, convertedAmountOverride: '', convertedCurrencyAtOverride: '' }));
+        } else {
+          setD(p => ({ ...p, convertedAmountOverride: String(num), convertedCurrencyAtOverride: targetCurrency }));
+        }
+      }
+      function resetOverride() {
+        setD(p => ({ ...p, convertedAmountOverride: '', convertedCurrencyAtOverride: '' }));
+        setShowOverrideEditor(false);
+      }
 
       function set(k,v){ setD(p=>({...p,[k]:v})); }
 
@@ -4504,7 +4730,7 @@
       function triggerCamera() { setMenuOpen(false); setTimeout(() => cameraRef.current?.click(), 0); }
       function triggerFiles()  { setMenuOpen(false); setTimeout(() => filesRef.current?.click(), 0); }
       function removeFile() {
-        if (!confirm(tx('Retirer le fichier joint à cette dépense ?','Remove the file attached to this expense?'))) return;
+        if (!confirmDelete(tx('Retirer le fichier joint à cette dépense ?','Remove the file attached to this expense?'))) return;
         setD(prev => ({ ...prev, thumbnail: '', fileName: '', mime: '', dataUrl: '' }));
       }
       const hasFile = !!(d.dataUrl || d.thumbnail);
@@ -4525,7 +4751,7 @@
                 </div>
                 <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
                   onClick={()=>{
-                    if (!confirm(tx('Retirer la référence à ce fichier archivé ?','Remove the reference to this archived file?'))) return;
+                    if (!confirmDelete(tx('Retirer la référence à ce fichier archivé ?','Remove the reference to this archived file?'))) return;
                     setD(prev => ({ ...prev, thumbnail:'', dataUrl:'', fileName:'', mime:'', archived: false }));
                   }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />Retirer</span></button>
               </div>
@@ -4662,6 +4888,121 @@
               <select className="select" value={d.currency} onChange={e=>set('currency', e.target.value)}>
                 <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option><option>CAD</option>
               </select>
+              {/* === Bloc taux de change + ajustement manuel ===
+                  Affiché uniquement si la devise de la facture diffère de la
+                  devise utilisateur (settings.defaultCurrency).
+                  - Affiche le taux source (live, cache, last-known, fallback)
+                  - Calcule un montant converti automatique
+                  - Permet un override pour saisir le montant exact prélevé sur
+                    la carte (frais bancaires, marge change incluses)
+                  Design moderne : capsule discrète, pencil-icon Ajuster. */}
+              {(d.currency || '').toUpperCase() !== targetCurrency && (
+                <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card-2)] px-2.5 py-2 space-y-1">
+                  {/* Ligne 1 : date du taux (mise en avant) + taux + source */}
+                  <div className="flex items-center justify-between gap-2 text-[10px]">
+                    {fxInfo && fxInfo.rate != null ? (
+                      <span className="text-[var(--text-dim)] truncate">
+                        <span className="font-semibold">{tx('Taux du','Rate of')} {fxInfo.sourceDate || fxInfo.requestedDate}</span>
+                        <span className="mx-1">·</span>
+                        <span className="font-mono text-[var(--accent)]">1 {fxInfo.from} = {fxInfo.rate.toFixed(4)} {fxInfo.to}</span>
+                        {/* Indication discrète de la source / fiabilité */}
+                        <span className="ml-1.5 opacity-70">
+                          {fxInfo.source === 'historic-live' && tx('· officiel','· official')}
+                          {fxInfo.source === 'historic-cache' && tx('· en cache','· cached')}
+                          {fxInfo.source === 'latest-live' && tx('· dernier dispo','· latest avail.')}
+                          {fxInfo.source === 'last-known' && tx('· offline','· offline')}
+                          {fxInfo.source === 'static-fallback' && tx('· secours','· fallback')}
+                        </span>
+                        {/* Si la date du taux ≠ la date de la facture (week-end / fallback),
+                            on l'indique explicitement pour la transparence comptable */}
+                        {fxInfo.sourceDate && fxInfo.requestedDate && fxInfo.sourceDate !== fxInfo.requestedDate && (
+                          <span className="block text-[9px] text-[var(--warn)] mt-0.5">
+                            ⚠ {tx(`Facture du ${fxInfo.requestedDate} (week-end / férié) : taux du jour ouvré le plus proche utilisé.`,`Invoice dated ${fxInfo.requestedDate} (weekend/holiday): nearest business-day rate used.`)}
+                          </span>
+                        )}
+                      </span>
+                    ) : fxBusy ? (
+                      <span className="text-[var(--text-dim)] italic">{tx('Récupération du taux…','Fetching rate…')}</span>
+                    ) : (
+                      <span className="text-[var(--warn)]">⚠ {tx('Taux indisponible','Rate unavailable')}</span>
+                    )}
+                    {fxBusy && fxInfo && (
+                      <span className="text-[8px] uppercase tracking-wider text-[var(--text-dim)] opacity-60 flex-shrink-0">{tx('maj…','sync…')}</span>
+                    )}
+                  </div>
+                  {/* Ligne 2 : montant converti (auto OU override) + bouton ajuster */}
+                  {parseFloat(d.amount) > 0 && (
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-baseline gap-1.5 min-w-0">
+                        {hasOverride ? (
+                          <>
+                            <span className="text-[10px] text-[var(--text-dim)]">{tx('Montant comptable','Booked amount')} :</span>
+                            <span className="font-mono tabular-nums text-sm font-semibold" style={{ color: 'var(--ok)' }}>
+                              {parseFloat(d.convertedAmountOverride).toFixed(2)} {targetCurrency}
+                            </span>
+                            {autoConvertedAmount != null && (
+                              <span className="text-[9px] text-[var(--text-dim)] italic truncate">
+                                ({tx('auto','auto')} ≈ {autoConvertedAmount.toFixed(2)})
+                              </span>
+                            )}
+                          </>
+                        ) : autoConvertedAmount != null ? (
+                          <>
+                            <span className="text-[10px] text-[var(--text-dim)]">≈</span>
+                            <span className="font-mono tabular-nums text-sm font-semibold text-[var(--accent)]">
+                              {autoConvertedAmount.toFixed(2)} {targetCurrency}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-[10px] text-[var(--text-dim)] italic">{tx('— pas de taux —','— no rate —')}</span>
+                        )}
+                      </div>
+                      {!showOverrideEditor && (
+                        <button type="button"
+                          onClick={()=>setShowOverrideEditor(true)}
+                          className="text-[10px] px-2 py-0.5 rounded-md border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors flex items-center gap-1 flex-shrink-0"
+                          title={tx('Saisir le montant exact prélevé (frais bancaires inclus)','Enter the exact amount charged (bank fees included)')}>
+                          <LucideIcon name="edit3" size={10} strokeWidth={2.25} />
+                          {hasOverride ? tx('Modifier','Edit') : tx('Ajuster','Adjust')}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {/* Ligne 3 (déployée) : input pour saisir le montant comptable */}
+                  {showOverrideEditor && parseFloat(d.amount) > 0 && (
+                    <div className="pt-1.5 mt-1 border-t border-[var(--border)] space-y-1.5 anim-pop">
+                      <div className="text-[9px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">
+                        {tx('Montant réel prélevé','Actual amount charged')} ({targetCurrency})
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <input type="number" step="0.01" min="0"
+                          className="input !py-1 !px-2 text-sm font-mono flex-1"
+                          placeholder={autoConvertedAmount != null ? autoConvertedAmount.toFixed(2) : '0.00'}
+                          value={d.convertedAmountOverride}
+                          onChange={e=>setD(p=>({ ...p, convertedAmountOverride: e.target.value, convertedCurrencyAtOverride: e.target.value ? targetCurrency : '' }))}
+                          autoFocus
+                        />
+                        <button type="button"
+                          onClick={()=>setShowOverrideEditor(false)}
+                          className="btn btn-secondary !py-1 !px-2 text-xs">
+                          {tx('OK','OK')}
+                        </button>
+                        {hasOverride && (
+                          <button type="button"
+                            onClick={resetOverride}
+                            className="btn !py-1 !px-2 text-xs border border-[var(--border)] hover:border-[var(--warn)] hover:text-[var(--warn)]"
+                            title={tx('Revenir au taux automatique','Revert to automatic rate')}>
+                            <LucideIcon name="rotateCcw" size={10} strokeWidth={2.25} />
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-[9px] text-[var(--text-dim)] leading-tight">
+                        {tx('Saisissez le montant exact débité de la carte (frais bancaires + marge change inclus). Utilisé pour les totaux comptables.','Enter the exact amount debited from the card (bank fees + FX margin included). Used for accounting totals.')}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -4848,11 +5189,15 @@
       // Total filtré (pour le panneau récap)
       const filteredTotal = useMemo(() => filtered.reduce((s,d) => s + (parseFloat(d.amount)||0), 0), [filtered]);
 
-      // === Conversion CAD : convertit chaque facture/visite à la date qui lui est propre ===
+      // === Conversion vers la devise utilisateur (settings.defaultCurrency) ===
+      // Convertit chaque facture/visite à la date qui lui est propre.
       // Cache local pour éviter de re-fetch les mêmes paires (date, devise).
       // Affiche pendant le chargement, met à jour quand tous les taux sont prêts.
       // Si un taux est introuvable (offline + pas en cache), on additionne le montant brut
       // et on incrémente missingCount pour le signaler.
+      // Conserve les noms cadFiltered/cadGrand pour compatibilité interne, mais
+      // la cible n'est plus forcément CAD : c'est settings.defaultCurrency.
+      const targetCurrency = ((getSettings().defaultCurrency || 'CAD')).toUpperCase();
       const [cadFiltered, setCadFiltered] = useState(null);
       const [cadGrand,    setCadGrand]    = useState(null);
       const [fxLoading,   setFxLoading]   = useState(false);
@@ -4866,8 +5211,8 @@
           const pairs = new Set();
           for (const list of lists) {
             for (const d of list) {
-              const cur = (d.currency || 'CAD').toUpperCase();
-              if (cur === 'CAD') continue;
+              const cur = (d.currency || targetCurrency).toUpperCase();
+              if (cur === targetCurrency) continue;
               const date = d.date || todayZuluDate();
               pairs.add(`${date}|${cur}`);
             }
@@ -4875,19 +5220,30 @@
           const map = new Map();
           await Promise.all([...pairs].map(async (key) => {
             const [date, cur] = key.split('|');
-            const r = await getFxRate(date, cur, 'CAD');
+            const r = await getFxRate(date, cur, targetCurrency);
             if (r != null) map.set(key, r);
           }));
           return map;
         }
         // 2) Calcule un total à partir d'une liste, en utilisant la map de taux pré-fetched.
+        //    Priorité : override comptable (montant réel prélevé sur la carte) >
+        //    devise cible identique > taux pré-fetched > montant brut + missing++.
         function sumWithRates(list, rates) {
           let total = 0, missing = 0;
           for (const d of list) {
             const amt = parseFloat(d.amount) || 0;
             if (!amt) continue;
-            const cur = (d.currency || 'CAD').toUpperCase();
-            if (cur === 'CAD') { total += amt; continue; }
+            // Override comptable : si l'utilisateur a saisi le montant réel
+            // débité (incluant frais bancaires), on l'utilise directement —
+            // mais uniquement s'il a été figé pour la devise cible courante.
+            const overrideAmt = parseFloat(d.convertedAmountOverride);
+            const overrideCur = (d.convertedCurrencyAtOverride || '').toUpperCase();
+            if (!isNaN(overrideAmt) && overrideAmt > 0 && overrideCur === targetCurrency) {
+              total += overrideAmt;
+              continue;
+            }
+            const cur = (d.currency || targetCurrency).toUpperCase();
+            if (cur === targetCurrency) { total += amt; continue; }
             const date = d.date || todayZuluDate();
             const rate = rates.get(`${date}|${cur}`);
             if (rate != null) total += amt * rate;
@@ -4909,7 +5265,7 @@
         run();
         return () => { cancelled = true; };
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [filtered, documentsAll]);
+      }, [filtered, documentsAll, targetCurrency]);
       const filteredCurrency = useMemo(() => {
         const m = {};
         for (const d of filtered) {
@@ -5232,9 +5588,9 @@
                 <div className="text-3xl sm:text-4xl font-mono tabular-nums font-bold text-[var(--accent)] leading-tight mt-1">
                   {totalAmount.toFixed(2)} <span className="text-lg text-[var(--text-dim)]">{mainCurrency}</span>
                 </div>
-                {cadGrand && cadGrand.total > 0 && mainCurrency !== 'CAD' && (
+                {cadGrand && cadGrand.total > 0 && mainCurrency !== targetCurrency && (
                   <div className="text-base font-mono tabular-nums font-semibold mt-0.5" style={{ color: 'var(--accent)' }}>
-                    ≈ {cadGrand.total.toFixed(2)} <span className="text-xs text-[var(--text-dim)]">CAD</span>
+                    ≈ {cadGrand.total.toFixed(2)} <span className="text-xs text-[var(--text-dim)]">{targetCurrency}</span>
                     {cadGrand.missing > 0 && (
                       <span className="ml-2 text-[10px] text-[var(--warn)]" title={tx('Taux non trouvé pour certaines factures (offline ou date trop ancienne)','FX rate not found for some invoices (offline or date too old)')}>
                         ⚠ {cadGrand.missing} {tx('taux manquant','rate missing')}{cadGrand.missing>1?'s':''}
@@ -5243,7 +5599,7 @@
                   </div>
                 )}
                 {fxLoading && !cadGrand && (
-                  <div className="text-xs text-[var(--text-dim)] italic mt-0.5">{tx('Conversion CAD en cours…','CAD conversion in progress…')}</div>
+                  <div className="text-xs text-[var(--text-dim)] italic mt-0.5">{tx(`Conversion ${targetCurrency} en cours…`,`${targetCurrency} conversion in progress…`)}</div>
                 )}
                 <div className="text-xs text-[var(--text-dim)] mt-1">
                   {totalCount} {tx(totalCount>1?'factures':'facture',totalCount>1?'invoices':'invoice')} · {usedCats.length} {tx(usedCats.length>1?'catégories':'catégorie',usedCats.length>1?'categories':'category')} {tx(usedCats.length>1?'actives':'active',usedCats.length>1?'active':'active')}
@@ -5507,9 +5863,9 @@
                   <div className="text-2xl font-mono tabular-nums font-bold" style={{ color: selectedCat.color }}>
                     {filteredTotal.toFixed(2)} <span className="text-sm text-[var(--text-dim)]">{filteredCurrency}</span>
                   </div>
-                  {cadFiltered && cadFiltered.total > 0 && (
+                  {cadFiltered && cadFiltered.total > 0 && filteredCurrency !== targetCurrency && (
                     <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--accent)' }}>
-                      ≈ {cadFiltered.total.toFixed(2)} CAD
+                      ≈ {cadFiltered.total.toFixed(2)} {targetCurrency}
                       {cadFiltered.missing > 0 && (
                         <span className="ml-1 text-[var(--warn)]" title={tx('Taux non trouvé pour certaines factures (offline ou date trop ancienne) — montant brut additionné','FX rate not found for some invoices (offline or date too old) — raw amount summed')}>
                           ⚠ {cadFiltered.missing} {tx('taux manquant','rate missing')}{cadFiltered.missing>1?'s':''}
@@ -5518,7 +5874,7 @@
                     </div>
                   )}
                   {fxLoading && !cadFiltered && (
-                    <div className="text-xs text-[var(--text-dim)] italic mt-0.5">{tx('Conversion CAD en cours…','CAD conversion in progress…')}</div>
+                    <div className="text-xs text-[var(--text-dim)] italic mt-0.5">{tx(`Conversion ${targetCurrency} en cours…`,`${targetCurrency} conversion in progress…`)}</div>
                   )}
                   <div className="text-xs text-[var(--text-dim)]">{filtered.length} {tx(filtered.length>1?'factures':'facture',filtered.length>1?'invoices':'invoice')}</div>
                 </div>
@@ -5713,9 +6069,9 @@
                     {tx('Répartition par catégorie','Breakdown by category')}
                   </span>
                   <span className="text-xs text-[var(--text-dim)] font-mono">{grandTotal.toFixed(2)} {mainCurrency}</span>
-                  {cadGrand && cadGrand.total > 0 && (
+                  {cadGrand && cadGrand.total > 0 && mainCurrency !== targetCurrency && (
                     <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>
-                      ≈ {cadGrand.total.toFixed(2)} CAD
+                      ≈ {cadGrand.total.toFixed(2)} {targetCurrency}
                     </span>
                   )}
                 </div>
@@ -5767,7 +6123,7 @@
             title={editing ? tx('Modifier la facture','Edit invoice') : tx('Nouvelle facture','New invoice')}
             footer={editing && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer cette facture ? (Préfère un export JSON avant.)','Delete this invoice? (Export JSON first as backup.)'))) {
+                if (confirmDelete(tx('Supprimer cette facture ? (Préfère un export JSON avant.)','Delete this invoice? (Export JSON first as backup.)'))) {
                   onDelete(editing.id); setShowForm(false);
                 }
               }}
@@ -6070,8 +6426,84 @@
         });
       }, [flights, year, month]);
 
+      // === Conversion FX vers la devise utilisateur (settings.defaultCurrency) ===
+      // Pré-fetch en parallèle de toutes les paires (date, devise) nécessaires,
+      // utilisé pour convertir factures et visites mécanicien dans les agrégations.
+      // Respecte aussi l'override comptable (montant exact prélevé sur la carte).
+      const targetCurrencyStats = ((settings?.defaultCurrency || 'CAD')).toUpperCase();
+      const [fxRatesStats, setFxRatesStats] = useState(new Map());
+      const [fxLoadingStats, setFxLoadingStats] = useState(false);
+      useEffect(() => {
+        let cancelled = false;
+        async function ensureRates() {
+          const pairs = new Set();
+          for (const d of filteredDocs) {
+            const cur = (d.currency || targetCurrencyStats).toUpperCase();
+            if (cur === targetCurrencyStats) continue;
+            const date = d.date || todayZuluDate();
+            pairs.add(`${date}|${cur}`);
+          }
+          for (const v of (mechanicVisits || [])) {
+            if (v.includeInOpex === false) continue;
+            if (!v.date) continue;
+            const dt = new Date(v.date+'T00:00:00Z');
+            if (isNaN(dt.getTime())) continue;
+            if (dt.getUTCFullYear() !== year) continue;
+            if (month !== 0 && dt.getUTCMonth()+1 !== month) continue;
+            const cur = (v.currency || targetCurrencyStats).toUpperCase();
+            if (cur === targetCurrencyStats) continue;
+            pairs.add(`${v.date}|${cur}`);
+          }
+          if (pairs.size === 0) {
+            if (!cancelled) { setFxRatesStats(new Map()); setFxLoadingStats(false); }
+            return;
+          }
+          setFxLoadingStats(true);
+          const map = new Map();
+          await Promise.all([...pairs].map(async (key) => {
+            const [date, cur] = key.split('|');
+            const r = await getFxRate(date, cur, targetCurrencyStats);
+            if (r != null) map.set(key, r);
+          }));
+          if (!cancelled) {
+            setFxRatesStats(map);
+            setFxLoadingStats(false);
+          }
+        }
+        ensureRates();
+        return () => { cancelled = true; };
+      }, [filteredDocs, mechanicVisits, year, month, targetCurrencyStats]);
+
+      // Convertit le montant d'une facture en devise utilisateur.
+      // Priorité : override comptable (montant exact débité de la carte) >
+      // devise identique > taux pré-fetché > montant brut (fallback safe).
+      function convertedDocAmount(d) {
+        const overrideAmt = parseFloat(d.convertedAmountOverride);
+        const overrideCur = (d.convertedCurrencyAtOverride || '').toUpperCase();
+        if (!isNaN(overrideAmt) && overrideAmt > 0 && overrideCur === targetCurrencyStats) {
+          return overrideAmt;
+        }
+        const amt = parseFloat(d.amount) || 0;
+        const cur = (d.currency || targetCurrencyStats).toUpperCase();
+        if (cur === targetCurrencyStats) return amt;
+        const date = d.date || todayZuluDate();
+        const rate = fxRatesStats.get(`${date}|${cur}`);
+        return rate != null ? amt * rate : amt;
+      }
+      // Convertit le montant d'une visite mécanicien (pas d'override pour celles-ci).
+      function convertedVisitAmount(v) {
+        const amt = parseFloat(v.amount) || 0;
+        const cur = (v.currency || targetCurrencyStats).toUpperCase();
+        if (cur === targetCurrencyStats) return amt;
+        const date = v.date || todayZuluDate();
+        const rate = fxRatesStats.get(`${date}|${cur}`);
+        return rate != null ? amt * rate : amt;
+      }
+
       // Coût d'exploitation par avion (sur la période filtrée).
-      // - cost  : somme des dépenses dont aircraftId = avion (toutes catégories)
+      // - cost  : somme des dépenses dont aircraftId = avion (toutes catégories),
+      //           converties en devise utilisateur (settings.defaultCurrency).
+      //           Respecte l'override comptable de chaque facture si présent.
       // - hours : somme du Flight Time (minutes → heures décimales)
       // - fuelL : somme des quantités fuelEntries (kg→L densité avgas 0.72, USG→L 3.785)
       // - airH  : somme Air Time (pour conso L/h plus représentative que FT)
@@ -6089,14 +6521,13 @@
           if (u === 'USG') return v * 3.785;
           return v;
         };
-        // Dépenses : toutes catégories liées à un avion
+        // Dépenses : toutes catégories liées à un avion (converties en devise utilisateur)
         for (const d of filteredDocs) {
           if (!d.aircraftId) continue;
-          const amt = parseFloat(d.amount) || 0;
-          ensure(d.aircraftId).cost += amt;
+          ensure(d.aircraftId).cost += convertedDocAmount(d);
         }
         // Visites mécanicien : on filtre par période, on exclut celles avec includeInOpex=false,
-        // puis on répartit le montant total sur le nombre d'avions concernés.
+        // puis on répartit le montant total sur le nombre d'avions concernés (devise convertie).
         for (const v of (mechanicVisits || [])) {
           if (v.includeInOpex === false) continue;
           if (!v.date) continue;
@@ -6106,7 +6537,7 @@
           if (month !== 0 && dt.getUTCMonth()+1 !== month) continue;
           const acIds = Array.isArray(v.aircraftIds) ? v.aircraftIds.filter(Boolean) : [];
           if (acIds.length === 0) continue;
-          const total = parseFloat(v.amount) || 0;
+          const total = convertedVisitAmount(v);
           if (total <= 0) continue;
           const split = total / acIds.length;
           for (const acId of acIds) ensure(acId).cost += split;
@@ -6181,26 +6612,28 @@
             lPerHourMethod: tt ? `tab-to-tab (${tt.fullCount} fulls)` : (atH > 0 ? 'approximation' : null),
           };
         }).sort((a, b) => b.cost - a.cost);
-      }, [filteredDocs, aircraftScopedFlights, aircraft, mechanicVisits, year, month]);
+      }, [filteredDocs, aircraftScopedFlights, aircraft, mechanicVisits, year, month, fxRatesStats, targetCurrencyStats]);
 
-      // Top fournisseurs sur la période filtrée (somme dépenses)
+      // Top fournisseurs sur la période filtrée (somme dépenses, convertie en devise utilisateur)
       const topSuppliers = useMemo(() => {
         const map = {};
         for (const d of filteredDocs) {
           const name = (d.supplier || '').trim();
           if (!name) continue;
           if (!map[name]) map[name] = { total: 0, count: 0, currencies: {} };
-          const amt = parseFloat(d.amount) || 0;
-          map[name].total += amt;
+          const converted = convertedDocAmount(d);
+          map[name].total += converted;
           map[name].count++;
+          // Conserve aussi le détail par devise d'origine pour info (montants bruts)
           const cur = d.currency || 'EUR';
-          map[name].currencies[cur] = (map[name].currencies[cur] || 0) + amt;
+          const rawAmt = parseFloat(d.amount) || 0;
+          map[name].currencies[cur] = (map[name].currencies[cur] || 0) + rawAmt;
         }
         return Object.entries(map)
           .map(([name, v]) => ({ name, ...v }))
           .sort((a, b) => b.total - a.total)
           .slice(0, 5);
-      }, [filteredDocs]);
+      }, [filteredDocs, fxRatesStats, targetCurrencyStats]);
 
       const mainCurrencyStats = useMemo(() => {
         const counts = {};
@@ -6214,10 +6647,10 @@
       const docTotals = useMemo(() => {
         const m = {};
         for (const d of filteredDocs) {
-          m[d.categoryId] = (m[d.categoryId]||0) + (parseFloat(d.amount)||0);
+          m[d.categoryId] = (m[d.categoryId]||0) + convertedDocAmount(d);
         }
         // Visites mécanicien (includeInOpex !== false) sur la période sélectionnée :
-        // ajoutées sous catégorie 'mechanic_visit' avec montant total réparti = total
+        // ajoutées sous catégorie 'mechanic_visit' avec montant total converti
         // (le split par avion ne change pas la somme globale).
         for (const v of (mechanicVisits || [])) {
           if (v.includeInOpex === false) continue;
@@ -6226,12 +6659,12 @@
           if (isNaN(dt.getTime())) continue;
           if (dt.getUTCFullYear() !== year) continue;
           if (month !== 0 && dt.getUTCMonth()+1 !== month) continue;
-          const total = parseFloat(v.amount) || 0;
+          const total = convertedVisitAmount(v);
           if (total <= 0) continue;
           m['mechanic_visit'] = (m['mechanic_visit']||0) + total;
         }
         return m;
-      }, [filteredDocs, mechanicVisits, year, month]);
+      }, [filteredDocs, mechanicVisits, year, month, fxRatesStats, targetCurrencyStats]);
 
       function exportFlightsCSV() {
         const headers = ['date','from','to','registration','type','functionType','rules','night','blockOut','takeOff','landing','blockIn','flightTime_min','airTime_min','takeoffs','landings','nightLandings','approaches','fuel','fuelUnit','notes'];
@@ -6736,7 +7169,7 @@
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
                         <div>
                           <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">{tx('Coût total','Total cost')}</div>
-                          <div className="font-mono tabular-nums text-base font-semibold">{row.cost.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{mainCurrencyStats}</span></div>
+                          <div className="font-mono tabular-nums text-base font-semibold">{row.cost.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{targetCurrencyStats}</span></div>
                         </div>
                         <div>
                           <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">{tx('Heures vol (FT)','Flight hours (FT)')}</div>
@@ -6745,7 +7178,7 @@
                         <div>
                           <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)]">{tx('Coût / h vol','Cost / flight hr')}</div>
                           <div className="font-mono tabular-nums text-base font-semibold" style={{ color: 'var(--accent)' }}>
-                            {row.costPerHour != null ? `${row.costPerHour.toFixed(2)} ${mainCurrencyStats}` : '—'}
+                            {row.costPerHour != null ? `${row.costPerHour.toFixed(2)} ${targetCurrencyStats}` : '—'}
                           </div>
                         </div>
                         <div>
@@ -6765,8 +7198,8 @@
               <div className="mt-2">
                 <Hint title={tx('Calcul','Calculation')}>
                   {tx(
-                    'Coût total = somme des dépenses de la période liées à cet avion (toutes catégories). Coût/h = total ÷ Flight Time (block-to-block). Conso L/h = quantités fuel ÷ Air Time (kg → L densité avgas 0.72, USG → L 3.785). Filtre par année/mois en haut de Stats.',
-                    'Total cost = sum of expenses in the period tied to this aircraft (all categories). Cost/h = total ÷ Flight Time (block-to-block). Burn L/h = fuel quantities ÷ Air Time (kg → L avgas density 0.72, USG → L 3.785). Filter by year/month at the top of Stats.'
+                    `Coût total = somme des dépenses de la période liées à cet avion (toutes catégories), converties en ${targetCurrencyStats} (devise par défaut dans Réglages). Si tu as ajusté manuellement le montant comptable d'une facture (frais bancaires inclus), c'est ce montant qui est utilisé. Coût/h = total ÷ Flight Time (block-to-block). Conso L/h = quantités fuel ÷ Air Time (kg → L densité avgas 0.72, USG → L 3.785). Filtre par année/mois en haut de Stats.`,
+                    `Total cost = sum of expenses in the period tied to this aircraft (all categories), converted to ${targetCurrencyStats} (default currency in Settings). If you manually adjusted an invoice's booked amount (bank fees included), that amount is used. Cost/h = total ÷ Flight Time (block-to-block). Burn L/h = fuel quantities ÷ Air Time (kg → L avgas density 0.72, USG → L 3.785). Filter by year/month at the top of Stats.`
                   )}
                 </Hint>
               </div>
@@ -6793,7 +7226,7 @@
                           <span className="truncate">{s.name}</span>
                           <span className="text-[10px] text-[var(--text-dim)] flex-shrink-0">{s.count} {tx('fact.','inv.')}</span>
                         </div>
-                        <span className="font-mono tabular-nums">{s.total.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{mainCurrencyStats}</span></span>
+                        <span className="font-mono tabular-nums">{s.total.toFixed(2)} <span className="text-[var(--text-dim)] text-xs">{targetCurrencyStats}</span></span>
                       </div>
                       <div className="h-1.5 bg-[var(--bg-elev)] rounded mt-0.5">
                         <div className="h-1.5 rounded" style={{ width: `${pct}%`, background: 'var(--accent)' }} />
@@ -7417,7 +7850,7 @@
                     onClick={()=>openFlight(f)}>
                     <div className="flex justify-between items-center text-sm">
                       <div>
-                        <span className="font-mono">{f.date}</span>
+                        <span className="font-mono">{fmtDate(f.date)}</span>
                         <span className="mx-2">·</span>
                         {ac?.registration && <span className="font-mono mr-2">{ac.registration}</span>}
                         <span>{f.from}→{f.to}</span>
@@ -7571,7 +8004,7 @@
                   : tx('Nouveau vol','New flight'))}
             footer={editing && editing.id && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
+                if (confirmDelete(tx('Supprimer ce vol ? (Préfère un export JSON avant.)','Delete this flight? (Export JSON first as backup.)'))) {
                   onDeleteFlight && onDeleteFlight(editing.id);
                   setShowForm(false);
                 }
@@ -7743,7 +8176,7 @@
                 <img src={m.photo} alt="" className="rounded-lg max-h-48 mx-auto" />
                 <div className="flex justify-center gap-2">
                   <button type="button" className="btn btn-secondary" onClick={()=>fileRef.current?.click()}>{tx('Remplacer','Replace')}</button>
-                  <button type="button" className="btn btn-danger" onClick={()=>{ if (confirm(tx('Retirer la photo ?','Remove the photo?'))) set('photo',''); }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />{tx('Retirer','Remove')}</span></button>
+                  <button type="button" className="btn btn-danger" onClick={()=>{ if (confirmDelete(tx('Retirer la photo ?','Remove the photo?'))) set('photo',''); }}><span className="inline-flex items-center gap-1"><LucideIcon name="trash2" size={12} strokeWidth={2.5} />{tx('Retirer','Remove')}</span></button>
                 </div>
               </div>
             ) : (
@@ -8005,7 +8438,7 @@
             title={editing ? tx('Modifier la défaillance','Edit defect') : tx('Nouvelle défaillance','New defect')}
             footer={editing && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer cette entrée maintenance ? (Préfère un export JSON avant.)','Delete this maintenance entry? (Export JSON first as backup.)'))) {
+                if (confirmDelete(tx('Supprimer cette entrée maintenance ? (Préfère un export JSON avant.)','Delete this maintenance entry? (Export JSON first as backup.)'))) {
                   onDelete(editing.id); setShowForm(false);
                 }
               }}
@@ -8031,7 +8464,7 @@
             title={editingMechVisit ? tx('Modifier la visite mécanicien','Edit mechanic visit') : tx('Nouvelle visite mécanicien','New mechanic visit')}
             footer={editingMechVisit && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer cette visite mécanicien ?','Delete this mechanic visit?'))) {
+                if (confirmDelete(tx('Supprimer cette visite mécanicien ?','Delete this mechanic visit?'))) {
                   onMechanicVisitDelete && onMechanicVisitDelete(editingMechVisit.id);
                   setShowMechVisitForm(false);
                 }
@@ -8379,7 +8812,7 @@
             title={editing ? tx('Modifier le document','Edit document') : tx('Nouveau document compagnie','New company document')}
             footer={editing && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer ce document ? (Préfère un export JSON avant.)','Delete this document? (Export JSON first if needed.)'))) {
+                if (confirmDelete(tx('Supprimer ce document ? (Préfère un export JSON avant.)','Delete this document? (Export JSON first if needed.)'))) {
                   onDelete(editing.id); setShowForm(false);
                 }
               }}
@@ -8504,6 +8937,115 @@
       return { ...p, licenses: [lic] };
     }
 
+    // === Modern Date Picker — popover calendrier propre, cross-browser ===
+    // Remplace l'input date natif (look "Windows 95" sur Safari/Chrome) par
+    // un calendrier moderne stylé avec la palette de l'app. Format de sortie
+    // identique à l'input date natif (YYYY-MM-DD) pour rester drop-in.
+    function ModernDatePicker({ value, onChange, placeholder }) {
+      const tx = useTx();
+      const [open, setOpen] = useState(false);
+      const [viewDate, setViewDate] = useState(() => {
+        if (value) {
+          const d = new Date(value);
+          if (!isNaN(d.getTime())) return new Date(d.getFullYear(), d.getMonth(), 1);
+        }
+        return new Date();
+      });
+      function selectDate(d) {
+        const iso = d.getFullYear() + '-' +
+          String(d.getMonth() + 1).padStart(2, '0') + '-' +
+          String(d.getDate()).padStart(2, '0');
+        onChange(iso);
+        setOpen(false);
+      }
+      const year = viewDate.getFullYear();
+      const month = viewDate.getMonth();
+      const firstDay = new Date(year, month, 1);
+      const lastDay = new Date(year, month + 1, 0);
+      const startOffset = (firstDay.getDay() + 6) % 7; // semaine commence lundi
+      const daysInMonth = lastDay.getDate();
+      const cells = [];
+      for (let i = 0; i < startOffset; i++) cells.push(null);
+      for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(year, month, d));
+      while (cells.length % 7 !== 0) cells.push(null);
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const selected = value ? new Date(value) : null;
+      if (selected && !isNaN(selected.getTime())) selected.setHours(0, 0, 0, 0);
+      const dayHeaders = tx('L M M J V S D', 'M T W T F S S').split(' ');
+      const monthLabel = viewDate.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+      return (
+        <div className="relative">
+          <button type="button" onClick={() => setOpen(o => !o)}
+            className="input w-full text-left inline-flex items-center justify-between gap-2 cursor-pointer">
+            <span className="inline-flex items-center gap-2 min-w-0">
+              <LucideIcon name="calendar" size={14} strokeWidth={2.25} />
+              <span className={`truncate ${value ? '' : 'text-[var(--text-dim)]'}`}>
+                {value || placeholder || tx('Choisir une date','Pick a date')}
+              </span>
+            </span>
+          </button>
+          {open && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+              <div className="absolute z-40 mt-1 left-0 bg-[var(--bg-card)] border border-[var(--border-soft)] rounded-xl shadow-xl p-3 anim-pop"
+                   style={{ minWidth: '280px' }}>
+                {/* Nav mois */}
+                <div className="flex items-center justify-between mb-2">
+                  <button type="button" onClick={() => setViewDate(new Date(year, month - 1, 1))}
+                    className="grid place-items-center w-8 h-8 rounded-lg hover:bg-[var(--bg-elev)] transition-colors">
+                    <LucideIcon name="chevronLeft" size={14} strokeWidth={2.5} />
+                  </button>
+                  <div className="font-semibold text-sm capitalize">{monthLabel}</div>
+                  <button type="button" onClick={() => setViewDate(new Date(year, month + 1, 1))}
+                    className="grid place-items-center w-8 h-8 rounded-lg hover:bg-[var(--bg-elev)] transition-colors">
+                    <LucideIcon name="chevronRight" size={14} strokeWidth={2.5} />
+                  </button>
+                </div>
+                {/* Jours de la semaine */}
+                <div className="grid grid-cols-7 gap-1 text-[10px] text-[var(--text-dim)] uppercase font-bold mb-1">
+                  {dayHeaders.map((d, i) => <div key={i} className="text-center py-1">{d}</div>)}
+                </div>
+                {/* Cellules jours */}
+                <div className="grid grid-cols-7 gap-1">
+                  {cells.map((d, i) => {
+                    if (!d) return <div key={i} className="w-8 h-8" />;
+                    const isToday = d.getTime() === today.getTime();
+                    const isSelected = selected && !isNaN(selected.getTime()) && d.getTime() === selected.getTime();
+                    return (
+                      <button key={i} type="button"
+                        onClick={() => selectDate(d)}
+                        className={`text-xs w-8 h-8 rounded-lg transition-colors font-medium ${
+                          isSelected
+                            ? 'bg-[var(--accent)] text-[#06243a] font-bold'
+                            : isToday
+                              ? 'border border-[var(--accent)] text-[var(--accent)] font-bold'
+                              : 'hover:bg-[var(--bg-elev)]'
+                        }`}>
+                        {d.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Boutons rapides */}
+                <div className="flex justify-between mt-3 pt-2 border-t border-[var(--border-soft)]">
+                  <button type="button" onClick={() => selectDate(new Date())}
+                    className="text-xs text-[var(--accent)] font-semibold hover:underline">
+                    {tx("Aujourd'hui", 'Today')}
+                  </button>
+                  {value && (
+                    <button type="button" onClick={() => { onChange(''); setOpen(false); }}
+                      className="text-xs text-[var(--err)] font-semibold hover:underline">
+                      {tx('Effacer', 'Clear')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
+      );
+    }
+
     // === Helper : couleur d'une autorisation avion selon récence d'activité ===
     // Cyan si :
     //   - review date saisie ET datant de moins de 3 mois (override)
@@ -8613,7 +9155,7 @@
         setP(prev => ({ ...prev, licenses: [...(prev.licenses||[]), blankLicense()] }));
       }
       function removeLicense(idx) {
-        if (!confirm(tx('Supprimer cette licence ?','Delete this license?'))) return;
+        if (!confirmDelete(tx('Supprimer cette licence ?','Delete this license?'))) return;
         setP(prev => {
           const list = [...(prev.licenses||[])];
           list.splice(idx, 1);
@@ -8682,7 +9224,8 @@
             </div>
             <div className="min-w-0">
               <div className="label">{tx('Date de naissance','Date of birth')}</div>
-              <input type="date" className="input w-full" value={p.dateOfBirth} onChange={e=>{ if (e.target.value) set('dateOfBirth', e.target.value); }} />
+              <ModernDatePicker value={p.dateOfBirth} onChange={(v)=>set('dateOfBirth', v)}
+                placeholder={tx('jj/mm/aaaa','dd/mm/yyyy')} />
               {currentAge != null && (
                 <div className="text-xs text-[var(--text-dim)] mt-1">{tx('Âge actuel','Current age')} : {currentAge} {tx('ans','years')}</div>
               )}
@@ -8749,7 +9292,8 @@
                     </div>
                     <div>
                       <div className="label whitespace-nowrap">{tx('Expiration licence','License expiry')}</div>
-                      <input type="date" className="input" value={lic.expiry} onChange={e=>{ if (e.target.value) setLicense(idx, 'expiry', e.target.value); }} />
+                      <ModernDatePicker value={lic.expiry} onChange={(v)=>setLicense(idx, 'expiry', v)}
+                        placeholder={tx('jj/mm/aaaa','dd/mm/yyyy')} />
                     </div>
                     <div>
                       <div className="label whitespace-nowrap">{tx('Qualifications','Ratings')}</div>
@@ -8770,12 +9314,14 @@
                         </div>
                         <div>
                           <div className="label whitespace-nowrap">{tx('Date d\'examen','Exam date')}</div>
-                          <input type="date" className="input" value={lic.medicalDate} onChange={e=>{ if (e.target.value) setLicense(idx, 'medicalDate', e.target.value); }} />
+                          <ModernDatePicker value={lic.medicalDate} onChange={(v)=>setLicense(idx, 'medicalDate', v)}
+                            placeholder={tx('jj/mm/aaaa','dd/mm/yyyy')} />
                         </div>
                       </div>
                       <div className="mt-2">
                         <div className="label whitespace-nowrap">{tx('Date de renouvellement','Renewal date')}</div>
-                        <input type="date" className="input" value={lic.medicalExpiry} onChange={e=>{ if (e.target.value) setLicense(idx, 'medicalExpiry', e.target.value); }} />
+                        <ModernDatePicker value={lic.medicalExpiry} onChange={(v)=>setLicense(idx, 'medicalExpiry', v)}
+                          placeholder={tx('jj/mm/aaaa','dd/mm/yyyy')} />
                         {ruleApplied && (
                           <div className="text-xs text-[var(--accent)] mt-1">
                             <span className="font-semibold">{tx('Règle','Rule')} :</span> {ruleApplied}
@@ -8815,7 +9361,8 @@
               </div>
               <div>
                 <div className="label whitespace-nowrap">{tx('Date review','Review date')}</div>
-                <input type="date" className="input" value={newAircraftReview} onChange={e=>setNewAircraftReview(e.target.value)} />
+                <ModernDatePicker value={newAircraftReview} onChange={setNewAircraftReview}
+                  placeholder={tx('jj/mm/aaaa','dd/mm/yyyy')} />
               </div>
               <div>
                 <button type="button" className="btn btn-primary !py-2 !px-4 inline-flex items-center gap-1.5"
@@ -8891,7 +9438,8 @@
               </div>
               <div>
                 <div className="label whitespace-nowrap">{tx('Date d\'expiration passeport','Passport expiry date')}</div>
-                <input type="date" className="input" value={p.passportExpiry || ''} onChange={e=>set('passportExpiry', e.target.value)} />
+                <ModernDatePicker value={p.passportExpiry || ''} onChange={(v)=>set('passportExpiry', v)}
+                  placeholder={tx('jj/mm/aaaa','dd/mm/yyyy')} />
               </div>
             </div>
             <div className="mt-2">
@@ -9105,7 +9653,7 @@
                                   {tx('Médical','Medical')}
                                 </span>
                               </div>
-                              <span className="font-mono text-[var(--text-dim)] whitespace-nowrap">{p.medicalExpiry}</span>
+                              <span className="font-mono text-[var(--text-dim)] whitespace-nowrap">{fmtDate(p.medicalExpiry)}</span>
                             </>
                           )}
                           {p.licenseExpiry && (
@@ -9118,7 +9666,7 @@
                                   {tx('Licence','License')}
                                 </span>
                               </div>
-                              <span className="font-mono text-[var(--text-dim)] whitespace-nowrap">{p.licenseExpiry}</span>
+                              <span className="font-mono text-[var(--text-dim)] whitespace-nowrap">{fmtDate(p.licenseExpiry)}</span>
                             </>
                           )}
                           {(p.passportId || p.passportExpiry) && (
@@ -9136,7 +9684,7 @@
                                 {p.passportId && p.passportExpiry && <span className="text-[var(--text-dim)] mx-1">·</span>}
                                 {p.passportExpiry && (
                                   <span style={{ color: passportColor === 'var(--ok)' ? 'var(--text-dim)' : passportColor }}>
-                                    {p.passportExpiry}
+                                    {fmtDate(p.passportExpiry)}
                                   </span>
                                 )}
                               </span>
@@ -9180,7 +9728,7 @@
             title={editing ? tx('Modifier le pilote','Edit pilot') : tx('Nouveau pilote','New pilot')}
             footer={editing && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer ce pilote du roster ? Les vols existants gardent leur référence (id non résolu).','Remove this pilot from the roster? Existing flights will keep their reference (unresolved id).'))) {
+                if (confirmDelete(tx('Supprimer ce pilote du roster ? Les vols existants gardent leur référence (id non résolu).','Remove this pilot from the roster? Existing flights will keep their reference (unresolved id).'))) {
                   onDelete(editing.id); setShowForm(false);
                 }
               }}
@@ -9667,7 +10215,7 @@
                       title={tx('Retirer la facture','Remove invoice')}
                       className="grid place-items-center w-9 h-9 rounded-lg text-[var(--err)] hover:bg-[var(--err)]/15 transition-colors flex-shrink-0"
                       onClick={()=>{
-                        if (!confirm(tx("Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l'onglet Dépenses (non supprimée).",'Remove the invoice attached to this uplift? The matching expense will remain in the Expenses tab (not deleted).'))) return;
+                        if (!confirmDelete(tx("Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l'onglet Dépenses (non supprimée).",'Remove the invoice attached to this uplift? The matching expense will remain in the Expenses tab (not deleted).'))) return;
                         onChange({
                           ...entry,
                           invoiceDocId: '',
@@ -9703,7 +10251,7 @@
                   )}
                   <button type="button" className="btn btn-danger !py-1 !px-2 text-xs"
                     onClick={()=>{
-                      if (!confirm(tx("Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l'onglet Dépenses (non supprimée).",'Remove the invoice attached to this uplift? The matching expense will remain in the Expenses tab (not deleted).'))) return;
+                      if (!confirmDelete(tx("Retirer la facture rattachée à ce plein ? La dépense correspondante restera dans l'onglet Dépenses (non supprimée).",'Remove the invoice attached to this uplift? The matching expense will remain in the Expenses tab (not deleted).'))) return;
                       onChange({
                         ...entry,
                         invoiceDocId: '',
@@ -9819,7 +10367,7 @@
         const msg = hasLinkedExpense
           ? tx('Retirer ce plein ? La dépense Carburant Avion liée sera également supprimée à l\'enregistrement du vol.','Remove this fuel uplift? The linked Aircraft Fuel expense will also be deleted when the flight is saved.')
           : tx('Retirer ce plein ?','Remove this fuel uplift?');
-        if (!confirm(msg)) return;
+        if (!confirmDelete(msg)) return;
         const next = [...entries]; next.splice(i,1); onChange(next);
       }
 
@@ -9945,7 +10493,7 @@
         const next = [...entries]; next[i] = e; onChange(next);
       }
       function removeEntry(i) {
-        if (!confirm(tx('Retirer cet ajout d\'huile ? (Aucune facture liée — ajoute la facture séparément dans Dépenses si besoin.)','Remove this oil entry? (No linked invoice — add the invoice separately in Expenses if needed.)'))) return;
+        if (!confirmDelete(tx('Retirer cet ajout d\'huile ? (Aucune facture liée — ajoute la facture séparément dans Dépenses si besoin.)','Remove this oil entry? (No linked invoice — add the invoice separately in Expenses if needed.)'))) return;
         const next = [...entries]; next.splice(i,1); onChange(next);
       }
       const totals = (entries||[]).reduce((acc, e) => {
@@ -10443,7 +10991,7 @@
             {isEdit && onDelete ? (
               <button type="button"
                 onClick={()=>{
-                  if (confirm(tx('Supprimer cette ligne externe ?','Delete this external row?'))) onDelete(d.id);
+                  if (confirmDelete(tx('Supprimer cette ligne externe ?','Delete this external row?'))) onDelete(d.id);
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-[var(--err)] text-[var(--err)] font-semibold hover:bg-[var(--err)]/10 transition-colors text-sm"
                 style={{ background: 'transparent' }}>
@@ -10922,7 +11470,7 @@
                               title={tx('Supprimer cette ligne externe','Delete this external row')}
                               onClick={(e)=>{
                                 e.stopPropagation();
-                                if (confirm(tx('Supprimer cette ligne externe ?','Delete this external row?'))) {
+                                if (confirmDelete(tx('Supprimer cette ligne externe ?','Delete this external row?'))) {
                                   deleteExternal(f.id);
                                 }
                               }}><LucideIcon name="trash2" size={16} strokeWidth={2.25} /></button>
@@ -10947,7 +11495,7 @@
                       <tr key={f.id} className="border-t border-[var(--border)] hover:bg-[var(--bg-elev)] cursor-pointer"
                           onClick={()=>{ setEditing(f); setShowForm(true); }}>
                         <td className="px-1.5 py-1.5 text-center text-[var(--text-dim)]/40 text-[9px]">—</td>
-                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{f.date}</td>
+                        <td className="px-1.5 py-1.5 font-mono whitespace-nowrap">{fmtDate(f.date)}</td>
                         <td className="px-1.5 py-1.5 leading-tight">
                           <div className="font-mono whitespace-nowrap">{ac?.registration||'?'}</div>
                           <div className="text-[10px] text-[var(--text-dim)] truncate max-w-[100px]">{ac?.type || '—'}</div>
@@ -10973,7 +11521,7 @@
                             title={tx('Supprimer ce vol','Delete this flight')}
                             onClick={(e)=>{
                               e.stopPropagation();
-                              if (confirm(tx(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`,`Permanently delete the flight on ${f.date} (${f.from}→${f.to})? Export JSON first as backup.`))) {
+                              if (confirmDelete(tx(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`,`Permanently delete the flight on ${f.date} (${f.from}→${f.to})? Export JSON first as backup.`))) {
                                 onDeleteFlight && onDeleteFlight(f.id);
                               }
                             }}><LucideIcon name="trash2" size={16} strokeWidth={2.25} /></button>
@@ -11126,7 +11674,7 @@
                        onClick={()=>{ setEditing(f); setShowForm(true); }}>
                     <div className="flex items-start justify-between gap-2">
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs text-[var(--text-dim)] font-mono">{f.date}</div>
+                        <div className="text-xs text-[var(--text-dim)] font-mono">{fmtDate(f.date)}</div>
                         <div className="font-semibold tracking-wide font-mono">{f.from}→{f.to}</div>
                         <div className="text-xs text-[var(--text-dim)] truncate">
                           <span className="font-mono">{ac?.registration||'?'}</span> · {ac?.type||'—'} · {aircraftClass(ac)}
@@ -11156,7 +11704,7 @@
                         title={tx('Supprimer ce vol','Delete this flight')}
                         onClick={(e)=>{
                           e.stopPropagation();
-                          if (confirm(tx(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`,`Permanently delete the flight on ${f.date} (${f.from}→${f.to})? Export JSON first as backup.`))) {
+                          if (confirmDelete(tx(`Supprimer définitivement le vol du ${f.date} (${f.from}→${f.to}) ? Pense à exporter en JSON avant.`,`Permanently delete the flight on ${f.date} (${f.from}→${f.to})? Export JSON first as backup.`))) {
                             onDeleteFlight && onDeleteFlight(f.id);
                           }
                         }}>
@@ -11182,7 +11730,7 @@
             title={editing ? `${tx('Vol','Flight')} ${editing.date} ${editing.from}→${editing.to}` : tx('Vol','Flight')}
             footer={editing && (
               <button onClick={()=>{
-                if (confirm(tx('Supprimer définitivement ce vol ? (Préfère un export JSON avant.)','Permanently delete this flight? (Export JSON first as backup.)'))) {
+                if (confirmDelete(tx('Supprimer définitivement ce vol ? (Préfère un export JSON avant.)','Permanently delete this flight? (Export JSON first as backup.)'))) {
                   onDeleteFlight && onDeleteFlight(editing.id);
                   setShowForm(false);
                 }
@@ -11686,7 +12234,7 @@
                   alert(tx("Cette duty est calculée automatiquement depuis les vols. Pour la retirer, supprime les vols correspondants dans le carnet.",'This duty is auto-calculated from flights. To remove it, delete the matching flights in the logbook.'));
                   return;
                 }
-                if (confirm(tx("Supprimer cette période duty manuelle ? La duty auto reprendra si des vols existent ce jour-là.",'Delete this manual duty period? Auto duty will resume if flights exist that day.'))) {
+                if (confirmDelete(tx("Supprimer cette période duty manuelle ? La duty auto reprendra si des vols existent ce jour-là.",'Delete this manual duty period? Auto duty will resume if flights exist that day.'))) {
                   handleDelete(editing.id); setShowForm(false);
                 }
               }}
@@ -12466,6 +13014,59 @@
               {tx("Conformément à ta consigne « ne jamais rien supprimer », deux confirmations sont demandées. Exporte d'abord en JSON.",'Per your "never delete anything" preference, two confirmations are required. Export to JSON first.')}
             </div>
           </div>
+
+          {/* Bouton Sauvegarder global — confirme la persistance localStorage +
+              déclenche un push gist immédiat si la sync est activée. Donne un
+              feedback rassurant à l'utilisateur (les settings sont déjà auto-sauvés
+              à chaque modif, mais ce bouton garantit + push immédiat). */}
+          <SettingsSaveButton onSyncPush={onSyncPush} syncEnabled={!!(settings.gh && settings.gh.enabled && settings.gh.token)} />
+        </div>
+      );
+    }
+
+    // Bouton Sauvegarder pour SettingsScreen — feedback visuel "Enregistré ✓"
+    function SettingsSaveButton({ onSyncPush, syncEnabled }) {
+      const tx = useTx();
+      const [status, setStatus] = useState('idle'); // 'idle' | 'saving' | 'saved'
+      async function handleClick() {
+        setStatus('saving');
+        try {
+          if (syncEnabled && onSyncPush) {
+            await onSyncPush();
+          }
+        } catch {}
+        setStatus('saved');
+        setTimeout(() => setStatus('idle'), 2500);
+      }
+      return (
+        <div className="card p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+          <div className="text-sm text-[var(--text-dim)] text-center sm:text-left">
+            {tx(
+              'Tes réglages sont auto-enregistrés à chaque changement. Ce bouton force une sauvegarde immédiate + push cloud si activé.',
+              'Your settings auto-save on every change. This button forces an immediate save + cloud push if enabled.'
+            )}
+          </div>
+          <button type="button"
+            onClick={handleClick}
+            disabled={status === 'saving'}
+            className={`btn ${status === 'saved' ? 'btn-secondary' : 'btn-primary'} inline-flex items-center gap-2 !px-6 !py-2.5 whitespace-nowrap`}>
+            {status === 'saving' ? (
+              <>
+                <LucideIcon name="refreshCw" size={16} strokeWidth={2.5} />
+                {tx('Sauvegarde…','Saving…')}
+              </>
+            ) : status === 'saved' ? (
+              <>
+                <LucideIcon name="check" size={16} strokeWidth={2.5} />
+                {tx('Enregistré','Saved')}
+              </>
+            ) : (
+              <>
+                <LucideIcon name="save" size={16} strokeWidth={2.5} />
+                {tx('Sauvegarder','Save')}
+              </>
+            )}
+          </button>
         </div>
       );
     }
@@ -12611,6 +13212,8 @@
       // pour ramener l'utilisateur exactement où il en était quand le popup
       // stockage plein s'est déclenché (ex: pendant l'ajout d'un OFPL).
       const [reopenFlightId, setReopenFlightId] = useState(null);
+      // Banner rappel d'export — affiché quand modCount atteint le seuil settings.backupReminder
+      const [backupReminder, setBackupReminder] = useState(null);
 
       // Détecte le dernier vol modifié pour pouvoir l'exclure de l'archivage auto.
       // Quand le contenu de flights change, on prend l'ID du vol avec le createdAt
@@ -13121,6 +13724,23 @@
       // Ref vers flights pour comparer ancien vs nouveau au save (cascade delete).
       const flightsRef = useRef(flights);
       useEffect(() => { flightsRef.current = flights; }, [flights]);
+      // Sync de la ref globale __currentSettings → consommée par les helpers
+      // fmtDate / fmtTime / confirmDelete partout dans l'app sans prop drilling.
+      useEffect(() => { __currentSettings = settings; }, [settings]);
+
+      // Backup reminder : à chaque modif des données utilisateur, bump du compteur.
+      // Si le seuil settings.backupReminder est atteint → affiche le banner.
+      // hydratedRef évite le bump initial au chargement.
+      useEffect(() => {
+        if (!hydratedRef.current) return;
+        const threshold = parseInt(settings.backupReminder, 10) || 0;
+        if (threshold <= 0) return; // désactivé
+        const n = bumpModCounter();
+        if (n >= threshold) {
+          setBackupReminder({ count: n, threshold });
+        }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [flights, aircraft, documents, categories, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods]);
       // Refs vers mechanicVisits + tombstones : applySnapshot est appelée depuis le
       // polling/focus listener qui captent ces variables dans leur closure. Sans ref,
       // applySnapshot lirait des valeurs obsolètes et perdrait les modifs récentes
@@ -13288,6 +13908,9 @@
         a.href = url; a.download = `flightops_backup_${todayZuluDate()}.json`;
         a.click();
         setTimeout(()=>URL.revokeObjectURL(url), 1000);
+        // Reset du compteur de modifs après export
+        resetModCounter();
+        setBackupReminder(null);
       }
 
       // === Archivage des documents joints en ZIP local ===
@@ -13711,6 +14334,33 @@
               <ClockBlock zuluLabel={tT('app.zulu')} />
             </div>
           </header>
+
+          {/* Banner rappel d'export — affiché quand le seuil settings.backupReminder
+              est atteint. Reset automatique après export JSON. */}
+          {backupReminder && (
+            <div className="px-4 py-2 bg-[var(--warn)]/15 border-b border-[var(--warn)]/40 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm text-[var(--warn)]">
+                <LucideIcon name="alertTriangle" size={14} strokeWidth={2.5} />
+                <span className="font-semibold">
+                  {tT('lang') === 'en' || lang === 'en'
+                    ? `${backupReminder.count} changes since last export — back up your data!`
+                    : `${backupReminder.count} modifs depuis le dernier export — pense à sauvegarder !`}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button type="button" onClick={exportJSON}
+                  className="btn btn-primary !py-1 !px-3 text-xs inline-flex items-center gap-1.5">
+                  <LucideIcon name="download" size={12} strokeWidth={2.5} />
+                  {lang === 'en' ? 'Export JSON' : 'Exporter JSON'}
+                </button>
+                <button type="button" onClick={()=>setBackupReminder(null)}
+                  className="text-[var(--text-dim)] hover:text-[var(--text)] p-1"
+                  title={lang === 'en' ? 'Dismiss' : 'Ignorer'}>
+                  <LucideIcon name="x" size={14} strokeWidth={2.25} />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Onglets en haut sur iPad/desktop (scroll horizontal si nécessaire) */}
           <nav className="tabnav-desktop hidden sm:flex justify-start gap-1 px-4 py-3 border-b border-[var(--border-soft)] glass overflow-x-auto">
