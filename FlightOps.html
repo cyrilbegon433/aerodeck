@@ -12325,6 +12325,11 @@
       // que la suppression sur un appareil se répande sur les autres (sans quoi le
       // merge union par id ferait revivre l'élément supprimé). GC après 30 jours.
       const [mechanicVisitTombstones, setMechanicVisitTombstones] = useState(initial?.mechanicVisitTombstones || []);
+      // Tombstones flights : pareil pour les vols. Sans tombstone, supprimer un vol
+      // localement n'empêche pas qu'un pull du gist (qui contient encore le vol)
+      // le ressuscite. Le tombstone marque l'id comme "supprimé" et bloque la
+      // résurrection au merge. GC après 30 jours.
+      const [flightTombstones, setFlightTombstones] = useState(initial?.flightTombstones || []);
       const [companyDocs, setCompanyDocs] = useState(initial?.companyDocs || []);
       const [pilots,      setPilots]      = useState(initial?.pilots      || []);
       const [pilotStatuses, setPilotStatuses] = useState(initial?.pilotStatuses || []);
@@ -12358,14 +12363,14 @@
 
       // persistance auto + détection quota
       useEffect(() => {
-        const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, mechanicVisits, mechanicVisitTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods });
+        const ok = saveState({ flights, aircraft, documents, categories, settings: { ...settings, language: lang }, maintenance, mechanicVisits, mechanicVisitTombstones, flightTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods });
         if (!ok) {
           // Quota dépassé : propose à l'utilisateur d'archiver les autres vols
           // pour libérer de l'espace et continuer à remplir le vol en cours.
           console.warn('Sauvegarde locale impossible — quota dépassé.');
           setStorageFullModal({ lastEditedId: lastEditedFlightIdRef.current });
         }
-      }, [flights, aircraft, documents, categories, settings, maintenance, mechanicVisits, mechanicVisitTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
+      }, [flights, aircraft, documents, categories, settings, maintenance, mechanicVisits, mechanicVisitTombstones, flightTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods, lang]);
 
       // Force l'affichage de la popup pour tester (utilisé par bouton dans Réglages).
       // En mode test on n'exclut AUCUN vol, comme ça l'utilisateur voit
@@ -12477,6 +12482,7 @@
           maintenance: maintenanceLite,
           mechanicVisits,
           mechanicVisitTombstones,
+          flightTombstones,
           companyDocs: companyDocsLite,
           pilots, pilotStatuses, dutyPeriods,
         };
@@ -12571,9 +12577,25 @@
       function applySnapshot(snap) {
         if (!snap) return;
         const m = migrateState({ ...snap });
+        // === Tombstones flights : merge local + remote, puis filtre ===
+        // GC après 30 jours pour éviter une accumulation infinie.
+        const remoteFTombstones = m.flightTombstones || [];
+        const localFTombstones  = flightTombstonesRef.current || [];
+        const fTombMap = new Map();
+        for (const t of localFTombstones) if (t && t.id) fTombMap.set(t.id, t);
+        for (const t of remoteFTombstones) {
+          if (!t || !t.id) continue;
+          const exist = fTombMap.get(t.id);
+          if (!exist || ((t.deletedAt || 0) > (exist.deletedAt || 0))) fTombMap.set(t.id, t);
+        }
+        const fCutoff = Date.now() - 30 * 24 * 60 * 60 * 1000;
+        const mergedFTombstones = [...fTombMap.values()].filter(t => (t.deletedAt || 0) > fCutoff);
+        const fTombSet = new Set(mergedFTombstones.map(t => t.id));
+        setFlightTombstones(mergedFTombstones);
         // Fusion : on prend les données remote mais on restaure les binaires locaux
         // (qui n'existent pas dans le snapshot pour cause de strip).
-        const remoteFlights = (m.flights || []).map(rf => {
+        // Filtre les vols tombstoned (supprimés sur n'importe quel device).
+        const remoteFlights = (m.flights || []).filter(rf => !fTombSet.has(rf.id)).map(rf => {
           const local = (flights || []).find(f => f.id === rf.id);
           if (!local) return rf;
           // Merge intelligent : on prend le remote, mais on restaure les binaires
@@ -12725,7 +12747,7 @@
         const t = setTimeout(() => { syncPush(); }, 5000);
         return () => clearTimeout(t);
       // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [flights, aircraft, documents, categories, maintenance, mechanicVisits, companyDocs, pilots, pilotStatuses, dutyPeriods]);
+      }, [flights, aircraft, documents, categories, maintenance, mechanicVisits, mechanicVisitTombstones, flightTombstones, companyDocs, pilots, pilotStatuses, dutyPeriods]);
 
       // Pull au retour de focus de la fenêtre / onglet (catch les modifs faites
       // sur l'autre appareil pendant que cet appareil était en arrière-plan).
@@ -12795,6 +12817,7 @@
       // Supprime le vol + toutes les dépenses (documents) liées à lui :
       //   - dépenses créées automatiquement depuis les fuelEntries (sourceFlightEntryId)
       //   - tout autre doc référençant directement le vol via sourceFlightId
+      // ET ajoute un tombstone pour empêcher la résurrection au prochain pull gist.
       // Les visites mécanicien et statuts pilote ne sont PAS liées par vol.
       // Les périodes de duty auto-calculées sont régénérées au prochain compute.
       const removeFlightCascade = useCallback((flightId) => {
@@ -12811,6 +12834,11 @@
         ));
         // Supprime le vol lui-même
         setFlights(prev => prev.filter(f => f.id !== flightId));
+        // Tombstone : empêche le pull gist suivant de ressusciter le vol
+        setFlightTombstones(prev => {
+          if (prev.some(t => t.id === flightId)) return prev;
+          return [...prev, { id: flightId, deletedAt: Date.now() }];
+        });
       }, []);
 
       // Helper : ajout d'une dépense (utilisé par le scan facture depuis le carnet)
@@ -12834,6 +12862,8 @@
       useEffect(() => { mechanicVisitsRef.current = mechanicVisits; }, [mechanicVisits]);
       const mechanicVisitTombstonesRef = useRef(mechanicVisitTombstones);
       useEffect(() => { mechanicVisitTombstonesRef.current = mechanicVisitTombstones; }, [mechanicVisitTombstones]);
+      const flightTombstonesRef = useRef(flightTombstones);
+      useEffect(() => { flightTombstonesRef.current = flightTombstones; }, [flightTombstones]);
 
       // Wrapper d'upsert vol qui crée automatiquement les dépenses Carburant Avion
       // pour chaque ligne de fuel ayant un montant + un N° de facture, sans dépense déjà liée.
