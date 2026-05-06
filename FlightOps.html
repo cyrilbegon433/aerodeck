@@ -12784,6 +12784,13 @@
         return (id) => arrSetter(prev => prev.filter(x => x.id !== id));
       }
 
+      // Set des vols récemment supprimés. Sert à filtrer les sauvegardes auto
+      // "zombies" qui arrivent après une suppression : si le formulaire a un
+      // setTimeout pending (auto-save 500 ms), il peut tenter d'upsert un vol
+      // qu'on vient de supprimer juste avant que le modal ne se ferme. Sans cette
+      // sentinelle, le vol re-apparaîtrait juste après la suppression.
+      const recentlyDeletedIdsRef = useRef(new Set());
+
       // === Cascade delete d'un vol ===
       // Supprime le vol + toutes les dépenses (documents) liées à lui :
       //   - dépenses créées automatiquement depuis les fuelEntries (sourceFlightEntryId)
@@ -12791,6 +12798,9 @@
       // Les visites mécanicien et statuts pilote ne sont PAS liées par vol.
       // Les périodes de duty auto-calculées sont régénérées au prochain compute.
       const removeFlightCascade = useCallback((flightId) => {
+        // Marque comme supprimé récemment pour bloquer les auto-save zombies
+        recentlyDeletedIdsRef.current.add(flightId);
+        setTimeout(() => recentlyDeletedIdsRef.current.delete(flightId), 5000);
         const flight = (flightsRef.current || []).find(f => f.id === flightId);
         // Récupère les ids des fuelEntries de ce vol pour cascader
         const fuelEntryIds = new Set((flight?.fuelEntries || []).map(e => e.id).filter(Boolean));
@@ -12831,6 +12841,11 @@
       // le même N° invoice + même montant + même date, demande confirmation. Si l'utilisateur
       // refuse, on lie la ligne à la dépense existante (évite de re-prompter au prochain save).
       const upsertFlightWithFuelExpenses = useCallback((flight) => {
+        // Garde-fou : ignore les sauvegardes "zombies" pour un vol qu'on vient
+        // de supprimer (auto-save debouncé qui arrive après le clic Delete).
+        if (flight && flight.id && recentlyDeletedIdsRef.current.has(flight.id)) {
+          return;
+        }
         const docsNow = documentsRef.current || [];
         const flightsNow = flightsRef.current || [];
         // Cascade delete : repère les fuelEntries qui existaient avant et qui ont
