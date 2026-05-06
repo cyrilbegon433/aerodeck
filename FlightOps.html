@@ -4903,123 +4903,119 @@
               <select className="select" value={d.currency} onChange={e=>set('currency', e.target.value)}>
                 <option>EUR</option><option>USD</option><option>GBP</option><option>CHF</option><option>CAD</option>
               </select>
-              {/* === Bloc taux de change + ajustement manuel ===
-                  Affiché uniquement si la devise de la facture diffère de la
-                  devise utilisateur (settings.defaultCurrency).
-                  - Affiche le taux source (live, cache, last-known, fallback)
-                  - Calcule un montant converti automatique
-                  - Permet un override pour saisir le montant exact prélevé sur
-                    la carte (frais bancaires, marge change incluses)
-                  Design moderne : capsule discrète, pencil-icon Ajuster. */}
-              {(d.currency || '').toUpperCase() !== targetCurrency && (
-                <div className="mt-2 rounded-lg border border-[var(--border)] bg-[var(--bg-card-2)] px-2.5 py-2 space-y-1">
-                  {/* Ligne 1 : date du taux (mise en avant) + taux + source */}
-                  <div className="flex items-center justify-between gap-2 text-[10px]">
-                    {fxInfo && fxInfo.rate != null ? (
-                      <span className="text-[var(--text-dim)] truncate">
-                        <span className="font-semibold">{tx('Taux du','Rate of')} {fxInfo.sourceDate || fxInfo.requestedDate}</span>
-                        <span className="mx-1">·</span>
-                        <span className="font-mono text-[var(--accent)]">1 {fxInfo.from} = {fxInfo.rate.toFixed(4)} {fxInfo.to}</span>
-                        {/* Indication discrète de la source / fiabilité */}
-                        <span className="ml-1.5 opacity-70">
-                          {fxInfo.source === 'historic-live' && tx('· officiel','· official')}
-                          {fxInfo.source === 'historic-cache' && tx('· en cache','· cached')}
-                          {fxInfo.source === 'latest-live' && tx('· dernier dispo','· latest avail.')}
-                          {fxInfo.source === 'last-known' && tx('· offline','· offline')}
-                          {fxInfo.source === 'static-fallback' && tx('· secours','· fallback')}
+            </div>
+          </div>
+          {/* === Bloc taux de change + ajustement manuel ===
+              Affiché en pleine largeur (hors de la grille HT/Tax/TTC/Devise)
+              pour que toutes les infos restent lisibles sur mobile.
+              - Affiche le taux source (officiel, cache, latest, last-known, fallback)
+              - Calcule un montant converti automatique
+              - Permet un override pour saisir le montant exact prélevé sur la
+                carte (frais bancaires, marge change incluses) */}
+          {(d.currency || '').toUpperCase() !== targetCurrency && (
+            <div className="rounded-lg border border-[var(--border)] bg-[var(--bg-card-2)] px-3 py-2.5 space-y-2">
+              {/* Ligne 1 : date du taux + taux + source */}
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 text-xs">
+                {fxInfo && fxInfo.rate != null ? (
+                  <>
+                    <span className="font-semibold whitespace-nowrap">{tx('Taux du','Rate of')} {fxInfo.sourceDate || fxInfo.requestedDate}</span>
+                    <span className="font-mono font-semibold text-[var(--accent)] whitespace-nowrap">1 {fxInfo.from} = {fxInfo.rate.toFixed(4)} {fxInfo.to}</span>
+                    <span className="text-[var(--text-dim)] whitespace-nowrap text-[11px]">
+                      {fxInfo.source === 'historic-live' && tx('· officiel','· official')}
+                      {fxInfo.source === 'historic-cache' && tx('· en cache','· cached')}
+                      {fxInfo.source === 'latest-live' && tx('· dernier dispo','· latest avail.')}
+                      {fxInfo.source === 'last-known' && tx('· offline','· offline')}
+                      {fxInfo.source === 'static-fallback' && tx('· secours','· fallback')}
+                    </span>
+                    {fxBusy && (
+                      <span className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] opacity-60 ml-auto">{tx('maj…','sync…')}</span>
+                    )}
+                  </>
+                ) : fxBusy ? (
+                  <span className="text-[var(--text-dim)] italic">{tx('Récupération du taux…','Fetching rate…')}</span>
+                ) : (
+                  <span className="text-[var(--warn)]">⚠ {tx('Taux indisponible','Rate unavailable')}</span>
+                )}
+              </div>
+              {/* Avertissement : date du taux différente de la date de la facture */}
+              {fxInfo && fxInfo.rate != null && fxInfo.sourceDate && fxInfo.requestedDate && fxInfo.sourceDate !== fxInfo.requestedDate && (
+                <div className="text-[11px] text-[var(--warn)] leading-snug">
+                  ⚠ {tx(`Facture du ${fxInfo.requestedDate} (week-end / férié) : taux du jour ouvré le plus proche utilisé.`,`Invoice dated ${fxInfo.requestedDate} (weekend/holiday): nearest business-day rate used.`)}
+                </div>
+              )}
+              {/* Ligne 2 : montant converti (auto OU override) + bouton ajuster */}
+              {parseFloat(d.amount) > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-baseline gap-2 min-w-0 flex-wrap">
+                    {hasOverride ? (
+                      <>
+                        <span className="text-xs text-[var(--text-dim)]">{tx('Montant comptable','Booked amount')} :</span>
+                        <span className="font-mono tabular-nums text-base font-semibold" style={{ color: 'var(--ok)' }}>
+                          {parseFloat(d.convertedAmountOverride).toFixed(2)} {targetCurrency}
                         </span>
-                        {/* Si la date du taux ≠ la date de la facture (week-end / fallback),
-                            on l'indique explicitement pour la transparence comptable */}
-                        {fxInfo.sourceDate && fxInfo.requestedDate && fxInfo.sourceDate !== fxInfo.requestedDate && (
-                          <span className="block text-[9px] text-[var(--warn)] mt-0.5">
-                            ⚠ {tx(`Facture du ${fxInfo.requestedDate} (week-end / férié) : taux du jour ouvré le plus proche utilisé.`,`Invoice dated ${fxInfo.requestedDate} (weekend/holiday): nearest business-day rate used.`)}
+                        {autoConvertedAmount != null && (
+                          <span className="text-[11px] text-[var(--text-dim)] italic">
+                            ({tx('auto','auto')} ≈ {autoConvertedAmount.toFixed(2)})
                           </span>
                         )}
-                      </span>
-                    ) : fxBusy ? (
-                      <span className="text-[var(--text-dim)] italic">{tx('Récupération du taux…','Fetching rate…')}</span>
+                      </>
+                    ) : autoConvertedAmount != null ? (
+                      <>
+                        <span className="text-xs text-[var(--text-dim)]">≈</span>
+                        <span className="font-mono tabular-nums text-base font-semibold text-[var(--accent)]">
+                          {autoConvertedAmount.toFixed(2)} {targetCurrency}
+                        </span>
+                      </>
                     ) : (
-                      <span className="text-[var(--warn)]">⚠ {tx('Taux indisponible','Rate unavailable')}</span>
-                    )}
-                    {fxBusy && fxInfo && (
-                      <span className="text-[8px] uppercase tracking-wider text-[var(--text-dim)] opacity-60 flex-shrink-0">{tx('maj…','sync…')}</span>
+                      <span className="text-xs text-[var(--text-dim)] italic">{tx('— pas de taux —','— no rate —')}</span>
                     )}
                   </div>
-                  {/* Ligne 2 : montant converti (auto OU override) + bouton ajuster */}
-                  {parseFloat(d.amount) > 0 && (
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-baseline gap-1.5 min-w-0">
-                        {hasOverride ? (
-                          <>
-                            <span className="text-[10px] text-[var(--text-dim)]">{tx('Montant comptable','Booked amount')} :</span>
-                            <span className="font-mono tabular-nums text-sm font-semibold" style={{ color: 'var(--ok)' }}>
-                              {parseFloat(d.convertedAmountOverride).toFixed(2)} {targetCurrency}
-                            </span>
-                            {autoConvertedAmount != null && (
-                              <span className="text-[9px] text-[var(--text-dim)] italic truncate">
-                                ({tx('auto','auto')} ≈ {autoConvertedAmount.toFixed(2)})
-                              </span>
-                            )}
-                          </>
-                        ) : autoConvertedAmount != null ? (
-                          <>
-                            <span className="text-[10px] text-[var(--text-dim)]">≈</span>
-                            <span className="font-mono tabular-nums text-sm font-semibold text-[var(--accent)]">
-                              {autoConvertedAmount.toFixed(2)} {targetCurrency}
-                            </span>
-                          </>
-                        ) : (
-                          <span className="text-[10px] text-[var(--text-dim)] italic">{tx('— pas de taux —','— no rate —')}</span>
-                        )}
-                      </div>
-                      {!showOverrideEditor && (
-                        <button type="button"
-                          onClick={()=>setShowOverrideEditor(true)}
-                          className="text-[10px] px-2 py-0.5 rounded-md border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors flex items-center gap-1 flex-shrink-0"
-                          title={tx('Saisir le montant exact prélevé (frais bancaires inclus)','Enter the exact amount charged (bank fees included)')}>
-                          <LucideIcon name="edit3" size={10} strokeWidth={2.25} />
-                          {hasOverride ? tx('Modifier','Edit') : tx('Ajuster','Adjust')}
-                        </button>
-                      )}
-                    </div>
-                  )}
-                  {/* Ligne 3 (déployée) : input pour saisir le montant comptable */}
-                  {showOverrideEditor && parseFloat(d.amount) > 0 && (
-                    <div className="pt-1.5 mt-1 border-t border-[var(--border)] space-y-1.5 anim-pop">
-                      <div className="text-[9px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">
-                        {tx('Montant réel prélevé','Actual amount charged')} ({targetCurrency})
-                      </div>
-                      <div className="flex items-center gap-1.5">
-                        <input type="number" step="0.01" min="0"
-                          className="input !py-1 !px-2 text-sm font-mono flex-1"
-                          placeholder={autoConvertedAmount != null ? autoConvertedAmount.toFixed(2) : '0.00'}
-                          value={d.convertedAmountOverride}
-                          onChange={e=>setD(p=>({ ...p, convertedAmountOverride: e.target.value, convertedCurrencyAtOverride: e.target.value ? targetCurrency : '' }))}
-                          autoFocus
-                        />
-                        <button type="button"
-                          onClick={()=>setShowOverrideEditor(false)}
-                          className="btn btn-secondary !py-1 !px-2 text-xs">
-                          {tx('OK','OK')}
-                        </button>
-                        {hasOverride && (
-                          <button type="button"
-                            onClick={resetOverride}
-                            className="btn !py-1 !px-2 text-xs border border-[var(--border)] hover:border-[var(--warn)] hover:text-[var(--warn)]"
-                            title={tx('Revenir au taux automatique','Revert to automatic rate')}>
-                            <LucideIcon name="rotateCcw" size={10} strokeWidth={2.25} />
-                          </button>
-                        )}
-                      </div>
-                      <div className="text-[9px] text-[var(--text-dim)] leading-tight">
-                        {tx('Saisissez le montant exact débité de la carte (frais bancaires + marge change inclus). Utilisé pour les totaux comptables.','Enter the exact amount debited from the card (bank fees + FX margin included). Used for accounting totals.')}
-                      </div>
-                    </div>
+                  {!showOverrideEditor && (
+                    <button type="button"
+                      onClick={()=>setShowOverrideEditor(true)}
+                      className="text-xs px-2.5 py-1 rounded-md border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors flex items-center gap-1.5 flex-shrink-0"
+                      title={tx('Saisir le montant exact prélevé (frais bancaires inclus)','Enter the exact amount charged (bank fees included)')}>
+                      <LucideIcon name="edit3" size={12} strokeWidth={2.25} />
+                      {hasOverride ? tx('Modifier','Edit') : tx('Ajuster','Adjust')}
+                    </button>
                   )}
                 </div>
               )}
+              {/* Ligne 3 (déployée) : input pour saisir le montant comptable */}
+              {showOverrideEditor && parseFloat(d.amount) > 0 && (
+                <div className="pt-2 mt-1 border-t border-[var(--border)] space-y-2 anim-pop">
+                  <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">
+                    {tx('Montant réel prélevé','Actual amount charged')} ({targetCurrency})
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input type="number" step="0.01" min="0"
+                      className="input !py-1.5 !px-2.5 text-sm font-mono flex-1"
+                      placeholder={autoConvertedAmount != null ? autoConvertedAmount.toFixed(2) : '0.00'}
+                      value={d.convertedAmountOverride}
+                      onChange={e=>setD(p=>({ ...p, convertedAmountOverride: e.target.value, convertedCurrencyAtOverride: e.target.value ? targetCurrency : '' }))}
+                      autoFocus
+                    />
+                    <button type="button"
+                      onClick={()=>setShowOverrideEditor(false)}
+                      className="btn btn-secondary !py-1.5 !px-3 text-xs">
+                      {tx('OK','OK')}
+                    </button>
+                    {hasOverride && (
+                      <button type="button"
+                        onClick={resetOverride}
+                        className="btn !py-1.5 !px-2.5 text-xs border border-[var(--border)] hover:border-[var(--warn)] hover:text-[var(--warn)]"
+                        title={tx('Revenir au taux automatique','Revert to automatic rate')}>
+                        <LucideIcon name="rotateCcw" size={12} strokeWidth={2.25} />
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-[var(--text-dim)] leading-snug">
+                    {tx('Saisissez le montant exact débité de la carte (frais bancaires + marge change inclus). Utilisé pour les totaux comptables.','Enter the exact amount debited from the card (bank fees + FX margin included). Used for accounting totals.')}
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <div className="label whitespace-nowrap">{tx('Catégorie','Category')}</div>
