@@ -3157,7 +3157,38 @@
       if (merged.flightType && !FLIGHT_TYPES.some(t => t.id === merged.flightType)) {
         merged.flightType = 'equipage';
       }
+      // === Pré-remplissage TTSN before pour les NOUVEAUX vols ===
+      // Reprend le ttsnAfter du dernier vol (chronologique) pour le même avion.
+      // Pour un vol existant (initial.id défini) on respecte la valeur saisie.
+      function latestTtsnAfterFor(acId, excludeFlightId) {
+        if (!acId) return null;
+        const cands = (flights || [])
+          .filter(x => x.aircraftId === acId && x.id !== excludeFlightId
+                       && x.ttsnAfter && !isNaN(parseFloat(x.ttsnAfter)) && parseFloat(x.ttsnAfter) > 0)
+          .sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+        return cands[0]?.ttsnAfter || null;
+      }
+      if (!merged.id && !merged.ttsnBefore && merged.aircraftId) {
+        const last = latestTtsnAfterFor(merged.aircraftId, null);
+        if (last) merged.ttsnBefore = last;
+      }
       const [f, setF] = useState(merged);
+
+      // Si l'utilisateur change d'avion dans le formulaire, ré-aligner ttsnBefore
+      // sur le dernier ttsnAfter du nouvel avion. On ne touche QUE si ttsnBefore
+      // est encore à sa valeur précédente "auto" (= empty ou égale à l'ancien
+      // dernier ttsnAfter) — sinon on respecte la saisie manuelle.
+      const prevAircraftIdRef = useRef(f.aircraftId);
+      useEffect(() => {
+        if (prevAircraftIdRef.current === f.aircraftId) return;
+        prevAircraftIdRef.current = f.aircraftId;
+        if (f.id) return; // vol existant : ne pas écraser
+        if (!f.aircraftId) return;
+        const last = latestTtsnAfterFor(f.aircraftId, f.id);
+        if (last) {
+          setF(prev => ({ ...prev, ttsnBefore: last }));
+        }
+      }, [f.aircraftId, f.id, flights]);
 
       // === Auto-save debouncé ===
       // Persiste l'état du vol 500 ms après la dernière modification, sans
@@ -12753,6 +12784,25 @@
         return (id) => arrSetter(prev => prev.filter(x => x.id !== id));
       }
 
+      // === Cascade delete d'un vol ===
+      // Supprime le vol + toutes les dépenses (documents) liées à lui :
+      //   - dépenses créées automatiquement depuis les fuelEntries (sourceFlightEntryId)
+      //   - tout autre doc référençant directement le vol via sourceFlightId
+      // Les visites mécanicien et statuts pilote ne sont PAS liées par vol.
+      // Les périodes de duty auto-calculées sont régénérées au prochain compute.
+      const removeFlightCascade = useCallback((flightId) => {
+        const flight = (flightsRef.current || []).find(f => f.id === flightId);
+        // Récupère les ids des fuelEntries de ce vol pour cascader
+        const fuelEntryIds = new Set((flight?.fuelEntries || []).map(e => e.id).filter(Boolean));
+        // Supprime les expenses liées (par sourceFlightEntryId OU sourceFlightId)
+        setDocuments(prev => prev.filter(d =>
+          (!d.sourceFlightEntryId || !fuelEntryIds.has(d.sourceFlightEntryId)) &&
+          (!d.sourceFlightId || d.sourceFlightId !== flightId)
+        ));
+        // Supprime le vol lui-même
+        setFlights(prev => prev.filter(f => f.id !== flightId));
+      }, []);
+
       // Helper : ajout d'une dépense (utilisé par le scan facture depuis le carnet)
       const addExpense = useCallback((doc) => {
         setDocuments(prev => [...prev, doc]);
@@ -12861,7 +12911,56 @@
         const flightToSave = updatedFuelEntries === flight.fuelEntries
           ? flight
           : { ...flight, fuelEntries: updatedFuelEntries };
-        upsert(setFlights)(flightToSave);
+        // === Upsert + propagation TTSN au vol suivant ===
+        // Quand un vol est sauvé, son ttsnAfter doit auto-pousser vers le ttsnBefore
+        // du prochain vol chronologiquement (même avion). Si ce vol suivant a un
+        // airTime, son ttsnAfter se recalcule en chaîne.
+        setFlights(prev => {
+          // Étape 1 : upsert classique
+          const idx = prev.findIndex(x => x.id === flightToSave.id);
+          let next = idx === -1 ? [...prev, flightToSave] : (() => { const c=[...prev]; c[idx]=flightToSave; return c; })();
+          // Étape 2 : propagation TTSN
+          const ttsnAfterStr = String(flightToSave.ttsnAfter || '').trim();
+          const ttsnAfterNum = parseFloat(ttsnAfterStr);
+          if (flightToSave.aircraftId && !isNaN(ttsnAfterNum) && ttsnAfterNum > 0) {
+            const idMs2 = (id) => {
+              const m = String(id||'').match(/_(\d{10,})/);
+              return m ? parseInt(m[1], 10) : 0;
+            };
+            const curMs = idMs2(flightToSave.id);
+            // Vol suivant = même avion, plus récent que le vol courant (par date+id)
+            const candidates = next
+              .filter(f => f.aircraftId === flightToSave.aircraftId && f.id !== flightToSave.id)
+              .filter(f => {
+                const cmp = (f.date || '').localeCompare(flightToSave.date || '');
+                if (cmp > 0) return true;
+                if (cmp < 0) return false;
+                return idMs2(f.id) > curMs;
+              })
+              .sort((a, b) => {
+                const cmp = (a.date || '').localeCompare(b.date || '');
+                if (cmp !== 0) return cmp;
+                return idMs2(a.id) - idMs2(b.id);
+              });
+            const nextFlight = candidates[0];
+            if (nextFlight) {
+              const oldBefore = String(nextFlight.ttsnBefore || '').trim();
+              const oldBeforeNum = parseFloat(oldBefore);
+              // On propage uniquement si différent (évite re-render inutile)
+              if (isNaN(oldBeforeNum) || Math.abs(oldBeforeNum - ttsnAfterNum) > 0.01) {
+                const i2 = next.findIndex(f => f.id === nextFlight.id);
+                if (i2 !== -1) {
+                  // Recalcule ttsnAfter du vol suivant si on a un airTime
+                  const at = parseInt(nextFlight.airTime, 10) || 0;
+                  const newAfter = at > 0 ? +(ttsnAfterNum + at/60).toFixed(2) : nextFlight.ttsnAfter;
+                  next = [...next];
+                  next[i2] = { ...nextFlight, ttsnBefore: ttsnAfterNum, ttsnAfter: newAfter };
+                }
+              }
+            }
+          }
+          return next;
+        });
         // Cascade : retire les dépenses liées aux fuelEntries supprimées
         if (removedExpenseIds.length > 0) {
           setDocuments(prev => prev.filter(d => !removedExpenseIds.includes(d.id)));
@@ -13328,16 +13427,16 @@
               settings={settings}
               reopenFlightId={reopenFlightId}
               onConsumeReopen={()=>setReopenFlightId(null)}
-              onAddOrUpdate={upsertFlightWithFuelExpenses} onDelete={remove(setFlights)} />}
+              onAddOrUpdate={upsertFlightWithFuelExpenses} onDelete={removeFlightCascade} />}
             {tab==='staff' && <StaffScreen
               flights={flights} aircraft={aircraft} pilots={pilots}
               addExpense={addExpense}
-              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={remove(setFlights)}
+              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={removeFlightCascade}
               onUpsertPilot={upsert(setPilots)} />}
             {tab==='calendar' && <CalendarScreen
               flights={flights} aircraft={aircraft} pilots={pilots} addExpense={addExpense}
               onAddFlights={addFlights}
-              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={remove(setFlights)}
+              onUpsertFlight={upsertFlightWithFuelExpenses} onDeleteFlight={removeFlightCascade}
               pilotStatuses={pilotStatuses} setPilotStatuses={setPilotStatuses} />}
             {tab==='inflight' && <InFlightScreen
               flights={flights} aircraft={aircraft} pilots={pilots} />}
