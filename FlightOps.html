@@ -3557,22 +3557,57 @@
       return (
         <div className="space-y-3">
           {/* Date + Avion : empilés sur mobile (sinon le select Avion empiète sur
-              la colonne Date dès que le nom de l'avion est long), 2 colonnes en desktop. */}
+              la colonne Date dès que le nom de l'avion est long), 2 colonnes en desktop.
+              En mode édition FPL et sur desktop : ajout de PIC sous Date et de
+              SIC sous Avion (dropdowns modernes). Les valeurs choisies pré-remplissent
+              les champs PIC/SIC de la fiche complète, accessibles plus bas après création. */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div className="min-w-0">
-              <div className="label whitespace-nowrap">{tx('Date (Zulu)','Date (Zulu)')}</div>
-              <input type="date" className="input" value={f.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
+            <div className="min-w-0 space-y-2">
+              <div>
+                <div className="label whitespace-nowrap">{tx('Date (Zulu)','Date (Zulu)')}</div>
+                <input type="date" className="input" value={f.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
+              </div>
+              {isEditingFpl && (
+                <div>
+                  <div className="label">PIC</div>
+                  <ModernSelect
+                    value={f.pilotId}
+                    onChange={(v)=>set('pilotId', v)}
+                    placeholder={tx('— Sélectionner PIC —','— Select PIC —')}
+                    options={[
+                      { value: '', label: tx('— aucun —','— none —') },
+                      ...pilots.map(p => ({ value: p.id, label: pilotDisplayName(p), icon: 'user' })),
+                    ]}
+                  />
+                </div>
+              )}
             </div>
-            <div className="min-w-0">
-              <div className="label whitespace-nowrap">{tx('Avion','Aircraft')}</div>
-              <select className="select" value={f.aircraftId} onChange={e=>set('aircraftId', e.target.value)}>
-                {aircraft.length === 0 && <option value="">{tx('— aucun avion —','— no aircraft —')}</option>}
-                {aircraft.map(a => (
-                  <option key={a.id} value={a.id}>
-                    {a.kind === 'simulator' ? '🕹️ ' : ''}{a.registration} · {a.type}
-                  </option>
-                ))}
-              </select>
+            <div className="min-w-0 space-y-2">
+              <div>
+                <div className="label whitespace-nowrap">{tx('Avion','Aircraft')}</div>
+                <select className="select" value={f.aircraftId} onChange={e=>set('aircraftId', e.target.value)}>
+                  {aircraft.length === 0 && <option value="">{tx('— aucun avion —','— no aircraft —')}</option>}
+                  {aircraft.map(a => (
+                    <option key={a.id} value={a.id}>
+                      {a.kind === 'simulator' ? '🕹️ ' : ''}{a.registration} · {a.type}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {isEditingFpl && (
+                <div>
+                  <div className="label">SIC</div>
+                  <ModernSelect
+                    value={f.copilotId}
+                    onChange={(v)=>set('copilotId', v)}
+                    placeholder={tx('— Sélectionner SIC (optionnel) —','— Select SIC (optional) —')}
+                    options={[
+                      { value: '', label: tx('— aucun —','— none —') },
+                      ...pilots.filter(p => p.id !== f.pilotId).map(p => ({ value: p.id, label: pilotDisplayName(p), icon: 'user' })),
+                    ]}
+                  />
+                </div>
+              )}
             </div>
           </div>
 
@@ -4277,14 +4312,14 @@
               const os = oilSummary(f);
               const fuelInvoices = (f.fuelEntries||[]).filter(e=>e.invoiceDocId).length;
               return (
-                <div key={f.id} className="card p-3" onClick={()=>{ setEditing(f); setShowForm(true); }}
+                <div key={f.id} className="card p-3 relative" onClick={()=>{ setEditing(f); setShowForm(true); }}
                      style={{
                        borderLeftWidth: '5px',
                        borderLeftColor: verifColor(f.verificationStatus||'pending'),
                      }}
                      title={`${tx('Statut Ops','Ops status')} : ${verifLabel(f.verificationStatus||'pending')}`}>
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1">
                       <div className="text-sm text-[var(--text-dim)] flex items-center gap-2">
                         <span>{fmtDate(f.date)}</span>
                         {ac?.kind === 'simulator' && (
@@ -4329,6 +4364,7 @@
                         )}
                       </div>
                     </div>
+                    {/* Numéro de vol desktop : déplacé en absolute centré (cf. après la card) */}
                     {/* Bloc FT / AT : 2 colonnes, label centré au-dessus de la valeur.
                         Sur mobile, le numéro de vol s'affiche sous les deux,
                         centré entre FT et AT (sans encadré). */}
@@ -4343,9 +4379,7 @@
                           <div className="font-mono tabular-nums text-sm">{fmtDuration(f.airTime)}</div>
                         </div>
                       </div>
-                      {/* Numéro de vol — visible sur mobile uniquement (le desktop
-                          l'affiche centré en bas de la card). Marge top pour
-                          un peu plus d'air entre les heures et le numéro. */}
+                      {/* Numéro de vol — mobile uniquement (desktop : colonne du milieu) */}
                       {f.flightNumber && (
                         <div className="md:hidden font-mono text-sm font-bold tracking-wider text-[var(--accent)] mt-3">
                           {f.flightNumber}
@@ -4385,11 +4419,14 @@
                       </span>
                     )}
                   </div>
-                  {/* Numéro de vol — desktop uniquement (mobile : sous FT/AT).
-                      Centré en bas de la card, sans encadré, font-mono. */}
+                  {/* Numéro de vol desktop : positionné en absolute, parfaitement
+                      centré (horizontal + vertical) au milieu géométrique de la card.
+                      Pointer-events:none pour ne pas bloquer le clic d'édition de la card. */}
                   {f.flightNumber && (
-                    <div className="hidden md:flex justify-center mt-2">
-                      <span className="font-mono text-base font-bold tracking-wider text-[var(--accent)]">
+                    <div className="hidden md:flex flex-col items-center pointer-events-none"
+                         style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                      <span className="text-xs text-white opacity-80 font-medium">{tx('Vol','Flight')}</span>
+                      <span className="font-mono text-2xl font-bold tracking-wider text-[var(--accent)] leading-none mt-0.5">
                         {f.flightNumber}
                       </span>
                     </div>
@@ -8211,11 +8248,13 @@
                             (single-click = sélectionner, double-click = ajouter un vol). */}
                         {list.length > 0 && (
                           <div className="sm:hidden flex flex-col gap-0.5 mt-0.5 flex-1 min-h-0">
-                            {/* Ligne avions : icône Lucide moderne par vol, jusqu'à 4 */}
+                            {/* Ligne avions : icône Lucide moderne par vol, jusqu'à 4.
+                                Mobile : taille réduite (11px) pour ne pas encombrer
+                                la cellule. Desktop garde 18px (cf. bloc desktop). */}
                             <div className="flex flex-wrap gap-0.5 leading-none justify-center items-center" style={{ color: '#ffffff' }}>
                               {list.slice(0,4).map(f => (
                                 <span key={f.id} title={`${tx('Vol','Flight')} ${f.from}→${f.to}`} style={{ lineHeight: 0, display: 'inline-flex' }}>
-                                  <LucideIcon name="planeTakeoff" size={14} strokeWidth={2.25} />
+                                  <LucideIcon name="planeTakeoff" size={11} strokeWidth={2.25} />
                                 </span>
                               ))}
                               {list.length > 4 && <span className="text-[7px] text-[var(--text-dim)]">+{list.length-4}</span>}
@@ -8288,14 +8327,25 @@
                 return (
                   <button key={f.id} type="button" className="w-full text-left flex flex-col gap-0.5 p-2 rounded hover:bg-[var(--bg-elev)]"
                     onClick={()=>openFlight(f)}>
-                    <div className="flex justify-between items-center text-sm">
-                      <div>
+                    {/* Mobile : date + immat empilées (alignées à gauche), route à côté.
+                        Desktop : tout inline avec séparateurs. */}
+                    <div className="flex justify-between items-start md:items-center text-sm gap-2">
+                      <div className="flex flex-col md:flex-row md:items-center md:gap-2 min-w-0">
                         <span className="font-mono">{fmtDate(f.date)}</span>
-                        <span className="mx-2">·</span>
-                        {ac?.registration && <span className="font-mono mr-2">{ac.registration}</span>}
+                        {ac?.registration && (
+                          <>
+                            <span className="hidden md:inline">·</span>
+                            <span className="font-mono">{ac.registration}</span>
+                          </>
+                        )}
+                        <span className="hidden md:inline">·</span>
                         <span>{f.from}→{f.to}</span>
                       </div>
-                      <span className="badge font-mono">{fmtHHMMZ(f.blockOut)} → {fmtHHMMZ(f.blockIn)}</span>
+                      <span className="badge font-mono flex-shrink-0">{fmtHHMMZ(f.blockOut)} → {fmtHHMMZ(f.blockIn)}</span>
+                    </div>
+                    {/* Mobile : route sous la date+immat (sinon ça déborde) */}
+                    <div className="md:hidden text-xs text-[var(--text-dim)] font-mono">
+                      {f.from}→{f.to}
                     </div>
                     <div className="text-xs">
                       {pic ? (
@@ -8369,7 +8419,7 @@
                     const sic = pilots.find(p => p.id === f.copilotId);
                     return (
                       <button key={f.id} type="button"
-                        className="w-full text-left card p-3 hover:bg-[var(--bg-elev)] transition-colors"
+                        className="w-full text-left card p-3 hover:bg-[var(--bg-elev)] transition-colors relative"
                         style={{
                           borderLeftWidth: '5px',
                           borderLeftColor: verifColor(f.verificationStatus||'pending'),
@@ -8380,7 +8430,7 @@
                           setDayDetailDate(null);
                         }}>
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             <div className="text-base font-semibold tracking-wide flex items-center gap-2">
                               <span>✈️</span>
                               <span className="font-mono">{ac?.registration||'—'}</span>
@@ -8391,27 +8441,36 @@
                               {ac?.type && <>{ac.type} · </>}
                               {flightTypeLabel(f.flightType, lang)}
                             </div>
-                            <div className="text-xs mt-1">
+                            {/* PIC et SIC : sur des lignes séparées pour mobile lisibilité.
+                                Sur desktop reste lisible aussi. */}
+                            <div className="text-xs mt-1 space-y-0.5">
                               {pic ? (
-                                <>
+                                <div>
                                   <span className="text-[var(--accent)] font-semibold">PIC :</span>{' '}
                                   <span>{pilotDisplayName(pic)}</span>
-                                  {sic && (
-                                    <>
-                                      {' · '}
-                                      <span className="text-[var(--accent)] font-semibold">SIC :</span>{' '}
-                                      <span>{pilotDisplayName(sic)}</span>
-                                    </>
-                                  )}
-                                </>
+                                </div>
                               ) : (
-                                <span className="text-[var(--text-dim)] italic">{tx('Pilote non renseigné','No pilot set')}</span>
+                                <div className="text-[var(--text-dim)] italic">{tx('Pilote non renseigné','No pilot set')}</div>
+                              )}
+                              {sic && (
+                                <div>
+                                  <span className="text-[var(--accent)] font-semibold">SIC :</span>{' '}
+                                  <span>{pilotDisplayName(sic)}</span>
+                                </div>
                               )}
                             </div>
                           </div>
-                          <div className="text-right text-xs">
-                            <div className="font-mono">{fmtHHMMZ(f.blockOut)} → {fmtHHMMZ(f.blockIn)}</div>
-                            <div className="text-[var(--text-dim)]">FT {fmtDuration(f.flightTime)} · AT {fmtDuration(f.airTime)}</div>
+                          {/* Numéro de vol desktop : déplacé en absolute centré (cf. après la card) */}
+                          {/* Bloc heures à droite :
+                              - Mobile : FT et AT seulement, alignés en haut à droite
+                              - Desktop : ajoute la ligne BO → BI au-dessus */}
+                          <div className="text-right text-xs flex-shrink-0">
+                            <div className="hidden md:block font-mono">{fmtHHMMZ(f.blockOut)} → {fmtHHMMZ(f.blockIn)}</div>
+                            <div className="text-[var(--text-dim)] md:mt-0.5">
+                              <span className="font-semibold text-[var(--text)]">FT</span> {fmtDuration(f.flightTime)}
+                              <span className="mx-1">·</span>
+                              <span className="font-semibold text-[var(--text)]">AT</span> {fmtDuration(f.airTime)}
+                            </div>
                           </div>
                         </div>
                         <div className="flex flex-wrap gap-1 mt-2">
@@ -8427,6 +8486,17 @@
                             </span>
                           )}
                         </div>
+                        {/* Numéro de vol desktop : positionné en absolute, parfaitement
+                            centré (horizontal + vertical) au milieu géométrique de la card. */}
+                        {f.flightNumber && (
+                          <div className="hidden md:flex flex-col items-center pointer-events-none"
+                               style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+                            <span className="text-xs text-white opacity-80 font-medium">{tx('Vol','Flight')}</span>
+                            <span className="font-mono text-2xl font-bold tracking-wider text-[var(--accent)] leading-none mt-0.5">
+                              {f.flightNumber}
+                            </span>
+                          </div>
+                        )}
                       </button>
                     );
                   })}
