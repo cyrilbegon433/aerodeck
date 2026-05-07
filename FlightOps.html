@@ -3579,9 +3579,9 @@
           {/* OACI + ETD/ETA : groupe création de vol (FPL).
               - OACI : gelés (opacité réduite + non-éditable) tant que le vol
                 n'est pas en mode édition FPL.
-              - ETD : toujours éditable, sert au tri chronologique des vols
-                d'une même journée.
-              - ETA : toujours éditable, à titre indicatif pour le dispatch. */}
+              - ETD/ETA : visibles ET éditables UNIQUEMENT en mode édition FPL.
+                Disparaissent une fois le vol créé. Réapparaissent au clic
+                sur "Modifier création du vol". */}
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <div>
@@ -3592,25 +3592,27 @@
                   disabled={!isEditingFpl}
                   onChange={e=>set('from', e.target.value.toUpperCase())} />
               </div>
-              <div>
-                <div className="label flex items-center justify-between gap-2">
-                  <span className="inline-flex items-center gap-1.5">ETD <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></span>
-                  <button type="button"
-                    onClick={()=>setEtdEtaMode(etdEtaMode === 'Z' ? 'L' : 'Z')}
-                    className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] font-mono"
-                    title={tx('Basculer entre saisie Zulu et heure locale','Toggle between Zulu and local time entry')}>
-                    {etdEtaMode === 'Z' ? 'Z → L' : 'L → Z'}
-                  </button>
+              {isEditingFpl && (
+                <div>
+                  <div className="label flex items-center justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5">ETD <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></span>
+                    <button type="button"
+                      onClick={()=>setEtdEtaMode(etdEtaMode === 'Z' ? 'L' : 'Z')}
+                      className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] font-mono"
+                      title={tx('Basculer entre saisie Zulu et heure locale','Toggle between Zulu and local time entry')}>
+                      {etdEtaMode === 'Z' ? 'Z → L' : 'L → Z'}
+                    </button>
+                  </div>
+                  <input className="input font-mono" maxLength={4}
+                    placeholder={etdEtaMode === 'Z' ? '0830' : '1030'}
+                    value={etdEtaMode === 'Z' ? f.etd : (f.etd ? zuluToLocalHHMM(f.date, f.etd).replace(':','') : '')}
+                    onChange={e=>{
+                      const raw = e.target.value.replace(/\D/g,'').slice(0,4);
+                      const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
+                      set('etd', zulu);
+                    }} />
                 </div>
-                <input className="input font-mono" maxLength={4}
-                  placeholder={etdEtaMode === 'Z' ? '0830' : '1030'}
-                  value={etdEtaMode === 'Z' ? f.etd : (f.etd ? zuluToLocalHHMM(f.date, f.etd).replace(':','') : '')}
-                  onChange={e=>{
-                    const raw = e.target.value.replace(/\D/g,'').slice(0,4);
-                    const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
-                    set('etd', zulu);
-                  }} />
-              </div>
+              )}
             </div>
             <div className="space-y-2">
               <div>
@@ -3621,17 +3623,19 @@
                   disabled={!isEditingFpl}
                   onChange={e=>set('to', e.target.value.toUpperCase())} />
               </div>
-              <div>
-                <div className="label inline-flex items-center gap-1.5">ETA <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></div>
-                <input className="input font-mono" maxLength={4}
-                  placeholder={etdEtaMode === 'Z' ? '1015' : '1215'}
-                  value={etdEtaMode === 'Z' ? f.eta : (f.eta ? zuluToLocalHHMM(f.date, f.eta).replace(':','') : '')}
-                  onChange={e=>{
-                    const raw = e.target.value.replace(/\D/g,'').slice(0,4);
-                    const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
-                    set('eta', zulu);
-                  }} />
-              </div>
+              {isEditingFpl && (
+                <div>
+                  <div className="label inline-flex items-center gap-1.5">ETA <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></div>
+                  <input className="input font-mono" maxLength={4}
+                    placeholder={etdEtaMode === 'Z' ? '1015' : '1215'}
+                    value={etdEtaMode === 'Z' ? f.eta : (f.eta ? zuluToLocalHHMM(f.date, f.eta).replace(':','') : '')}
+                    onChange={e=>{
+                      const raw = e.target.value.replace(/\D/g,'').slice(0,4);
+                      const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
+                      set('eta', zulu);
+                    }} />
+                </div>
+              )}
             </div>
           </div>
 
@@ -4340,9 +4344,10 @@
                         </div>
                       </div>
                       {/* Numéro de vol — visible sur mobile uniquement (le desktop
-                          l'affiche centré en bas de la card). */}
+                          l'affiche centré en bas de la card). Marge top pour
+                          un peu plus d'air entre les heures et le numéro. */}
                       {f.flightNumber && (
-                        <div className="md:hidden font-mono text-sm font-bold tracking-wider text-[var(--accent)]">
+                        <div className="md:hidden font-mono text-sm font-bold tracking-wider text-[var(--accent)] mt-3">
                           {f.flightNumber}
                         </div>
                       )}
