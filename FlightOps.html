@@ -3305,8 +3305,16 @@
         // du plan de vol. Servent à dériver la vitesse attendue pour l'onglet
         // "En vol" : speed = distance / (ETA - ETD). Si non renseignées, on
         // retombe sur cruiseSpeed de l'avion.
+        // CES CHAMPS SONT REMPLIS UNIQUEMENT DEPUIS LA SECTION FPL EN BAS DE
+        // LA FICHE DE VOL — ils pilotent le statut/couleur/visuel OPS.
         etd: '',
         eta: '',
+        // ETD / ETA Création — champs purement indicatifs saisis pendant la
+        // création du vol (au-dessus du bouton "Créer un vol"). Servent au
+        // tri chronologique des vols dans une journée et de pré-remplissage
+        // visuel, mais NE pilotent PAS l'onglet OPS ni le statut.
+        etdCreation: '',
+        etaCreation: '',
         // Distance en NM utilisée par l'onglet "En vol" pour estimer la position
         // actuelle de l'avion. Si vide, l'app calcule via OACI départ/arrivée
         // (base intégrée + override custom user). Modifiable manuellement.
@@ -3373,9 +3381,11 @@
       }
       const [f, setF] = useState(merged);
       // Mode de saisie ETD/ETA : 'Z' (Zulu, défaut) ou 'L' (heure locale du
-      // navigateur). On stocke toujours en Zulu dans f.etd/f.eta — le toggle
-      // n'affecte que la saisie/affichage côté UI. Visible uniquement avant
-      // création (les champs ETD/ETA disparaissent une fois le vol créé).
+      // navigateur). On stocke toujours en Zulu dans f.etdCreation/f.etaCreation
+      // (champs purement indicatifs, distincts de f.etd/f.eta du FPL qui pilotent
+      // le statut OPS). Le toggle n'affecte que la saisie/affichage côté UI.
+      // Visible uniquement avant création (les champs disparaissent une fois le
+      // vol créé).
       const [etdEtaMode, setEtdEtaMode] = useState('Z');
       // Mode édition FPL (OACI + ETD + ETA) :
       //   - Nouveau vol (!merged.id) : true → on saisit l'OACI/ETD/ETA, le
@@ -3640,11 +3650,11 @@
                   </div>
                   <input className="input font-mono" maxLength={4}
                     placeholder={etdEtaMode === 'Z' ? '0830' : '1030'}
-                    value={etdEtaMode === 'Z' ? f.etd : (f.etd ? zuluToLocalHHMM(f.date, f.etd).replace(':','') : '')}
+                    value={etdEtaMode === 'Z' ? f.etdCreation : (f.etdCreation ? zuluToLocalHHMM(f.date, f.etdCreation).replace(':','') : '')}
                     onChange={e=>{
                       const raw = e.target.value.replace(/\D/g,'').slice(0,4);
                       const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
-                      set('etd', zulu);
+                      set('etdCreation', zulu);
                     }} />
                 </div>
               )}
@@ -3663,11 +3673,11 @@
                   <div className="label inline-flex items-center gap-1.5">ETA <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></div>
                   <input className="input font-mono" maxLength={4}
                     placeholder={etdEtaMode === 'Z' ? '1015' : '1215'}
-                    value={etdEtaMode === 'Z' ? f.eta : (f.eta ? zuluToLocalHHMM(f.date, f.eta).replace(':','') : '')}
+                    value={etdEtaMode === 'Z' ? f.etaCreation : (f.etaCreation ? zuluToLocalHHMM(f.date, f.etaCreation).replace(':','') : '')}
                     onChange={e=>{
                       const raw = e.target.value.replace(/\D/g,'').slice(0,4);
                       const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
-                      set('eta', zulu);
+                      set('etaCreation', zulu);
                     }} />
                 </div>
               )}
@@ -4243,13 +4253,14 @@
       const sorted = useMemo(() => {
         const arr = [...flights];
         // Tri : dates récentes en haut. À l'intérieur d'une même journée :
-        // ordre chronologique ascendant (blockOut sinon ETD), puis fallback id.
-        // Permet de classer naturellement plusieurs vols d'une même journée.
+        // ordre chronologique ascendant (blockOut sinon ETD FPL sinon ETD création),
+        // puis fallback id. Permet de classer naturellement plusieurs vols d'une
+        // même journée même si le FPL n'a pas encore été déposé.
         arr.sort((a,b) => {
           const dateCmp = (b.date||'').localeCompare(a.date||'');
           if (dateCmp !== 0) return dateCmp;
-          const ka = a.blockOut || a.etd || '';
-          const kb = b.blockOut || b.etd || '';
+          const ka = a.blockOut || a.etd || a.etdCreation || '';
+          const kb = b.blockOut || b.etd || b.etdCreation || '';
           if (ka || kb) return ka.localeCompare(kb);
           return (b.id||'').localeCompare(a.id||'');
         });
@@ -8393,8 +8404,8 @@
                 // classer correctement plusieurs vols dans une même journée même quand
                 // le block out n'a pas encore été renseigné.
                 .sort((a,b) => {
-                  const ka = a.blockOut || a.etd || '';
-                  const kb = b.blockOut || b.etd || '';
+                  const ka = a.blockOut || a.etd || a.etdCreation || '';
+                  const kb = b.blockOut || b.etd || b.etdCreation || '';
                   return ka.localeCompare(kb);
                 });
               // Bouton moderne "+ Ajouter un vol" : pré-remplit la date du vol
