@@ -713,6 +713,20 @@
           const out = { ...f };
           if (!Array.isArray(out.fuelEntries)) out.fuelEntries = [];
           if (!Array.isArray(out.oilEntries))  out.oilEntries  = [];
+          // Migration : assigne un numéro de vol stable (3 chiffres + 1 lettre)
+          // aux vols créés avant l'introduction du champ flightNumber.
+          // Dérivé déterministiquement de l'id pour rester stable entre les
+          // sessions et les appareils (sync Mac ↔ iPhone).
+          if (!out.flightNumber && out.id) {
+            let hash = 0;
+            for (let i = 0; i < out.id.length; i++) {
+              hash = ((hash << 5) - hash) + out.id.charCodeAt(i);
+              hash |= 0;
+            }
+            const num = String((Math.abs(hash) % 999) + 1).padStart(3, '0');
+            const letter = String.fromCharCode(65 + (Math.abs(hash >> 8) % 26));
+            out.flightNumber = num + letter;
+          }
           // v5 : initialise les offsets jour pour chaque champ horaire si absents.
           // Auto-détection passage minuit pour les anciens vols : si la séquence HHMM
           // (sans offset) n'est pas croissante, on ajoute +1 jour aux étapes suivantes.
@@ -1388,6 +1402,24 @@
       const d = new Date(dateISO + 'T' + String(Math.floor(m/60)).padStart(2,'0') + ':' + String(m%60).padStart(2,'0') + ':00Z');
       if (isNaN(d.getTime())) return '';
       return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    }
+    // Inverse de zuluToLocalHHMM : prend une heure locale (HHMM, ex "0830") et
+    // la date ISO, retourne l'équivalent en Zulu HHMM (4 chiffres). Utilise le
+    // fuseau horaire du navigateur. Sert pour la saisie en mode "Local" — on
+    // stocke toujours du Zulu en base.
+    function localToZuluHHMM(dateISO, hhmm) {
+      const m = parseHHMM(hhmm);
+      if (m == null || !dateISO) return '';
+      const h = Math.floor(m/60);
+      const min = m % 60;
+      // On crée une date dans le fuseau LOCAL avec dateISO + h:min, puis on
+      // récupère son équivalent UTC.
+      const [y, mo, d] = dateISO.split('-').map(n => parseInt(n, 10));
+      const local = new Date(y, mo - 1, d, h, min, 0);
+      if (isNaN(local.getTime())) return '';
+      const zh = String(local.getUTCHours()).padStart(2, '0');
+      const zm = String(local.getUTCMinutes()).padStart(2, '0');
+      return zh + zm;
     }
     // Format heure d'après réglage (ZULU / LOCAL / BOTH)
     function fmtTimeBySetting(dateISO, hhmm, mode) {
@@ -3248,6 +3280,10 @@
       const { lang } = React.useContext(I18nContext);
       const blank = {
         id: null,
+        // Numéro de vol — généré automatiquement à la création (3 chiffres
+        // + 1 lettre, ex: "247B"). Affiché sur les cards pour identifier
+        // rapidement le vol. Modifiable manuellement si besoin.
+        flightNumber: '',
         date: todayZuluDate(),
         aircraftId: aircraft[0]?.id || '',
         pilotId: '',          // pilote principal (sélectionné dans le roster)
@@ -3336,6 +3372,19 @@
         if (last) merged.ttsnBefore = last;
       }
       const [f, setF] = useState(merged);
+      // Mode de saisie ETD/ETA : 'Z' (Zulu, défaut) ou 'L' (heure locale du
+      // navigateur). On stocke toujours en Zulu dans f.etd/f.eta — le toggle
+      // n'affecte que la saisie/affichage côté UI. Visible uniquement avant
+      // création (les champs ETD/ETA disparaissent une fois le vol créé).
+      const [etdEtaMode, setEtdEtaMode] = useState('Z');
+      // Mode édition FPL (OACI + ETD + ETA) :
+      //   - Nouveau vol (!merged.id) : true → on saisit l'OACI/ETD/ETA, le
+      //     bouton "Créer un vol" valide et bascule en false.
+      //   - Vol existant : false par défaut → OACI gelés, ETD/ETA cachés, un
+      //     petit bouton "Modifier création du vol" permet de revenir à true
+      //     pour ajuster ces champs. Le clic suivant sur "Créer un vol"
+      //     rebascule en false (et le bouton de modification réapparaît).
+      const [isEditingFpl, setIsEditingFpl] = useState(!merged.id);
 
       // Si l'utilisateur change d'avion dans le formulaire, ré-aligner ttsnBefore
       // sur le dernier ttsnAfter du nouvel avion. On ne touche QUE si ttsnBefore
@@ -3527,16 +3576,126 @@
             </div>
           </div>
 
+          {/* OACI + ETD/ETA : groupe création de vol (FPL).
+              - OACI : gelés (opacité réduite + non-éditable) tant que le vol
+                n'est pas en mode édition FPL.
+              - ETD : toujours éditable, sert au tri chronologique des vols
+                d'une même journée.
+              - ETA : toujours éditable, à titre indicatif pour le dispatch. */}
           <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="label">{tx('OACI départ','Departure ICAO')}</div>
-              <input className="input uppercase" maxLength={4} placeholder="LFPB" value={f.from} onChange={e=>set('from', e.target.value.toUpperCase())} />
+            <div className="space-y-2">
+              <div>
+                <div className="label">{tx('OACI départ','Departure ICAO')}</div>
+                <input className={`input uppercase ${!isEditingFpl ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  maxLength={4} placeholder="LFPB"
+                  value={f.from}
+                  disabled={!isEditingFpl}
+                  onChange={e=>set('from', e.target.value.toUpperCase())} />
+              </div>
+              <div>
+                <div className="label flex items-center justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5">ETD <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></span>
+                  <button type="button"
+                    onClick={()=>setEtdEtaMode(etdEtaMode === 'Z' ? 'L' : 'Z')}
+                    className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded border border-[var(--border)] hover:border-[var(--accent)] hover:text-[var(--accent)] font-mono"
+                    title={tx('Basculer entre saisie Zulu et heure locale','Toggle between Zulu and local time entry')}>
+                    {etdEtaMode === 'Z' ? 'Z → L' : 'L → Z'}
+                  </button>
+                </div>
+                <input className="input font-mono" maxLength={4}
+                  placeholder={etdEtaMode === 'Z' ? '0830' : '1030'}
+                  value={etdEtaMode === 'Z' ? f.etd : (f.etd ? zuluToLocalHHMM(f.date, f.etd).replace(':','') : '')}
+                  onChange={e=>{
+                    const raw = e.target.value.replace(/\D/g,'').slice(0,4);
+                    const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
+                    set('etd', zulu);
+                  }} />
+              </div>
             </div>
-            <div>
-              <div className="label">{tx('OACI arrivée','Arrival ICAO')}</div>
-              <input className="input uppercase" maxLength={4} placeholder="EGLL" value={f.to} onChange={e=>set('to', e.target.value.toUpperCase())} />
+            <div className="space-y-2">
+              <div>
+                <div className="label">{tx('OACI arrivée','Arrival ICAO')}</div>
+                <input className={`input uppercase ${!isEditingFpl ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  maxLength={4} placeholder="EGLL"
+                  value={f.to}
+                  disabled={!isEditingFpl}
+                  onChange={e=>set('to', e.target.value.toUpperCase())} />
+              </div>
+              <div>
+                <div className="label inline-flex items-center gap-1.5">ETA <span className="text-[10px] text-[var(--text-dim)] font-normal normal-case tracking-normal">{etdEtaMode === 'Z' ? 'Zulu' : 'Local'}</span></div>
+                <input className="input font-mono" maxLength={4}
+                  placeholder={etdEtaMode === 'Z' ? '1015' : '1215'}
+                  value={etdEtaMode === 'Z' ? f.eta : (f.eta ? zuluToLocalHHMM(f.date, f.eta).replace(':','') : '')}
+                  onChange={e=>{
+                    const raw = e.target.value.replace(/\D/g,'').slice(0,4);
+                    const zulu = etdEtaMode === 'Z' ? raw : (raw.length === 4 ? localToZuluHHMM(f.date, raw) : raw);
+                    set('eta', zulu);
+                  }} />
+              </div>
             </div>
           </div>
+
+          {/* === Bouton "Créer un vol" / "Modifier création du vol" ===
+              - isEditingFpl=true : bouton "Créer un vol" gros, dégradé cyan,
+                centré. Au clic : valide OACI départ/arrivée, sauvegarde,
+                bascule en mode lecture (isEditingFpl=false).
+              - isEditingFpl=false : mini-bouton outline "Modifier création
+                du vol" discret. Au clic : rebascule en mode édition. */}
+          {isEditingFpl ? (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <button type="button"
+                onClick={()=>{
+                  if (!f.from || f.from.length < 4) return alert(tx('Code OACI départ requis (4 lettres).','Departure ICAO required (4 letters).'));
+                  if (!f.to || f.to.length < 4) return alert(tx('Code OACI arrivée requis (4 lettres).','Arrival ICAO required (4 letters).'));
+                  if (!f.id) {
+                    // Première création : on assigne un id, un numéro de vol
+                    // (3 chiffres + 1 lettre) et on persiste.
+                    const newId = 'flt_' + Date.now();
+                    const num = String(Math.floor(Math.random() * 999) + 1).padStart(3, '0');
+                    const letter = String.fromCharCode(65 + Math.floor(Math.random() * 26));
+                    const newFlightNumber = f.flightNumber || (num + letter);
+                    const newFlight = { ...f, id: newId, flightNumber: newFlightNumber };
+                    setF(newFlight);
+                    if (onAutoSave) onAutoSave(newFlight);
+                  } else {
+                    // Re-création (modification du FPL d'un vol existant) :
+                    // l'auto-save standard a déjà persisté les changements
+                    // au fil de la frappe — on n'a rien de plus à faire ici.
+                  }
+                  setIsEditingFpl(false);
+                }}
+                className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full font-semibold text-white shadow-lg hover:scale-105 active:scale-95 transition-all"
+                style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #0284c7 100%)', boxShadow: '0 8px 24px -4px var(--accent-glow)' }}>
+                <LucideIcon name="planeTakeoff" size={18} strokeWidth={2.5} />
+                <span>{tx('Créer un vol','Create flight')}</span>
+              </button>
+              {!f.id && (
+                <div className="text-[11px] text-[var(--text-dim)] text-center max-w-xs">
+                  {tx('Saisis au minimum OACI départ et OACI arrivée pour créer le vol. Tu pourras compléter le reste juste après.','Enter at least the departure and arrival ICAO to create the flight. You can fill in the rest right after.')}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex justify-center py-2">
+              <button type="button"
+                onClick={()=>setIsEditingFpl(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-[var(--border)] text-xs text-[var(--text-dim)] hover:border-[var(--accent)] hover:text-[var(--accent)] transition-colors"
+                title={tx('Re-éditer OACI / ETD / ETA','Re-edit ICAO / ETD / ETA')}>
+                <LucideIcon name="edit3" size={12} strokeWidth={2.25} />
+                <span>{tx('Modifier création du vol','Edit flight creation')}</span>
+              </button>
+            </div>
+          )}
+
+          {/* === Wrapper "post-création" ===
+              Tout ce qui suit (heures, équipage, type de mission, fuel, etc.)
+              est verrouillé tant que !f.id : opacité réduite, pointer-events
+              désactivés, voile dim au-dessus pour signaler l'état figé. */}
+          <div className={!f.id ? 'relative pointer-events-none select-none opacity-40' : ''}
+               aria-disabled={!f.id ? 'true' : 'false'}>
+          {!f.id && (
+            <div className="absolute inset-0 z-10" style={{ background: 'rgba(8, 16, 30, 0.35)', backdropFilter: 'blur(0.5px)' }} />
+          )}
 
           {/* Type de mission : navigation par défaut. Le statut Duo est désormais dérivé
               du type de vol = "Duo/Training" (voir dropdown Type de vol ci-dessous). */}
@@ -4014,9 +4173,13 @@
             );
           })()}
 
+          </div>{/* fin wrapper post-création (verrouillé tant que !f.id) */}
+
           <div className="flex justify-end gap-2 pt-2">
             <button className="btn btn-secondary" onClick={onCancel}>{tx('Annuler','Cancel')}</button>
-            <button className="btn btn-primary" onClick={handleSave}>{tx('Enregistrer','Save')}</button>
+            {f.id && (
+              <button className="btn btn-primary" onClick={handleSave}>{tx('Enregistrer','Save')}</button>
+            )}
           </div>
         </div>
       );
@@ -4040,7 +4203,17 @@
 
       const sorted = useMemo(() => {
         const arr = [...flights];
-        arr.sort((a,b) => (b.date||'').localeCompare(a.date||'') || (b.id||'').localeCompare(a.id||''));
+        // Tri : dates récentes en haut. À l'intérieur d'une même journée :
+        // ordre chronologique ascendant (blockOut sinon ETD), puis fallback id.
+        // Permet de classer naturellement plusieurs vols d'une même journée.
+        arr.sort((a,b) => {
+          const dateCmp = (b.date||'').localeCompare(a.date||'');
+          if (dateCmp !== 0) return dateCmp;
+          const ka = a.blockOut || a.etd || '';
+          const kb = b.blockOut || b.etd || '';
+          if (ka || kb) return ka.localeCompare(kb);
+          return (b.id||'').localeCompare(a.id||'');
+        });
         return filterAircraft==='all' ? arr : arr.filter(f => f.aircraftId === filterAircraft);
       }, [flights, filterAircraft]);
 
@@ -4152,16 +4325,27 @@
                         )}
                       </div>
                     </div>
-                    {/* Bloc FT / AT : 2 colonnes, label centré au-dessus de la valeur */}
-                    <div className="flex gap-3 flex-shrink-0">
-                      <div className="text-center min-w-[50px]">
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">FT</div>
-                        <div className="font-mono tabular-nums text-sm">{fmtDuration(f.flightTime)}</div>
+                    {/* Bloc FT / AT : 2 colonnes, label centré au-dessus de la valeur.
+                        Sur mobile, le numéro de vol s'affiche sous les deux,
+                        centré entre FT et AT (sans encadré). */}
+                    <div className="flex flex-col items-center gap-1 flex-shrink-0">
+                      <div className="flex gap-3">
+                        <div className="text-center min-w-[50px]">
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">FT</div>
+                          <div className="font-mono tabular-nums text-sm">{fmtDuration(f.flightTime)}</div>
+                        </div>
+                        <div className="text-center min-w-[50px]">
+                          <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">AT</div>
+                          <div className="font-mono tabular-nums text-sm">{fmtDuration(f.airTime)}</div>
+                        </div>
                       </div>
-                      <div className="text-center min-w-[50px]">
-                        <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-semibold">AT</div>
-                        <div className="font-mono tabular-nums text-sm">{fmtDuration(f.airTime)}</div>
-                      </div>
+                      {/* Numéro de vol — visible sur mobile uniquement (le desktop
+                          l'affiche centré en bas de la card). */}
+                      {f.flightNumber && (
+                        <div className="md:hidden font-mono text-sm font-bold tracking-wider text-[var(--accent)]">
+                          {f.flightNumber}
+                        </div>
+                      )}
                     </div>
                   </div>
                   <div className="flex flex-wrap gap-1 mt-2">
@@ -4196,6 +4380,15 @@
                       </span>
                     )}
                   </div>
+                  {/* Numéro de vol — desktop uniquement (mobile : sous FT/AT).
+                      Centré en bas de la card, sans encadré, font-mono. */}
+                  {f.flightNumber && (
+                    <div className="hidden md:flex justify-center mt-2">
+                      <span className="font-mono text-base font-bold tracking-wider text-[var(--accent)]">
+                        {f.flightNumber}
+                      </span>
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -8132,7 +8325,15 @@
             {dayDetailDate && (() => {
               const dayFlights = flights
                 .filter(f => f.date === dayDetailDate)
-                .sort((a,b) => (a.blockOut||'').localeCompare(b.blockOut||''));
+                // Tri chronologique : on prend en priorité blockOut (heure réelle de départ),
+                // sinon ETD (heure planifiée saisie à la création du vol). Permet de
+                // classer correctement plusieurs vols dans une même journée même quand
+                // le block out n'a pas encore été renseigné.
+                .sort((a,b) => {
+                  const ka = a.blockOut || a.etd || '';
+                  const kb = b.blockOut || b.etd || '';
+                  return ka.localeCompare(kb);
+                });
               // Bouton moderne "+ Ajouter un vol" : pré-remplit la date du vol
               // avec le jour sélectionné, puis ouvre la fiche vol.
               const addFlightBtn = (
@@ -12777,12 +12978,17 @@
             const arrivalDisplayTime = f.landing || f.blockIn || '';
             return (
               <div key={f.id} className="card p-4 w-full">
-                {/* En-tête : avion + pilote + badge statut */}
+                {/* En-tête : numéro de vol + avion + pilote + badge statut.
+                    Le numéro de vol (ex: 247B) est affiché en premier, plus
+                    gros et en monospace, pour identification rapide. */}
                 <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
-                  <div className="text-sm">
+                  <div className="text-sm flex items-baseline gap-2 flex-wrap">
+                    {f.flightNumber && (
+                      <span className="font-mono text-base font-bold tracking-wider text-[var(--accent)]">{f.flightNumber}</span>
+                    )}
                     <span className="font-mono text-[var(--accent)] font-semibold">{ac?.registration || '?'}</span>
-                    {ac?.type && <span className="text-[var(--text-dim)] ml-2">· {ac.type}</span>}
-                    {pic && <span className="text-[var(--text-dim)] ml-2">· PIC : {pilotDisplayName(pic)}</span>}
+                    {ac?.type && <span className="text-[var(--text-dim)]">· {ac.type}</span>}
+                    {pic && <span className="text-[var(--text-dim)]">· PIC : {pilotDisplayName(pic)}</span>}
                   </div>
                   {/* Badge cascade : Just Landed > Missing Input > Activated > Données partielles */}
                   <span className="text-[10px] uppercase tracking-wider font-bold px-2 py-0.5 rounded-full"
