@@ -515,7 +515,7 @@
         // Maintenance
         'mx.title':'Maintenance','mx.new':'+ Nouvelle défaillance','mx.empty':'Aucune défaillance enregistrée.',
         // Dépenses
-        'exp.title':'Documents / Factures','exp.new':'+ Nouvelle facture','exp.empty':"Aucune facture pour l'instant.",
+        'exp.title':'Documents / Factures','exp.new':'Nouvelle facture','exp.empty':"Aucune facture pour l'instant.",
         'exp.totalsByCat':'Totaux par catégorie',
         // Compagnie
         'co.title':'Documents Compagnie','co.new':'+ Nouveau document','co.empty':"Aucun document compagnie pour l'instant.",
@@ -551,7 +551,7 @@
         'cal.title':'Calendar','cal.exportIcs':'Upload .ics','cal.importIcs':'Download .ics (Ops)',
         'cal.upcoming':'Upcoming flights (10)','cal.noUpcoming':'No upcoming flights.',
         'mx.title':'Maintenance','mx.new':'+ New defect','mx.empty':'No defects recorded.',
-        'exp.title':'Documents / Invoices','exp.new':'+ New invoice','exp.empty':'No invoices yet.',
+        'exp.title':'Documents / Invoices','exp.new':'New invoice','exp.empty':'No invoices yet.',
         'exp.totalsByCat':'Totals by category',
         'co.title':'Company documents','co.new':'+ New document','co.empty':'No company documents yet.',
         'stats.title':'Statistics & Backups','stats.year':'Year','stats.month':'Month','stats.allYear':'Whole year',
@@ -3565,7 +3565,7 @@
             <div className="min-w-0 space-y-2">
               <div>
                 <div className="label whitespace-nowrap">{tx('Date (Zulu)','Date (Zulu)')}</div>
-                <input type="date" className="input" value={f.date} onChange={e=>{ if (e.target.value) set('date', e.target.value); }} />
+                <ModernDatePicker value={f.date} onChange={(v)=>{ if (v) set('date', v); }} />
               </div>
               {isEditingFpl && (
                 <div>
@@ -5959,12 +5959,91 @@
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold">{t('exp.title')}</h2>
-            {/* Bouton "Nouvelle facture" caché quand une catégorie est sélectionnée :
-                il y a un bouton dédié dans le panneau de détail qui pré-remplit
-                la catégorie automatiquement (workflow plus naturel). */}
-            {filterCat === 'all' && (
-              <button className="btn btn-primary" onClick={()=>{ setEditing(null); setShowForm(true); }}>{t('exp.new')}</button>
-            )}
+            {/* Bouton "Exporter / Upload" — déplacé ici (à la place du bouton
+                Nouvelle facture qui est désormais centré dans la card Total). */}
+            <div className="relative">
+              <button ref={exportButtonRef} className="btn btn-secondary"
+                onClick={()=>{ if (exportMenuOpen) setExportMenuOpen(false); else openExportMenu(); }}
+                title={tx('Exporter les dépenses','Upload expenses')}>
+                <span className="inline-flex items-center gap-1.5">
+                  <LucideIcon name="upload" size={14} strokeWidth={2.25} />
+                  {tx('Exporter','Upload')}
+                </span>
+              </button>
+              {exportMenuOpen && exportMenuPos && (
+                <div ref={exportMenuRef}
+                  className="z-50 rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden"
+                  style={{
+                    position: 'fixed',
+                    top: exportMenuPos.top,
+                    left: exportMenuPos.left,
+                    background: 'var(--bg-card)',
+                    width: 'min(18rem, calc(100vw - 16px))',
+                    maxHeight: '70vh',
+                    overflowY: 'auto',
+                  }}>
+                  <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-elev)]">
+                    <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-bold">
+                      {tx('Format d\'export','Upload format')}
+                    </div>
+                    <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
+                      {lastExportDate
+                        ? tx('Dernière export :','Last upload:')+' '+new Date(lastExportDate).toLocaleString(t('lang.code')==='en'?'en-US':'fr-FR')
+                        : tx('Aucune export précédente','No previous upload')}
+                    </div>
+                  </div>
+                  {/* ZIP — incrémental */}
+                  <button type="button"
+                    onClick={()=>exportZipExpenses('incremental')}
+                    className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                    <LucideIcon name="folder" size={18} strokeWidth={2.25} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold">{tx('ZIP — depuis dernière export','ZIP — since last upload')}</div>
+                      <div className="text-[10px] text-[var(--text-dim)]">{tx('Dossier par catégorie · factures uniquement','Folder per category · invoices only')}</div>
+                    </div>
+                  </button>
+                  {/* ZIP — tout */}
+                  <button type="button"
+                    onClick={()=>exportZipExpenses('all')}
+                    className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                    <LucideIcon name="folder" size={18} strokeWidth={2.25} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold">{tx('ZIP — toutes les factures','ZIP — all invoices')}</div>
+                      <div className="text-[10px] text-[var(--text-dim)]">{tx('Export complet, ignore l\'historique','Full upload, ignores history')}</div>
+                    </div>
+                  </button>
+                  {/* CSV */}
+                  <button type="button"
+                    onClick={()=>exportCsvExpenses('incremental')}
+                    className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                    <LucideIcon name="file" size={18} strokeWidth={2.25} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold">{tx('CSV — récap métadonnées','CSV — metadata summary')}</div>
+                      <div className="text-[10px] text-[var(--text-dim)]">{tx('Tableur (Excel, Numbers, Sheets)','Spreadsheet (Excel, Numbers, Sheets)')}</div>
+                    </div>
+                  </button>
+                  {/* JSON */}
+                  <button type="button"
+                    onClick={()=>exportJsonExpenses('incremental')}
+                    className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
+                    <LucideIcon name="database" size={18} strokeWidth={2.25} />
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm font-semibold">JSON</div>
+                      <div className="text-[10px] text-[var(--text-dim)]">{tx('Dump structuré (sans les fichiers)','Structured dump (no files)')}</div>
+                    </div>
+                  </button>
+                  {/* Reset */}
+                  {lastExportDate && (
+                    <button type="button"
+                      onClick={resetLastExport}
+                      className="w-full text-left px-3 py-2 hover:bg-[var(--err)]/10 text-[var(--err)] text-xs flex items-center gap-2">
+                      <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
+                      {tx('Réinitialiser l\'historique d\'export','Reset upload history')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* === HERO : Total + nb factures, design type "carte bancaire" ===
@@ -5975,7 +6054,7 @@
                  background: 'linear-gradient(135deg, var(--bg-card) 0%, var(--bg-card-2) 60%, rgba(56,189,248,0.08) 100%)',
                  borderColor: 'rgba(56,189,248,0.25)',
                }}>
-            <div className="flex items-end justify-between gap-3 flex-wrap">
+            <div className="flex items-end sm:items-center justify-between gap-3 flex-wrap">
               <div>
                 <div className="text-[10px] uppercase tracking-[0.15em] text-[var(--text-dim)] font-semibold">
                   {tx('Total dépenses','Total expenses')}
@@ -6000,92 +6079,21 @@
                   {totalCount} {tx(totalCount>1?'factures':'facture',totalCount>1?'invoices':'invoice')} · {usedCats.length} {tx(usedCats.length>1?'catégories':'catégorie',usedCats.length>1?'categories':'category')} {tx(usedCats.length>1?'actives':'active',usedCats.length>1?'active':'active')}
                 </div>
               </div>
-              {/* Bouton export avec menu déroulant : ZIP (factures organisées par catégorie) /
-                  CSV (récap métadonnées) / JSON (dump complet). Incrémental par défaut
-                  (depuis la dernière export) ou tout. */}
-              <div>
-                <button ref={exportButtonRef} className="btn btn-secondary"
-                  onClick={()=>{ if (exportMenuOpen) setExportMenuOpen(false); else openExportMenu(); }}
-                  title={tx('Exporter les dépenses','Upload expenses')}>
-                  <span className="inline-flex items-center gap-1.5">
-                    <LucideIcon name="upload" size={14} strokeWidth={2.25} />
-                    {tx('Exporter','Upload')}
-                  </span>
-                </button>
-                {exportMenuOpen && exportMenuPos && (
-                  <div ref={exportMenuRef}
-                    className="z-50 rounded-xl shadow-2xl border border-[var(--border)] overflow-hidden"
-                    style={{
-                      position: 'fixed',
-                      top: exportMenuPos.top,
-                      left: exportMenuPos.left,
-                      background: 'var(--bg-card)',
-                      width: 'min(18rem, calc(100vw - 16px))',
-                      maxHeight: '70vh',
-                      overflowY: 'auto',
-                    }}>
-                    <div className="px-3 py-2 border-b border-[var(--border)] bg-[var(--bg-elev)]">
-                      <div className="text-[10px] uppercase tracking-wider text-[var(--text-dim)] font-bold">
-                        {tx('Format d\'export','Upload format')}
-                      </div>
-                      <div className="text-[10px] text-[var(--text-dim)] mt-0.5">
-                        {lastExportDate
-                          ? tx('Dernière export :','Last upload:')+' '+new Date(lastExportDate).toLocaleString(t('lang.code')==='en'?'en-US':'fr-FR')
-                          : tx('Aucune export précédente','No previous upload')}
-                      </div>
-                    </div>
-                    {/* ZIP — incrémental */}
-                    <button type="button"
-                      onClick={()=>exportZipExpenses('incremental')}
-                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
-                      <LucideIcon name="folder" size={18} strokeWidth={2.25} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold">{tx('ZIP — depuis dernière export','ZIP — since last upload')}</div>
-                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Dossier par catégorie · factures uniquement','Folder per category · invoices only')}</div>
-                      </div>
-                    </button>
-                    {/* ZIP — tout */}
-                    <button type="button"
-                      onClick={()=>exportZipExpenses('all')}
-                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
-                      <LucideIcon name="folder" size={18} strokeWidth={2.25} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold">{tx('ZIP — toutes les factures','ZIP — all invoices')}</div>
-                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Export complet, ignore l\'historique','Full upload, ignores history')}</div>
-                      </div>
-                    </button>
-                    {/* CSV */}
-                    <button type="button"
-                      onClick={()=>exportCsvExpenses('incremental')}
-                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
-                      <LucideIcon name="file" size={18} strokeWidth={2.25} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold">{tx('CSV — récap métadonnées','CSV — metadata summary')}</div>
-                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Tableur (Excel, Numbers, Sheets)','Spreadsheet (Excel, Numbers, Sheets)')}</div>
-                      </div>
-                    </button>
-                    {/* JSON */}
-                    <button type="button"
-                      onClick={()=>exportJsonExpenses('incremental')}
-                      className="w-full text-left px-3 py-2.5 hover:bg-[var(--bg-elev)] flex items-start gap-2.5 border-b border-[var(--border)]/50">
-                      <LucideIcon name="database" size={18} strokeWidth={2.25} />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold">JSON</div>
-                        <div className="text-[10px] text-[var(--text-dim)]">{tx('Dump structuré (sans les fichiers)','Structured dump (no files)')}</div>
-                      </div>
-                    </button>
-                    {/* Reset */}
-                    {lastExportDate && (
-                      <button type="button"
-                        onClick={resetLastExport}
-                        className="w-full text-left px-3 py-2 hover:bg-[var(--err)]/10 text-[var(--err)] text-xs flex items-center gap-2">
-                        <LucideIcon name="trash2" size={14} strokeWidth={2.25} />
-                        {tx('Réinitialiser l\'historique d\'export','Reset upload history')}
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
+              {/* Bouton "Nouvelle facture" — déplacé ici (à la place du bouton Export
+                  qui est désormais en haut à côté du titre). Centré sur mobile + desktop,
+                  taille augmentée pour CTA prominent. Caché si une catégorie est filtrée
+                  (un bouton dédié pré-rempli existe dans le panneau catégorie). */}
+              {filterCat === 'all' && (
+                <div className="w-full flex justify-center mt-3 sm:mt-0 sm:w-auto sm:flex-1">
+                  <button
+                    onClick={()=>{ setEditing(null); setShowForm(true); }}
+                    className="inline-flex items-center justify-center gap-2 px-6 py-3 rounded-full font-bold text-base text-white shadow-lg hover:scale-105 active:scale-95 transition-all"
+                    style={{ background: 'linear-gradient(135deg, var(--accent) 0%, #0284c7 100%)', boxShadow: '0 8px 24px -4px var(--accent-glow)' }}>
+                    <LucideIcon name="plus" size={18} strokeWidth={3} />
+                    <span>{t('exp.new')}</span>
+                  </button>
+                </div>
+              )}
             </div>
             {/* Mini barre stacked des catégories proportionnelles */}
             {totalAmount > 0 && (
