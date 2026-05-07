@@ -713,6 +713,12 @@
           const out = { ...f };
           if (!Array.isArray(out.fuelEntries)) out.fuelEntries = [];
           if (!Array.isArray(out.oilEntries))  out.oilEntries  = [];
+          // Migration : champs ETD/ETA création (saisies dans la section
+          // "Créer un vol" en haut de la fiche, distincts du FPL en bas).
+          // Vols anciens n'ont pas ces clés : on les initialise à '' pour éviter
+          // que les inputs reçoivent `undefined` et cassent les .replace() du tri.
+          if (out.etdCreation == null) out.etdCreation = '';
+          if (out.etaCreation == null) out.etaCreation = '';
           // Migration : assigne un numéro de vol stable (3 chiffres + 1 lettre)
           // aux vols créés avant l'introduction du champ flightNumber.
           // Dérivé déterministiquement de l'id pour rester stable entre les
