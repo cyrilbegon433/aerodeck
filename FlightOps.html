@@ -428,7 +428,7 @@
        de l'encoche → on l'ajoute pour ne pas chevaucher.
        !important pour gagner face à py-* de Tailwind sur le header. */
     .safe-top    { padding-top: calc(env(safe-area-inset-top) + 10px) !important; }
-    .safe-bottom { padding-bottom: calc(env(safe-area-inset-bottom) + 8px) !important; }
+    .safe-bottom { padding-bottom: env(safe-area-inset-bottom) !important; }
 
     /* === Animations === */
     @keyframes pop  { from { opacity:0; transform: translateY(8px) scale(0.98);} to {opacity:1; transform:none;} }
@@ -3342,11 +3342,11 @@
         sunrise: '',     // HHMM Zulu, optionnel
         approaches: [],
         // Compteurs par pilote — utilisés pour les currencies (PPC, etc.)
-        takeoffsPic:  1, landingsPic:  1,
+        takeoffsPic:  0, landingsPic:  0,
         takeoffsSic:  0, landingsSic:  0,
         // Champs legacy v2 — préservés mais non saisis (migrés via takeoffsPic/landingsPic)
-        takeoffs: 1,
-        landings: 1,
+        takeoffs: 0,
+        landings: 0,
         nightLandings: 0,
         // TTSN avion (Total Time Since New) — heures décimales avant et après le vol
         ttsnBefore: '',
@@ -4004,11 +4004,11 @@
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <div className="label">{tx('Décol.','T/O')}</div>
-                        <input type="number" min="0" className="input" value={f.takeoffsPic||0} onChange={e=>set('takeoffsPic', parseInt(e.target.value||'0',10))} />
+                        <input type="number" min="0" className="input" placeholder="0" value={f.takeoffsPic ? f.takeoffsPic : ''} onChange={e=>set('takeoffsPic', e.target.value === '' ? 0 : (parseInt(e.target.value,10) || 0))} />
                       </div>
                       <div>
                         <div className="label">{tx('Atter.','LDG')}</div>
-                        <input type="number" min="0" className="input" value={f.landingsPic||0} onChange={e=>set('landingsPic', parseInt(e.target.value||'0',10))} />
+                        <input type="number" min="0" className="input" placeholder="0" value={f.landingsPic ? f.landingsPic : ''} onChange={e=>set('landingsPic', e.target.value === '' ? 0 : (parseInt(e.target.value,10) || 0))} />
                       </div>
                     </div>
                   </div>
@@ -4017,11 +4017,11 @@
                     <div className="grid grid-cols-2 gap-2">
                       <div>
                         <div className="label">{tx('Décol.','T/O')}</div>
-                        <input type="number" min="0" className="input" value={f.takeoffsSic||0} onChange={e=>set('takeoffsSic', parseInt(e.target.value||'0',10))} />
+                        <input type="number" min="0" className="input" placeholder="0" value={f.takeoffsSic ? f.takeoffsSic : ''} onChange={e=>set('takeoffsSic', e.target.value === '' ? 0 : (parseInt(e.target.value,10) || 0))} />
                       </div>
                       <div>
                         <div className="label">{tx('Atter.','LDG')}</div>
-                        <input type="number" min="0" className="input" value={f.landingsSic||0} onChange={e=>set('landingsSic', parseInt(e.target.value||'0',10))} />
+                        <input type="number" min="0" className="input" placeholder="0" value={f.landingsSic ? f.landingsSic : ''} onChange={e=>set('landingsSic', e.target.value === '' ? 0 : (parseInt(e.target.value,10) || 0))} />
                       </div>
                     </div>
                   </div>
@@ -4031,6 +4031,25 @@
                     ⚠ {tx('Aucun décollage / atterrissage comptabilisé pour ce vol terminé. Si l\'avion est resté au sol (problème, retour au parking sans vol), c\'est OK — sinon pense à saisir au moins 1/1 pour le PIC (suivi currencies).','No take-off / landing recorded for this completed flight. If the aircraft stayed on the ground (issue, returned to parking without flying), that\'s fine — otherwise enter at least 1/1 for the PIC (currency tracking).')}
                   </div>
                 )}
+                {/* Cohérence T/O ↔ LDG : un avion qui décolle doit atterrir.
+                    Quelle que soit la répartition PIC/SIC (tours de piste OK),
+                    le total décollages doit égaler le total atterrissages. */}
+                {(() => {
+                  const totT = (parseInt(f.takeoffsPic,10)||0) + (parseInt(f.takeoffsSic,10)||0);
+                  const totL = (parseInt(f.landingsPic,10)||0) + (parseInt(f.landingsSic,10)||0);
+                  if ((totT > 0 || totL > 0) && totT !== totL) {
+                    return (
+                      <div className="mt-2 text-xs px-2 py-1.5 rounded-md flex items-center gap-1.5"
+                           style={{ background: 'rgba(239,68,68,0.10)', color: 'var(--err)', border: '1px solid rgba(239,68,68,0.35)' }}>
+                        <LucideIcon name="alertTriangle" size={13} strokeWidth={2.25} />
+                        <span>{tx(
+                          `Décollages (${totT}) ≠ atterrissages (${totL}). Un avion qui décolle doit atterrir.`,
+                          `Take-offs (${totT}) ≠ landings (${totL}). An aircraft that takes off must land.`)}</span>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             );
           })()}
