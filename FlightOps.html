@@ -4258,16 +4258,18 @@
 
       const sorted = useMemo(() => {
         const arr = [...flights];
-        // Tri : dates récentes en haut. À l'intérieur d'une même journée :
-        // ordre chronologique ascendant (blockOut sinon ETD FPL sinon ETD création),
-        // puis fallback id. Permet de classer naturellement plusieurs vols d'une
-        // même journée même si le FPL n'a pas encore été déposé.
+        // Tri logbook : dates récentes en haut. À l'intérieur d'une même journée :
+        // ordre chronologique DESCENDANT (dernier vol en haut) — différence
+        // volontaire avec le calendrier qui lui reste ascendant. La cascade
+        // blockOut → ETD FPL → ETD création permet de classer naturellement
+        // plusieurs vols d'une même journée même si le FPL n'a pas encore
+        // été déposé.
         arr.sort((a,b) => {
           const dateCmp = (b.date||'').localeCompare(a.date||'');
           if (dateCmp !== 0) return dateCmp;
           const ka = a.blockOut || a.etd || a.etdCreation || '';
           const kb = b.blockOut || b.etd || b.etdCreation || '';
-          if (ka || kb) return ka.localeCompare(kb);
+          if (ka || kb) return kb.localeCompare(ka);
           return (b.id||'').localeCompare(a.id||'');
         });
         return filterAircraft==='all' ? arr : arr.filter(f => f.aircraftId === filterAircraft);
